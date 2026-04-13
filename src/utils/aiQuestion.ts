@@ -227,9 +227,13 @@ export function buildDiagnosisReply(result: DiagnosisAgentResult, resolved?: Pic
   const matchLine = matchedLabel
     ? `已按“${matchedLabel}”自动匹配到 ${result.stockInfo.name}（${result.stockInfo.code}），并调用内置行情、K线、资讯、资金和板块工具完成研究。`
     : `已锁定 ${result.stockInfo.name}（${result.stockInfo.code}），并调用内置行情、K线、资讯、资金和板块工具完成研究。`
+  const modelLine = result.llmSummary.fallback
+    ? `模型状态：${result.llmSummary.notice}`
+    : `模型状态：${result.llmSummary.notice}`
 
   return [
     matchLine,
+    modelLine,
     `${result.stockInfo.name}（${result.stockInfo.code}）当前研究结论：${analysis.recommendation}。`,
     analysis.summary,
     `评估方式：${result.selectedStrategy?.name || '默认综合框架'}`,

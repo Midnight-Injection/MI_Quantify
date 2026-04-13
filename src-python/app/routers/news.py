@@ -18,8 +18,8 @@ async def stock_news(code: str, limit: int = Query(default=20)):
 
 
 @router.get("/context/{code}")
-async def context_news(code: str, limit: int = Query(default=20)):
-    data = get_context_news(code, limit)
+async def context_news(code: str, limit: int = Query(default=20), name: str = Query(default="")):
+    data = get_context_news(code, limit, name)
     return {"data": data}
 
 

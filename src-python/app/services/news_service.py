@@ -28,9 +28,9 @@ TOPIC_NEWS_KEYWORDS = [
 ]
 
 
-def get_context_news(code: str, limit: int = 20) -> list[dict]:
+def get_context_news(code: str, limit: int = 20, stock_name: str = "") -> list[dict]:
     try:
-        stock_name = _fetch_stock_name(code)
+        stock_name = str(stock_name or "").strip() or _fetch_stock_name(code)
         stock_items = get_stock_news(code, max(limit, 10))
         related_market_items = []
 

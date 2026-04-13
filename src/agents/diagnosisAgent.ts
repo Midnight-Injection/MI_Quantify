@@ -99,6 +99,11 @@ export interface DiagnosisAgentResult {
   trace: DiagnosisAgentStep[]
   policyEvidence: DiagnosisEvidence[]
   selectedStrategy: StrategyContext | null
+  llmSummary: {
+    used: boolean
+    fallback: boolean
+    notice: string
+  }
 }
 
 export interface DiagnosisAgentProgressEvent {
@@ -171,6 +176,33 @@ function humanizeAgentError(message: string) {
     return '网络请求失败，本轮分析缺少部分远端数据，建议稍后重试。'
   }
   return message
+}
+
+function summarizeLlmStatus(trace: DiagnosisAgentStep[], provider: AiProvider | null) {
+  if (!provider) {
+    return {
+      used: false,
+      fallback: true,
+      notice: '当前未启用模型，本轮使用本地规则 + 实时行情/资讯完成诊断。',
+    }
+  }
+
+  const llmSteps = trace.filter((step) => step.strategy?.includes('LLM'))
+  const success = llmSteps.some((step) => step.status === 'done')
+  const errorStep = [...llmSteps].reverse().find((step) => step.status === 'error')
+  if (success && !errorStep) {
+    return {
+      used: true,
+      fallback: false,
+      notice: `本轮已调用 ${provider.name} 完成规划与结论汇总。`,
+    }
+  }
+
+  return {
+    used: false,
+    fallback: true,
+    notice: errorStep?.resultSummary || `模型调用异常，当前已回退为本地规则 + 实时数据。`,
+  }
 }
 
 function escapeRegExp(input: string) {
@@ -765,7 +797,7 @@ export async function runDiagnosisAgent(options: {
         stockNews = response.data || []
       }
       if (step.tool === 'load_macro_news') {
-        const response = await get<{ data: DiagnosisNewsItem[] }>(`/api/news/context/${normalizedCode}?limit=10`)
+        const response = await get<{ data: DiagnosisNewsItem[] }>(`/api/news/context/${normalizedCode}?limit=10&name=${encodeURIComponent(stockInfo.name)}`)
         macroNews = response.data || []
       }
       if (step.tool === 'load_fund_flow') {
@@ -1032,6 +1064,7 @@ export async function runDiagnosisAgent(options: {
   }
 
   diagnosis = sanitizeDiagnosis(diagnosis, stockInfo, technical, trace, evidence, derivedNarratives)
+  const llmSummary = summarizeLlmStatus(trace, options.provider)
 
   return {
     stockInfo,
@@ -1044,5 +1077,6 @@ export async function runDiagnosisAgent(options: {
     trace,
     policyEvidence: diagnosis.evidence || evidence,
     selectedStrategy: selectedStrategyContext,
+    llmSummary,
   }
 }

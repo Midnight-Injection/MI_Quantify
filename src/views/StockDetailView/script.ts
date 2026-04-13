@@ -296,7 +296,7 @@ export default defineComponent({
       try {
         const [stockRes, macroRes] = await Promise.all([
           get<{ data: NewsItem[] }>(`/api/news/stock/${code.value}?limit=6`),
-          get<{ data: NewsItem[] }>(`/api/news/context/${code.value}?limit=6`),
+          get<{ data: NewsItem[] }>(`/api/news/context/${code.value}?limit=6&name=${encodeURIComponent(stockInfo.value?.name || '')}`),
         ])
         stockNews.value = stockRes.data ?? []
         macroNews.value = macroRes.data ?? []
