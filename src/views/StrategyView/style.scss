@@ -1,0 +1,303 @@
+.strategy-page {
+  min-height: 100%;
+}
+
+.strategy-header {
+  @include flex-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.strategy-title-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.strategy-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  span {
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(29, 38, 55, 0.08);
+    color: $text-secondary;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+
+.strategy-badge {
+  font-size: 12px;
+  font-weight: 500;
+  color: $color-success;
+  background: rgba($color-success, 0.06);
+  padding: 4px 12px;
+  border-radius: $radius-xs;
+  border: 1px solid rgba($color-success, 0.15);
+}
+
+.strategy-section {
+  margin-bottom: 4px;
+  min-height: 0;
+}
+
+.section-ai,
+.strategy-playbook,
+.strategy-metrics,
+.strategy-builder,
+.eval-history-item,
+.empty-hint {
+  background: $bg-card;
+  border: 1px solid $border-color;
+  border-radius: $radius-xl;
+}
+
+.section-ai,
+.strategy-playbook,
+.strategy-metrics,
+.strategy-builder {
+  padding: 20px;
+  box-shadow: $shadow-sm;
+}
+
+.strategy-stat-grid,
+.playbook-grid,
+.metric-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.strategy-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+.strategy-stat-card,
+.playbook-card,
+.metric-card {
+  padding: 18px;
+  border-radius: $radius-xl;
+  border: 1px solid rgba(29, 38, 55, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 243, 239, 0.84));
+}
+
+.strategy-stat-card {
+  span {
+    display: block;
+    color: $text-muted;
+    font-size: 12px;
+  }
+
+  strong {
+    display: block;
+    margin-top: 10px;
+    font-size: 32px;
+    line-height: 1;
+    color: $text-primary;
+    font-family: $font-display;
+  }
+
+  p {
+    margin: 10px 0 0;
+    color: $text-secondary;
+    line-height: 1.7;
+    font-size: 13px;
+  }
+}
+
+.playbook-grid,
+.metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.playbook-top,
+.metric-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  strong {
+    color: $text-primary;
+    font-size: 15px;
+  }
+
+  span {
+    flex-shrink: 0;
+    color: $text-muted;
+    font-size: 11px;
+    font-family: $font-mono;
+  }
+}
+
+.playbook-card p,
+.metric-card p {
+  margin: 12px 0 0;
+  color: $text-secondary;
+  line-height: 1.8;
+  font-size: 13px;
+}
+
+.metric-range {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(29, 38, 55, 0.1);
+  color: $color-accent;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.section-header {
+  @include flex-between;
+  margin-bottom: 12px;
+}
+
+.section-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: $text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.count {
+  font-size: 11px;
+  color: $text-muted;
+  font-family: $font-mono;
+}
+
+.strategy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.strategy-left, .strategy-right {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.eval-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 440px;
+  overflow: auto;
+  padding-right: 4px;
+  @include custom-scrollbar;
+}
+
+.eval-history-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  font-size: 12px;
+  transition: all $transition-fast;
+
+  &:hover {
+    box-shadow: $shadow-sm;
+    border-color: rgba($color-accent, 0.15);
+  }
+}
+
+.ev-stock {
+  font-weight: 500;
+  color: $text-primary;
+  min-width: 120px;
+}
+
+.ev-score {
+  font-family: $font-mono;
+  font-weight: 700;
+  &.high { color: $color-up; }
+  &.mid { color: $color-warning; }
+  &.low { color: $color-down; }
+}
+
+.ev-rec {
+  color: $text-secondary;
+  flex: 1;
+}
+
+.ev-time {
+  font-family: $font-mono;
+  color: $text-muted;
+  font-size: 11px;
+}
+
+.empty-hint {
+  @include flex-center;
+  padding: 28px;
+  color: $text-muted;
+  font-size: 13px;
+}
+
+.builder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.builder-textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.builder-actions {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.builder-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: $text-secondary;
+  font-size: 13px;
+}
+
+@media (max-width: 1280px) {
+  .strategy-stat-grid,
+  .playbook-grid,
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1200px) {
+  .strategy-grid,
+  .builder-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .builder-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 960px) {
+  .strategy-grid,
+  .builder-grid,
+  .strategy-stat-grid,
+  .playbook-grid,
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .builder-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

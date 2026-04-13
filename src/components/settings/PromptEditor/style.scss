@@ -1,0 +1,111 @@
+.prompt-editor {
+  //
+}
+
+.prompt-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid $border-light;
+  padding-bottom: 4px;
+}
+
+.prompt-tab {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: $text-secondary;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: $radius-xs $radius-xs 0 0;
+  transition: all $transition-fast;
+  font-weight: 500;
+
+  &:hover {
+    color: $text-primary;
+  }
+
+  &.active {
+    color: $color-accent;
+    position: relative;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: $gradient-accent;
+      border-radius: 1px;
+    }
+  }
+}
+
+.prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.prompt-item {
+  border: 1px solid $border-glass;
+  border-radius: $radius-md;
+  overflow: hidden;
+  background: $bg-glass;
+  backdrop-filter: $blur-sm;
+  -webkit-backdrop-filter: $blur-sm;
+}
+
+.prompt-item-header {
+  @include flex-between;
+  padding: 12px 14px;
+}
+
+.prompt-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.prompt-textarea {
+  width: 100%;
+  min-height: clamp(320px, 44vh, 560px);
+  padding: 12px 14px;
+  background: rgba($bg-input, 0.5);
+  border: none;
+  border-top: 1px solid $border-light;
+  border-bottom: 1px solid $border-light;
+  color: $text-primary;
+  font-family: $font-mono;
+  font-size: 12px;
+  line-height: 1.7;
+  resize: vertical;
+  outline: none;
+  transition: background $transition-fast;
+
+  &:focus {
+    background: rgba($bg-input, 0.8);
+  }
+}
+
+.prompt-item-footer {
+  @include flex-between;
+  padding: 10px 14px;
+}
+
+.prompt-vars {
+  font-size: 11px;
+  color: $text-muted;
+  font-family: $font-mono;
+}
+
+.prompt-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}

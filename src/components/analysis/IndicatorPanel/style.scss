@@ -1,0 +1,28 @@
+.indicator-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 12px 16px;
+  @include card-glass;
+}
+
+.indicator-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  align-items: center;
+}
+
+.ind-label {
+  color: $text-muted;
+  font-weight: 500;
+}
+
+.ind-value {
+  font-family: $font-mono;
+  color: $text-primary;
+  font-weight: 600;
+
+  &.up { color: $color-up; }
+  &.down { color: $color-down; }
+}

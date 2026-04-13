@@ -1,0 +1,79 @@
+<div class="ai-evaluator">
+  <div class="eval-form">
+    <stock-search-input
+      v-model="stockQuery"
+      class="eval-search"
+      placeholder="输入股票名称或代码，如 平安银行 / 000001"
+      @select="handleSelectStock"
+      @enter="handleEvaluate"
+    />
+    <button class="btn-primary" :disabled="loading" @click="handleEvaluate()">
+      {{ loading ? '研究中...' : 'Agent 评估' }}
+    </button>
+  </div>
+  <div v-if="stockName || stockCode" class="eval-selected">
+    <span>当前标的</span>
+    <strong>{{ stockName || '--' }}</strong>
+    <small>{{ stockCode || '--' }}</small>
+  </div>
+  <div v-if="error" class="eval-error">{{ error }}</div>
+  <div v-if="result" class="eval-result">
+    <div class="eval-scores">
+      <div class="score-item">
+        <span class="score-label">技术面</span>
+        <span class="score-value" :class="scoreClass(result.technicalScore)">{{ result.technicalScore }}/10</span>
+      </div>
+      <div class="score-item">
+        <span class="score-label">消息面</span>
+        <span class="score-value" :class="scoreClass(result.sentimentScore)">{{ result.sentimentScore }}/10</span>
+      </div>
+      <div class="score-item">
+        <span class="score-label">资金面</span>
+        <span class="score-value" :class="scoreClass(result.fundScore)">{{ result.fundScore }}/10</span>
+      </div>
+      <div class="score-item total">
+        <span class="score-label">综合评分</span>
+        <span class="score-value" :class="scoreClass(result.totalScore)">{{ result.totalScore }}/10</span>
+      </div>
+    </div>
+    <div class="eval-rec">
+      <span class="rec-label">操作建议：</span>
+      <span class="rec-value" :class="recClass(result.recommendation)">{{ recText(result.recommendation) }}</span>
+      <span class="rec-pred">走势预判：{{ result.prediction }}</span>
+      <span v-if="result.supportPrice" class="rec-price">支撑位 {{ result.supportPrice }}</span>
+      <span v-if="result.resistancePrice" class="rec-price">压力位 {{ result.resistancePrice }}</span>
+    </div>
+    <div class="eval-reason">
+      <p>{{ result.reason }}</p>
+    </div>
+    <div v-if="diagnosis" class="eval-advanced">
+      <div class="advanced-grid">
+        <div class="advanced-card">
+          <span>买入区间</span>
+          <strong>{{ diagnosis.buyLower ? formatPrice(diagnosis.buyLower) : '--' }} - {{ diagnosis.buyUpper ? formatPrice(diagnosis.buyUpper) : '--' }}</strong>
+        </div>
+        <div class="advanced-card">
+          <span>卖出区间</span>
+          <strong>{{ diagnosis.sellLower ? formatPrice(diagnosis.sellLower) : '--' }} - {{ diagnosis.sellUpper ? formatPrice(diagnosis.sellUpper) : '--' }}</strong>
+        </div>
+        <div class="advanced-card">
+          <span>止损 / 止盈</span>
+          <strong>{{ diagnosis.stopLossPrice ? formatPrice(diagnosis.stopLossPrice) : '--' }} / {{ diagnosis.takeProfitPrice ? formatPrice(diagnosis.takeProfitPrice) : '--' }}</strong>
+        </div>
+        <div class="advanced-card">
+          <span>仓位 / 股数</span>
+          <strong>{{ diagnosis.positionSize || '--' }} / {{ diagnosis.suggestedShares || '--' }}</strong>
+        </div>
+      </div>
+      <div v-if="diagnosis.toolCalls?.length" class="trace-mini-list">
+        <div v-for="item in diagnosis.toolCalls" :key="item.id" class="trace-mini-item">
+          <div class="trace-mini-top">
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.tool || item.strategy || 'planner' }}</span>
+          </div>
+          <p>{{ item.resultSummary }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,21 @@
+<div class="strategy-list">
+  <div v-for="s in strategies" :key="s.id" class="strategy-item" :class="{ disabled: !s.enabled }">
+    <div class="strategy-info">
+      <div class="strategy-name-row">
+        <span class="strategy-name">{{ s.name }}</span>
+        <span class="tag" :class="categoryTag(s.category)">{{ categoryLabel(s.category) }}</span>
+        <span v-if="s.builtin" class="tag tag-info">内置</span>
+        <span v-else class="tag tag-neutral">自定义</span>
+      </div>
+      <p class="strategy-desc">{{ s.description }}</p>
+      <p v-if="s.notes" class="strategy-notes">{{ s.notes }}</p>
+    </div>
+    <div class="strategy-actions">
+      <button v-if="!s.builtin" class="remove-btn" @click="$emit('remove', s.id)">删除</button>
+      <label class="switch" @click.stop>
+        <input type="checkbox" :checked="s.enabled" @change="$emit('toggle', s.id, $event.target.checked)" />
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+</div>

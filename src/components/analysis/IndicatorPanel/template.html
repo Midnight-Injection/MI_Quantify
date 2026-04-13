@@ -1,0 +1,6 @@
+<div class="indicator-panel">
+  <div class="indicator-row" v-for="ind in indicators" :key="ind.label">
+    <span class="ind-label">{{ ind.label }}</span>
+    <span class="ind-value" :class="ind.colorClass || ''">{{ ind.value }}</span>
+  </div>
+</div>

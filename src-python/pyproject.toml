@@ -1,0 +1,19 @@
+[project]
+name = "mi-quantify-sidecar"
+version = "0.1.0"
+description = "MI Quantify Python Sidecar - Market Data & News Service"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "akshare>=1.15.0",
+    "baostock>=0.8.9",
+    "httpx>=0.28.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8.0",
+]

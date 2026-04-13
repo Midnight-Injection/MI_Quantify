@@ -1,0 +1,144 @@
+import { ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+
+const baseUrl = 'http://127.0.0.1:18911'
+const running = ref(false)
+const requestTimeoutMs = 12000
+const inflightGetRequests = new Map<string, Promise<any>>()
+
+async function start() {
+  try {
+    const result = await invoke<string>('sidecar_start')
+    running.value = true
+    return result
+  } catch (e) {
+    console.error('[sidecar] start failed:', e)
+    throw e
+  }
+}
+
+async function stop() {
+  try {
+    const result = await invoke<string>('sidecar_stop')
+    running.value = false
+    return result
+  } catch (e) {
+    console.error('[sidecar] stop failed:', e)
+    throw e
+  }
+}
+
+async function status() {
+  try {
+    const isRunning = await invoke<boolean>('sidecar_status')
+    running.value = isRunning
+    return isRunning
+  } catch {
+    running.value = false
+    return false
+  }
+}
+
+async function ensureRunning() {
+  const isRunning = await status()
+  if (!isRunning) {
+    await start()
+    await waitForHealth()
+  }
+}
+
+async function waitForHealth(maxRetries = 10, interval = 1000) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const res = await request(`${baseUrl}/health`)
+      if (res.ok) {
+        running.value = true
+        return true
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, interval))
+  }
+  throw new Error('sidecar health check failed')
+}
+
+async function request(input: string, init?: RequestInit) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs)
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+function shouldRetrySidecarRequest(error: unknown) {
+  if (!(error instanceof Error)) return false
+  return error.name === 'AbortError' || /Failed to fetch|NetworkError|Load failed|fetch/i.test(error.message)
+}
+
+async function get<T>(path: string): Promise<T> {
+  await ensureRunning()
+  const key = `${baseUrl}${path}`
+  if (inflightGetRequests.has(key)) {
+    return inflightGetRequests.get(key) as Promise<T>
+  }
+
+  const promise = (async () => {
+    try {
+      const res = await request(key)
+      if (!res.ok) throw new Error(`sidecar request failed: ${res.status}`)
+      return res.json()
+    } catch (error) {
+      if (!shouldRetrySidecarRequest(error)) {
+        throw error
+      }
+      await waitForHealth()
+      const retryRes = await request(key)
+      if (!retryRes.ok) throw new Error(`sidecar request failed: ${retryRes.status}`)
+      return retryRes.json()
+    }
+  })()
+
+  inflightGetRequests.set(key, promise)
+
+  try {
+    return await promise
+  } finally {
+    inflightGetRequests.delete(key)
+  }
+}
+
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  await ensureRunning()
+  const doPost = () => request(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+
+  let res: Response
+  try {
+    res = await doPost()
+  } catch (error) {
+    if (!shouldRetrySidecarRequest(error)) {
+      throw error
+    }
+    await waitForHealth()
+    res = await doPost()
+  }
+
+  if (!res.ok) {
+    const message = await res.text()
+    throw new Error(`sidecar request failed: ${res.status} ${message}`)
+  }
+  return res.json()
+}
+
+export function useSidecar() {
+  return { running, start, stop, status, ensureRunning, get, post }
+}

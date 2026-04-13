@@ -1,0 +1,16 @@
+<div class="signal-list">
+  <div v-if="!signals.length" class="empty-hint">暂无交易信号，AI评估后将自动生成信号</div>
+  <div v-for="sig in signals" :key="sig.id" class="signal-item" :class="sig.type">
+    <div class="signal-badge" :class="sig.type">
+      <span class="signal-type">{{ sig.type === 'buy' ? '买入' : sig.type === 'sell' ? '卖出' : '持有' }}</span>
+      <span class="signal-strength">{{ sig.strength === 'strong' ? '强' : sig.strength === 'medium' ? '中' : '弱' }}</span>
+    </div>
+    <div class="signal-info">
+      <span class="signal-stock">{{ sig.stockName }} ({{ sig.stockCode }})</span>
+      <span class="signal-price">{{ sig.price.toFixed(2) }}</span>
+    </div>
+    <div class="signal-reason">{{ sig.reason.slice(0, 100) }}</div>
+    <div class="signal-strategy">{{ sig.strategyName }}</div>
+    <div class="signal-time">{{ formatTime(sig.timestamp) }}</div>
+  </div>
+</div>

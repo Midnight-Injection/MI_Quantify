@@ -1,0 +1,355 @@
+<div class="page home-page">
+  <section class="hero-panel" :class="marketMood">
+    <div class="hero-copy">
+      <div class="hero-kicker">Market Cockpit</div>
+      <div class="hero-heading-row">
+        <h1 class="hero-title">首页总览</h1>
+        <div class="market-tabs">
+          <button
+            v-for="tab in marketTabs"
+            :key="tab.value"
+            class="market-tab"
+            :class="{ active: currentMarket === tab.value }"
+            @click="switchMarket(tab.value)"
+          >
+            <span>{{ tab.label }}</span>
+            <small>{{ tab.hint }}</small>
+          </button>
+        </div>
+      </div>
+      <p class="hero-text">{{ marketNarrative }}</p>
+    </div>
+
+    <div class="hero-status">
+      <div class="live-badge" :class="{ active: heroPolling.isRunning }">
+        <span class="live-dot"></span>
+        <span>{{ heroPolling.isRunning ? '实时同步中' : '等待同步' }}</span>
+      </div>
+      <div class="hero-stat-grid">
+        <article v-for="card in pulseCards" :key="card.label" class="pulse-card" :class="card.tone">
+          <div class="label-row">
+            <span class="pulse-label">{{ card.label }}</span>
+            <info-tooltip
+              :title="card.label"
+              :description="card.description"
+              :range="card.range"
+            />
+          </div>
+          <strong class="pulse-value">{{ card.value }}</strong>
+          <span class="pulse-hint">{{ card.hint }}</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="index-panel">
+    <div class="panel-head">
+      <div>
+        <h3 class="section-title">大盘指数</h3>
+        <p class="section-subtitle">先看核心指数、量能和成交额，更多指数可继续展开。</p>
+      </div>
+      <button v-if="indices.length > 8" class="panel-link more-link" @click="indexExpanded = !indexExpanded">
+        {{ indexExpanded ? '收起' : '更多' }}
+      </button>
+    </div>
+    <div class="index-grid">
+    <article
+      v-for="index in visibleIndices"
+      :key="index.code"
+      class="index-card"
+      :class="index.change >= 0 ? 'up' : 'down'"
+    >
+      <div class="index-card-head">
+        <div class="label-row">
+          <span class="index-name">{{ index.name }}</span>
+          <info-tooltip
+            :title="index.name"
+            description="指数用来判断大盘和风格强弱。先看涨跌幅，再看量能是否跟上。"
+            range="放量上涨更偏强，缩量上涨偏修复；放量下跌需要更谨慎。"
+          />
+        </div>
+        <span class="index-code">{{ index.code }}</span>
+      </div>
+      <div class="index-price">{{ formatPrice(index.price) }}</div>
+      <div class="index-change" :class="index.change >= 0 ? 'up' : 'down'">
+        {{ index.change >= 0 ? '+' : '' }}{{ formatPrice(index.change) }} / {{ formatPercent(index.changePercent) }}%
+      </div>
+      <div class="index-meta">
+        <span>量 {{ formatVolume(index.volume) }}</span>
+        <span>额 {{ formatAmount(index.amount) }}</span>
+      </div>
+    </article>
+    </div>
+  </section>
+
+  <section v-if="currentMarket === 'a'" class="breadth-panel">
+    <div class="breadth-header">
+      <div>
+        <h3 class="section-title">市场广度</h3>
+        <p class="section-subtitle">追踪涨跌分布、热点股和板块热度。</p>
+      </div>
+      <div class="breadth-totals">
+        <span>上涨 {{ adv.advance }}</span>
+        <span>平盘 {{ adv.flat }}</span>
+        <span>下跌 {{ adv.decline }}</span>
+      </div>
+    </div>
+    <div class="breadth-bar">
+      <div class="bar-segment up" :style="{ width: adv.total ? adv.advance / adv.total * 100 + '%' : '0%' }"></div>
+      <div class="bar-segment flat" :style="{ width: adv.total ? adv.flat / adv.total * 100 + '%' : '0%' }"></div>
+      <div class="bar-segment down" :style="{ width: adv.total ? adv.decline / adv.total * 100 + '%' : '0%' }"></div>
+    </div>
+  </section>
+
+  <section class="home-grid">
+    <article class="panel panel-ai">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">AI 市场点评</h3>
+          <p class="section-subtitle">把指数、板块、消息和未来节奏翻译成更容易理解的话。</p>
+        </div>
+        <div class="panel-actions">
+          <span class="news-count">{{ homeDigestAutoEnabled ? '自动诊断' : '手动触发' }}</span>
+          <button class="btn-ghost panel-action-btn" :disabled="aiDigestLoading" @click="requestDigest(true)">
+            {{ aiDigestLoading ? 'AI整理中...' : homeDigestAutoEnabled ? '立即刷新点评' : '手动生成点评' }}
+          </button>
+        </div>
+      </div>
+      <div v-if="aiDigest" class="ai-digest">
+        <div class="digest-headline">{{ aiDigest.headline }}</div>
+        <p class="digest-summary">{{ aiDigest.summary }}</p>
+        <div class="digest-sentiment">
+          <span class="sentiment-pill" :class="newsSentiment.tone">消息情绪 {{ newsSentiment.label }}</span>
+          <span class="sentiment-note">{{ newsSentiment.hint }}</span>
+        </div>
+        <div class="deep-dive-grid">
+          <div v-for="item in sessionInsights" :key="item.label" class="deep-dive-card">
+            <div class="label-row">
+              <span>{{ item.label }}</span>
+              <info-tooltip
+                :title="item.label"
+                :description="item.description"
+                :range="item.range"
+              />
+            </div>
+            <p>{{ item.summary }}</p>
+          </div>
+        </div>
+        <div class="digest-grid">
+          <div class="digest-card">
+            <span>消息面</span>
+            <p>{{ aiDigest.newsView }}</p>
+          </div>
+          <div class="digest-card">
+            <span>社会面</span>
+            <p>{{ aiDigest.socialView }}</p>
+          </div>
+          <div class="digest-card">
+            <span>趋势判断</span>
+            <p>{{ aiDigest.trendView }}</p>
+          </div>
+          <div class="digest-card">
+            <span>执行建议</span>
+            <p>{{ aiDigest.actionView }}</p>
+          </div>
+        </div>
+        <div class="sync-strip">
+          <span v-for="item in syncItems" :key="item.label" class="sync-pill">{{ item.label }} {{ item.value }}</span>
+        </div>
+      </div>
+      <div v-else class="panel-empty">
+        {{ aiDigestLoading ? 'AI 点评整理中...' : `当前处于${homeDigestAutoEnabled ? '自动' : '手动'}模式，点击右上角按钮后会生成首页 AI 点评。` }}
+      </div>
+    </article>
+
+    <article class="panel panel-overview">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">盘面总览</h3>
+          <p class="section-subtitle">把普涨程度、热点换手、资金偏好和关注池表现放在一屏里快速判断。</p>
+        </div>
+      </div>
+      <div class="overview-grid">
+        <div v-for="item in overviewCards" :key="item.label" class="overview-card">
+          <div class="overview-top">
+            <span>{{ item.label }}</span>
+            <info-tooltip :title="item.label" :description="item.hint" :range="item.range" />
+          </div>
+          <strong class="overview-value">{{ item.value }}</strong>
+          <p class="overview-detail">{{ item.detail }}</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">主力资金方向</h3>
+          <p class="section-subtitle">按 TOP10 展示主力净流入或活跃成交焦点，便于直接看今天资金最集中在哪些标的。</p>
+        </div>
+      </div>
+      <div v-if="flowRows.length" class="flow-list scroll-stack flow-scroll">
+        <button
+          v-for="item in flowRows"
+          :key="item.code"
+          class="flow-row"
+          @click="navigateToStock(item.code)"
+        >
+          <div class="flow-main">
+            <div class="flow-name-row">
+              <span class="flow-rank">#{{ item.rank }}</span>
+              <span class="flow-name">{{ item.name }}</span>
+              <span class="flow-code">{{ item.code }}</span>
+            </div>
+            <p class="flow-copy">{{ item.copy }}</p>
+          </div>
+          <div class="flow-right">
+            <strong class="flow-amount" :class="item.metric >= 0 ? 'up' : 'down'">{{ formatAmount(item.metric) }}</strong>
+            <span class="flow-ratio">{{ item.ratioLabel }} {{ item.ratio.toFixed(2) }}%</span>
+          </div>
+        </button>
+      </div>
+      <div v-else class="panel-empty">当前没有拿到主力资金榜，也没有足够的活跃成交样本。</div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">{{ policySectionTitle }}</h3>
+          <p class="section-subtitle">{{ policySectionSubtitle }}</p>
+        </div>
+      </div>
+      <div class="policy-grid policy-scroll">
+        <div v-for="item in policyGuides" :key="item.label" class="policy-card" :class="item.tone">
+          <div class="policy-top">
+            <strong>{{ item.label }}</strong>
+            <span>{{ item.matchCount ? `命中 ${item.matchCount} 条` : '暂无集中消息' }}</span>
+          </div>
+          <p>{{ item.summary }}</p>
+          <div class="policy-meta">
+            <span>受益：{{ item.beneficiary }}</span>
+            <span>留意：{{ item.caution }}</span>
+            <span>推荐：{{ item.recommendedStocks.length ? item.recommendedStocks.join('、') : '等待同步' }}</span>
+          </div>
+          <div v-if="item.headline" class="policy-headline">{{ item.headline }}</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">未来市场预期</h3>
+          <p class="section-subtitle">把指数、政策、社会面、主线板块和推荐股票合并成下一步观察框架，直接告诉你先盯什么。</p>
+        </div>
+      </div>
+      <div class="outlook-grid outlook-scroll">
+        <div v-for="item in marketOutlookCards" :key="item.label" class="outlook-card">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+          <p>{{ item.detail }}</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel panel-hot">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">热点个股</h3>
+          <p class="section-subtitle">改成滚动方式直接展示更多活跃个股，优先看涨跌幅、成交额和换手共振。</p>
+        </div>
+      </div>
+      <div class="stock-list stock-scroll">
+        <button
+          v-for="stock in hotStocks"
+          :key="stock.code"
+          class="stock-card"
+          @click="navigateToStock(stock.code)"
+        >
+          <div class="stock-top">
+            <div>
+              <div class="stock-name">{{ stock.name }}</div>
+              <div class="stock-code">{{ stock.code }}</div>
+            </div>
+            <span class="stock-tag" :class="stock.changePercent >= 0 ? 'up' : 'down'">
+              {{ formatPercent(stock.changePercent) }}%
+            </span>
+          </div>
+          <div class="stock-price">{{ formatPrice(stock.price) }}</div>
+          <div class="stock-meta">
+            <span>成交额 {{ formatAmount(stock.amount) }}</span>
+            <span>换手 {{ stock.turnover ? stock.turnover.toFixed(2) + '%' : '--' }}</span>
+          </div>
+        </button>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">{{ currentMarket === 'a' ? '板块热度' : '观察主题' }}</h3>
+          <p class="section-subtitle">
+            {{ currentMarket === 'a' ? '按热度排序显示行业方向，优先观察涨幅、成交额和领涨股同步走强的板块。' : '按港股 / 美股主线菜单显示观察主题，优先看龙头和次强是否一起扩散。' }}
+          </p>
+        </div>
+        <button v-if="sectorMoreAvailable && currentMarket === 'a'" class="panel-link more-link" @click="sectorExpanded = !sectorExpanded">
+          {{ sectorExpanded ? '收起' : '更多' }}
+        </button>
+      </div>
+      <div v-if="displaySectorLeaders.length" class="sector-list">
+        <button
+          v-for="sector in displaySectorLeaders"
+          :key="sector.code"
+          class="sector-row"
+          @click="sector.leadingCode ? navigateToStock(sector.leadingCode) : null"
+        >
+          <div class="sector-main">
+            <div class="sector-name-row">
+              <div class="sector-name">{{ sector.name }}</div>
+              <span class="sector-heat">{{ sector.companyCount || '--' }} 家</span>
+            </div>
+            <div class="sector-leader">领涨股 {{ sector.leadingStock || '待同步' }}</div>
+            <div class="sector-meta">
+              <span>均价 {{ sector.averagePrice ? formatPrice(sector.averagePrice) : '--' }}</span>
+              <span>成交额 {{ sector.amount ? formatAmount(sector.amount) : '--' }}</span>
+            </div>
+          </div>
+          <div class="sector-right">
+            <span class="sector-change" :class="sector.changePercent >= 0 ? 'up' : 'down'">
+              {{ formatPercent(sector.changePercent) }}%
+            </span>
+            <span class="sector-volume">{{ formatVolume(sector.volume) }}</span>
+          </div>
+        </button>
+      </div>
+      <div v-else class="panel-empty">{{ currentMarket === 'a' ? '当前数据源未返回板块热度，已保留展示位。' : '当前海外主题还未同步到足够样本。' }}</div>
+    </article>
+
+    <article class="panel panel-news">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">新闻脉冲</h3>
+          <p class="section-subtitle">只显示当天消息，并把政策、社会面、重要会议和国际局势一起汇总到这里。</p>
+        </div>
+      </div>
+      <div v-if="todayNewsItems.length" class="news-list news-scroll">
+        <a
+          v-for="item in todayNewsItems"
+          :key="item.id"
+          :href="item.url"
+          class="news-item"
+          target="_blank"
+          rel="noopener"
+        >
+          <div class="news-item-head">
+            <span class="news-source">{{ item.source || '快讯' }}</span>
+            <span class="news-time">{{ formatNewsTime(item.publishTime) }}</span>
+          </div>
+          <div class="news-title">{{ item.title }}</div>
+          <div class="news-summary">{{ item.content }}</div>
+        </a>
+      </div>
+      <div v-else class="panel-empty">暂无当天新闻数据。</div>
+    </article>
+  </section>
+</div>

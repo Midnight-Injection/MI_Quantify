@@ -1,0 +1,29 @@
+<div class="sector-rank">
+  <div class="sector-tabs">
+    <button class="sector-tab" :class="{ active: activeTab === 'industry' }" @click="activeTab = 'industry'; $emit('switch', 'industry')">行业板块</button>
+    <button class="sector-tab" :class="{ active: activeTab === 'concept' }" @click="activeTab = 'concept'; $emit('switch', 'concept')">概念板块</button>
+  </div>
+  <div v-if="!sectors.length" class="empty-hint">暂无板块数据</div>
+  <table v-else>
+    <thead>
+      <tr>
+        <th class="col-rank">#</th>
+        <th class="col-name">板块名称</th>
+        <th class="col-change">涨跌幅</th>
+        <th class="col-lead">领涨股</th>
+        <th class="col-volume">成交量</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr v-for="(s, i) in sectors" :key="s.code || i" class="sector-row">
+        <td class="col-rank">{{ i + 1 }}</td>
+        <td class="col-name">{{ s.name }}</td>
+        <td class="col-change" :class="s.changePercent >= 0 ? 'up' : 'down'">
+          {{ formatPercent(s.changePercent) }}%
+        </td>
+        <td class="col-lead">{{ s.leadingStock || '—' }}</td>
+        <td class="col-volume">{{ formatVolume(s.volume) }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

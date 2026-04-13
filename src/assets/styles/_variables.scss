@@ -1,0 +1,69 @@
+$bg-primary: #f3efe8;
+$bg-secondary: #ebe4da;
+$bg-card: rgba(255, 255, 255, 0.82);
+$bg-card-hover: #faf6ef;
+$bg-input: #f7f2ea;
+$bg-glass: rgba(255, 255, 255, 0.7);
+$bg-glass-heavy: rgba(255, 255, 255, 0.92);
+$bg-sidebar: #101a26;
+$bg-header: rgba(244, 240, 232, 0.84);
+$border-color: rgba(29, 38, 55, 0.08);
+$border-light: rgba(29, 38, 55, 0.05);
+$border-glass: rgba(255, 255, 255, 0.35);
+$border-accent-glow: rgba(9, 93, 149, 0.18);
+
+$text-primary: #1d2637;
+$text-secondary: #526173;
+$text-muted: #8894a2;
+
+$color-up: #e84057;
+$color-down: #2ebd6e;
+$color-flat: #9ba4b8;
+
+$color-accent: #095d95;
+$color-accent-hover: #0a4b78;
+$color-accent-soft: rgba(9, 93, 149, 0.08);
+$color-warning: #f5a623;
+$color-success: #2ebd6e;
+$color-danger: #e84057;
+$color-info: #5277ff;
+
+$color-sentiment-positive: #2ebd6e;
+$color-sentiment-negative: #e84057;
+$color-sentiment-neutral: #f5a623;
+
+$gradient-accent: linear-gradient(135deg, #095d95, #1e73ab);
+$gradient-up: linear-gradient(135deg, #e84057, #ff6b7a);
+$gradient-down: linear-gradient(135deg, #2ebd6e, #4fd98a);
+$gradient-glass: linear-gradient(135deg, rgba(9, 93, 149, 0.03), rgba(183, 149, 95, 0.06));
+$gradient-sidebar: linear-gradient(180deg, #101a26, #0f141d);
+
+$font-family: 'IBM Plex Sans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+$font-display: 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
+$font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
+
+$radius-xs: 6px;
+$radius-sm: 8px;
+$radius-md: 12px;
+$radius-lg: 16px;
+$radius-xl: 20px;
+$radius-2xl: 24px;
+
+$sidebar-width: 72px;
+$sidebar-expanded-width: 264px;
+$header-height: 56px;
+
+$shadow-sm: 0 10px 20px rgba(29, 38, 55, 0.04);
+$shadow-md: 0 18px 40px rgba(29, 38, 55, 0.06);
+$shadow-lg: 0 28px 70px rgba(29, 38, 55, 0.08);
+$shadow-glow: 0 0 30px rgba(9, 93, 149, 0.08);
+$shadow-card: 0 12px 24px rgba(29, 38, 55, 0.04);
+
+$blur-sm: blur(8px);
+$blur-md: blur(16px);
+$blur-lg: blur(24px);
+
+$transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+$transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+$transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+$transition-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);

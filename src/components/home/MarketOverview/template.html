@@ -1,0 +1,45 @@
+<div class="market-overview">
+  <div class="section-header">
+    <h3 class="section-title">大盘指数</h3>
+    <div class="market-tabs">
+      <button
+        v-for="tab in marketTabs"
+        :key="tab.value"
+        class="market-tab"
+        :class="{ active: currentMarket === tab.value }"
+        @click="switchMarket(tab.value)"
+      >{{ tab.label }}</button>
+    </div>
+  </div>
+  <div v-if="loading" class="loading-bar">
+    <span class="spinner"></span>
+    <span>加载中...</span>
+  </div>
+  <div v-else-if="indices.length" class="indices-grid">
+    <div
+      v-for="(idx, i) in indices"
+      :key="idx.code"
+      class="index-card"
+      :class="[idx.change >= 0 ? 'up' : 'down', `delay-${i}`]"
+    >
+      <div class="index-card-bg" :class="idx.change >= 0 ? 'bg-up' : 'bg-down'"></div>
+      <div class="index-card-content">
+        <div class="index-top">
+          <span class="index-name">{{ idx.name }}</span>
+          <span class="index-badge" :class="idx.change >= 0 ? 'badge-up' : 'badge-down'">
+            {{ formatPercent(idx.changePercent) }}%
+          </span>
+        </div>
+        <div class="index-price">{{ formatPrice(idx.price) }}</div>
+        <div class="index-bottom">
+          <span class="index-change-val">{{ idx.change >= 0 ? '+' : '' }}{{ formatPrice(idx.change) }}</span>
+          <span v-if="idx.volume" class="index-vol">Vol {{ formatVolume(idx.volume) }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div v-else class="empty-hint">
+    <span>暂无数据</span>
+    <button class="btn-primary btn-sm" @click="$emit('refresh')">刷新</button>
+  </div>
+</div>

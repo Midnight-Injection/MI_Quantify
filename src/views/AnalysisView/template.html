@@ -1,0 +1,232 @@
+<div class="page analysis-page">
+  <div class="page-shell analysis-shell">
+    <section class="analysis-hero">
+      <div class="analysis-title-area">
+        <div>
+          <h1 class="page-title">个股分析</h1>
+          <p class="hero-copy">只围绕当前股票做诊断。选中股票后直接执行 AI 分析，输出买卖区间、消息刺激、政策与国际影响和未来预判。</p>
+        </div>
+        <span v-if="currentStock" class="stock-badge">{{ currentStock.name }} · {{ currentStock.code }}</span>
+      </div>
+
+      <div class="input-group">
+        <stock-search-input
+          v-model="stockQuery"
+          class="stock-input"
+          placeholder="输入股票名称或代码"
+          @select="handleSelectStock"
+          @enter="runQuery()"
+        />
+        <select class="input select-input" v-model="period">
+          <option value="daily">日线</option>
+          <option value="weekly">周线</option>
+          <option value="monthly">月线</option>
+          <option value="5min">5分钟</option>
+          <option value="15min">15分钟</option>
+          <option value="30min">30分钟</option>
+          <option value="60min">60分钟</option>
+        </select>
+        <select class="input select-input" v-model="adjust">
+          <option value="qfq">前复权</option>
+          <option value="hfq">后复权</option>
+          <option value="">不复权</option>
+        </select>
+        <select class="input select-input" v-model="klineLimit">
+          <option :value="60">近60根</option>
+          <option :value="120">近120根</option>
+          <option :value="250">近250根</option>
+        </select>
+        <button class="btn-primary" :disabled="loading || diagnosisLoading" @click="runQuery()">
+          {{ loading || diagnosisLoading ? '分析中...' : '执行分析' }}
+        </button>
+      </div>
+    </section>
+
+    <section v-if="currentQuote" class="stock-info-bar">
+      <div>
+        <div class="stock-name">{{ currentQuote.name }}</div>
+        <div class="stock-code">{{ currentQuote.code }} · {{ profile.board }} · 最近分析 {{ formatSyncTime(lastAnalysisAt) }}</div>
+      </div>
+      <div class="quote-side">
+        <span class="stock-price" :class="currentQuote.change >= 0 ? 'up' : 'down'">{{ formatPrice(currentQuote.price) }}</span>
+        <span class="stock-change" :class="currentQuote.change >= 0 ? 'up' : 'down'">{{ formatPercent(currentQuote.changePercent) }}%</span>
+      </div>
+    </section>
+
+    <section class="analysis-summary-grid">
+      <article v-for="card in summaryCards" :key="card.label" class="summary-card">
+        <span>{{ card.label }}</span>
+        <strong>{{ card.value }}</strong>
+        <small>{{ card.hint }}</small>
+      </article>
+    </section>
+
+    <section class="diagnosis-panel">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">AI 诊断结论</h3>
+          <p class="section-subtitle">只保留和当前个股直接相关的结论与执行建议。</p>
+        </div>
+        <div class="panel-meta">
+          <span class="meta-chip">{{ analysisAutoEnabled ? '自动跟踪' : '手动分析' }}</span>
+          <span v-if="diagnosis" class="meta-chip accent">{{ diagnosis.recommendation }} / {{ diagnosis.confidence }}%</span>
+        </div>
+      </div>
+
+      <div v-if="analysisError" class="analysis-error">{{ analysisError }}</div>
+
+      <div v-if="diagnosis" class="diagnosis-body">
+        <div class="diagnosis-headline-row">
+          <div>
+            <div class="diagnosis-headline">{{ diagnosis.recommendation }}</div>
+            <p class="diagnosis-summary">{{ diagnosis.summary }}</p>
+          </div>
+          <div class="diagnosis-score-row">
+            <div class="diagnosis-score">
+              <span>趋势判断</span>
+              <strong>{{ diagnosis.prediction }}</strong>
+            </div>
+            <div class="diagnosis-score">
+              <span>风险等级</span>
+              <strong>{{ diagnosis.riskLevel }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="diagnosis-card-grid">
+          <article
+            v-for="card in diagnosisCards"
+            :key="card.label"
+            class="diagnosis-card"
+            :class="card.tone"
+          >
+            <span>{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+            <p>{{ card.hint }}</p>
+          </article>
+        </div>
+      </div>
+
+      <div v-else-if="loading || diagnosisLoading" class="diagnosis-loading">
+        <span class="spinner"></span>
+        <span>正在整理价格、消息、政策和国际影响...</span>
+      </div>
+
+      <div v-else class="panel-empty">输入并选择股票后，页面会直接执行 AI 分析。</div>
+    </section>
+
+    <section class="analysis-content-grid">
+      <article class="context-panel">
+        <div class="panel-head">
+          <div>
+            <h3 class="section-title">消息面刺激</h3>
+            <p class="section-subtitle">只看与当前个股更直接相关的公司消息、公告和经营进展。</p>
+          </div>
+        </div>
+        <div v-if="stockStimuli.length" class="news-list">
+          <div v-for="item in stockStimuli" :key="item.title + item.publishTime" class="news-item">
+            <div class="news-meta">
+              <span>{{ item.source || '个股消息' }}</span>
+              <span>{{ formatShortTime(item.publishTime) }}</span>
+            </div>
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.summary || item.content || '等待补充更多个股催化内容。' }}</p>
+          </div>
+        </div>
+        <div v-else class="panel-empty">当前未抓到更直接的个股消息。</div>
+      </article>
+
+      <article class="context-panel">
+        <div class="panel-head">
+          <div>
+            <h3 class="section-title">政策 / 国际消息</h3>
+            <p class="section-subtitle">聚合会影响该股风险偏好、行业预期或资金方向的外部刺激。</p>
+          </div>
+        </div>
+        <div v-if="macroStimuli.length" class="news-list">
+          <div v-for="item in macroStimuli" :key="item.title + item.publishTime" class="news-item">
+            <div class="news-meta">
+              <span>{{ item.source || '市场消息' }}</span>
+              <span>{{ formatShortTime(item.publishTime) }}</span>
+            </div>
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.summary || item.content || '等待补充更多政策与国际消息。' }}</p>
+          </div>
+        </div>
+        <div v-else class="panel-empty">当前未抓到新的政策或国际刺激消息。</div>
+      </article>
+    </section>
+
+    <section class="impact-grid">
+      <article class="context-panel">
+        <div class="panel-head">
+          <div>
+            <h3 class="section-title">未来影响</h3>
+            <p class="section-subtitle">把短中期更值得盯的路径、价格预期和概率提示收在这里。</p>
+          </div>
+        </div>
+        <div v-if="futureScenarios.length" class="scenario-list">
+          <div v-for="item in futureScenarios" :key="item.label" class="scenario-item">
+            <div>
+              <span>{{ item.label }}</span>
+              <strong>{{ formatPrice(item.expectedPrice) }}</strong>
+            </div>
+            <p>{{ item.probabilityHint }}</p>
+          </div>
+        </div>
+        <div v-else class="panel-empty">完成分析后会显示未来价格情景。</div>
+      </article>
+
+      <article class="context-panel">
+        <div class="panel-head">
+          <div>
+            <h3 class="section-title">利多线索</h3>
+            <p class="section-subtitle">当前更可能推动个股继续发酵的因素。</p>
+          </div>
+        </div>
+        <ul v-if="catalystBullets.length" class="bullet-list">
+          <li v-for="item in catalystBullets" :key="item">{{ item }}</li>
+        </ul>
+        <div v-else class="panel-empty">完成分析后会显示利多线索。</div>
+      </article>
+
+      <article class="context-panel">
+        <div class="panel-head">
+          <div>
+            <h3 class="section-title">风险与影响</h3>
+            <p class="section-subtitle">把需要防守的风险项和外部影响集中显示。</p>
+          </div>
+        </div>
+        <div class="dual-bullets">
+          <ul v-if="riskBullets.length" class="bullet-list danger">
+            <li v-for="item in riskBullets" :key="item">{{ item }}</li>
+          </ul>
+          <ul v-if="impactBullets.length" class="bullet-list">
+            <li v-for="item in impactBullets" :key="item">{{ item }}</li>
+          </ul>
+          <div v-if="!riskBullets.length && !impactBullets.length" class="panel-empty">完成分析后会显示风险与外部影响。</div>
+        </div>
+      </article>
+    </section>
+
+    <section class="chart-card">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">K线结构</h3>
+          <p class="section-subtitle">当前分析所依据的价格结构、趋势与波动区间。</p>
+        </div>
+      </div>
+      <div v-if="!klineData.length && !loading && !diagnosisLoading" class="empty-chart">
+        <div class="empty-chart-inner">
+          <span class="empty-chart-text">请输入股票名称或代码并执行分析</span>
+          <span class="empty-chart-sub">支持 A股、港股、美股代码</span>
+        </div>
+      </div>
+      <div v-else-if="loading || diagnosisLoading" class="loading-chart">
+        <span class="spinner"></span>
+        <span>正在加载K线与诊断数据...</span>
+      </div>
+      <kline-chart v-else :key="klineChartKey" :data="klineData" :height="520" />
+    </section>
+  </div>
+</div>

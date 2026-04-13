@@ -1,0 +1,34 @@
+<div class="prompt-editor">
+  <div class="prompt-tabs">
+    <button
+      v-for="cat in categories"
+      :key="cat.key"
+      class="prompt-tab"
+      :class="{ active: activeCategory === cat.key }"
+      @click="activeCategory = cat.key"
+    >
+      {{ cat.label }}
+    </button>
+  </div>
+  <div class="prompt-list">
+    <div v-for="tpl in filteredTemplates" :key="tpl.id" class="prompt-item">
+      <div class="prompt-item-header">
+        <span class="prompt-name">{{ tpl.name }}</span>
+        <span v-if="tpl.builtin" class="tag tag-info">内置</span>
+        <span v-else class="tag tag-neutral">自定义</span>
+      </div>
+      <textarea
+        class="prompt-textarea"
+        :value="tpl.content"
+        rows="14"
+        @change="$emit('update', tpl.id, $event.target.value)"
+      ></textarea>
+      <div class="prompt-item-footer">
+        <span class="prompt-vars">变量: {{ tpl.variables.join(', ') }}</span>
+        <div class="prompt-actions">
+          <button v-if="tpl.builtin" class="btn-ghost btn-sm" @click="$emit('reset', tpl.id)">重置默认</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,12 @@
+<div class="settings-section">
+  <div class="section-header" @click="toggle">
+    <div class="section-title-row">
+      <span class="section-icon">{{ icon }}</span>
+      <h3 class="section-heading">{{ title }}</h3>
+    </div>
+    <span class="section-toggle">{{ expanded ? '▼' : '▶' }}</span>
+  </div>
+  <div v-show="expanded" class="section-body">
+    <slot />
+  </div>
+</div>

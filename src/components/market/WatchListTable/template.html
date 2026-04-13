@@ -1,0 +1,33 @@
+<div class="watchlist-table">
+  <div v-if="!quotes.length" class="empty-hint">
+    <span>暂无自选股，请在上方搜索添加</span>
+  </div>
+  <table v-else>
+    <thead>
+      <tr>
+        <th class="col-code">代码</th>
+        <th class="col-name">名称</th>
+        <th class="col-price">最新价</th>
+        <th class="col-change">涨跌幅</th>
+        <th class="col-volume">成交量</th>
+        <th class="col-amount">成交额</th>
+        <th class="col-action">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr v-for="q in quotes" :key="q.code" class="quote-row" @click="$emit('select', q.code)">
+        <td class="col-code">{{ q.code }}</td>
+        <td class="col-name">{{ q.name }}</td>
+        <td class="col-price" :class="q.change >= 0 ? 'up' : 'down'">{{ formatPrice(q.price) }}</td>
+        <td class="col-change" :class="q.change >= 0 ? 'up' : 'down'">
+          {{ formatPercent(q.changePercent) }}%
+        </td>
+        <td class="col-volume">{{ formatVolume(q.volume) }}</td>
+        <td class="col-amount">{{ formatAmount(q.amount) }}</td>
+        <td class="col-action">
+          <button class="btn-ghost btn-sm" @click.stop="$emit('remove', q.code)">✕</button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>

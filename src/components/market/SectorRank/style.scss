@@ -1,0 +1,98 @@
+.sector-rank {
+  overflow-x: auto;
+}
+
+.sector-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  background: $bg-glass;
+  border-radius: $radius-sm;
+  padding: 3px;
+}
+
+.sector-tab {
+  padding: 6px 14px;
+  font-size: 13px;
+  color: $text-secondary;
+  background: transparent;
+  border: none;
+  border-radius: $radius-xs;
+  cursor: pointer;
+  transition: all $transition-fast;
+  font-weight: 500;
+
+  &.active {
+    background: $color-accent-soft;
+    color: $color-accent;
+  }
+
+  &:hover:not(.active) {
+    color: $text-primary;
+  }
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead th {
+  padding: 10px 12px;
+  text-align: left;
+  color: $text-muted;
+  font-weight: 500;
+  font-size: 11px;
+  border-bottom: 1px solid $border-light;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+tbody tr {
+  transition: background $transition-fast;
+  &:hover { background: rgba($text-primary, 0.03); }
+}
+
+tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba($border-light, 0.4);
+}
+
+.col-rank {
+  width: 36px;
+  color: $text-muted;
+  font-family: $font-mono;
+  font-size: 12px;
+}
+
+.col-name {
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.col-change {
+  font-family: $font-mono;
+  font-weight: 600;
+  &.up { color: $color-up; }
+  &.down { color: $color-down; }
+}
+
+.col-lead {
+  color: $text-secondary;
+  font-size: 12px;
+}
+
+.col-volume {
+  font-family: $font-mono;
+  color: $text-secondary;
+  text-align: right;
+  font-size: 12px;
+}
+
+.empty-hint {
+  @include card-glass;
+  @include flex-center;
+  padding: 36px;
+  color: $text-muted;
+}

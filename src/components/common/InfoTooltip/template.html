@@ -1,0 +1,14 @@
+<span
+  ref="rootRef"
+  class="info-tooltip"
+  :class="tooltipClasses"
+  @mouseenter="openTooltip"
+  @mouseleave="closeTooltip"
+>
+  <button class="info-trigger" type="button" aria-label="查看说明" @focus="openTooltip" @blur="closeTooltip">?</button>
+  <span ref="bubbleRef" class="info-bubble">
+    <strong>{{ title }}</strong>
+    <span>{{ description }}</span>
+    <small v-if="range">参考范围：{{ range }}</small>
+  </span>
+</span>

@@ -1,0 +1,84 @@
+import { invoke } from '@tauri-apps/api/core'
+import type { LlmProviderStrategy } from '@/types/strategy-pattern'
+
+export class OpenAiCompatibleProvider implements LlmProviderStrategy {
+  id: string
+  name: string
+  enabled: boolean
+  apiUrl: string
+  apiKey: string
+  model: string
+  maxTokens: number
+  temperature: number
+
+  constructor(opts: {
+    id: string; name: string; enabled: boolean; apiUrl: string;
+    apiKey: string; model: string; maxTokens: number; temperature: number;
+  }) {
+    this.id = opts.id
+    this.name = opts.name
+    this.enabled = opts.enabled
+    this.apiUrl = opts.apiUrl
+    this.apiKey = opts.apiKey
+    this.model = opts.model
+    this.maxTokens = opts.maxTokens
+    this.temperature = opts.temperature
+  }
+
+  async chat(messages: Array<{ role: string; content: string }>): Promise<string> {
+    return invoke<string>('ai_chat', {
+      apiUrl: this.apiUrl,
+      apiKey: this.apiKey,
+      model: this.model,
+      messages,
+      temperature: this.temperature,
+      maxTokens: this.maxTokens,
+    })
+  }
+
+  async chatJson<T>(messages: Array<{ role: string; content: string }>): Promise<T> {
+    const content = await this.chat(messages)
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[1] || jsonMatch[0])
+    }
+    return JSON.parse(content)
+  }
+
+  async testConnection(): Promise<boolean> {
+    try {
+      await invoke<string>('test_ai_connection', {
+        apiUrl: this.apiUrl,
+        apiKey: this.apiKey,
+        model: this.model,
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
+export class LlmProviderFactory {
+  private static registry = new Map<string, new (opts: any) => LlmProviderStrategy>()
+
+  static register(id: string, providerClass: new (opts: any) => LlmProviderStrategy) {
+    LlmProviderFactory.registry.set(id, providerClass)
+  }
+
+  static create(opts: {
+    id: string; name: string; enabled: boolean; apiUrl: string;
+    apiKey: string; model: string; maxTokens: number; temperature: number;
+  }): LlmProviderStrategy {
+    const ProviderClass = LlmProviderFactory.registry.get(opts.id) || OpenAiCompatibleProvider
+    return new ProviderClass(opts)
+  }
+}
+
+LlmProviderFactory.register('deepseek', OpenAiCompatibleProvider)
+LlmProviderFactory.register('zhipu', OpenAiCompatibleProvider)
+LlmProviderFactory.register('qwen', OpenAiCompatibleProvider)
+LlmProviderFactory.register('chatgpt', OpenAiCompatibleProvider)
+LlmProviderFactory.register('doubao', OpenAiCompatibleProvider)
+LlmProviderFactory.register('moonshot', OpenAiCompatibleProvider)
+LlmProviderFactory.register('custom', OpenAiCompatibleProvider)

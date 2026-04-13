@@ -1,0 +1,180 @@
+.market-overview {
+  margin-bottom: 20px;
+}
+
+.section-header {
+  @include flex-between;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.market-tabs {
+  display: flex;
+  background: $bg-input;
+  border-radius: $radius-sm;
+  padding: 3px;
+  border: 1px solid $border-light;
+}
+
+.market-tab {
+  padding: 5px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: $text-muted;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    color: $text-secondary;
+  }
+
+  &.active {
+    background: $bg-card;
+    color: $text-primary;
+    box-shadow: $shadow-sm;
+  }
+}
+
+.loading-bar {
+  @include card-glass;
+  @include flex-center;
+  padding: 28px;
+  gap: 10px;
+  color: $text-muted;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid $border-color;
+  border-top-color: $color-accent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.indices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.index-card {
+  @include card-glass;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  transition: all $transition-normal;
+  cursor: default;
+
+  &:hover {
+    box-shadow: $shadow-md;
+    transform: translateY(-3px);
+  }
+}
+
+.index-card-bg {
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  transition: opacity $transition-fast;
+
+  &.bg-up {
+    background: radial-gradient(ellipse at top right, $color-up, transparent 70%);
+  }
+  &.bg-down {
+    background: radial-gradient(ellipse at top right, $color-down, transparent 70%);
+  }
+
+  .index-card:hover & {
+    opacity: 0.08;
+  }
+}
+
+.index-card-content {
+  position: relative;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.index-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.index-name {
+  font-size: 12px;
+  color: $text-secondary;
+  font-weight: 500;
+}
+
+.index-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: $radius-xs;
+  font-family: $font-mono;
+
+  &.badge-up {
+    background: rgba($color-up, 0.12);
+    color: $color-up;
+  }
+  &.badge-down {
+    background: rgba($color-down, 0.12);
+    color: $color-down;
+  }
+}
+
+.index-price {
+  font-size: 26px;
+  font-weight: 700;
+  font-family: $font-mono;
+  letter-spacing: -0.03em;
+  color: $text-primary;
+
+  .up & { color: $color-up; }
+  .down & { color: $color-down; }
+}
+
+.index-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.index-change-val {
+  font-size: 12px;
+  font-family: $font-mono;
+  font-weight: 600;
+
+  .up & { color: rgba($color-up, 0.75); }
+  .down & { color: rgba($color-down, 0.75); }
+}
+
+.index-vol {
+  font-size: 11px;
+  color: $text-muted;
+  font-family: $font-mono;
+}
+
+.empty-hint {
+  @include card-glass;
+  @include flex-center;
+  padding: 28px;
+  gap: 12px;
+  color: $text-muted;
+}

@@ -1,0 +1,44 @@
+<header class="header">
+  <div class="header-left">
+    <h2 class="page-title-text">{{ pageTitle }}</h2>
+  </div>
+  <div class="header-center">
+    <div class="search-box">
+      <Search :size="14" class="search-icon" />
+      <stock-search-input
+        v-model="searchQuery"
+        placeholder="搜索股票代码/名称..."
+        @select="handleSelectStock"
+        @enter="handleSearch"
+      />
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="header-action" title="刷新数据" @click="handleRefresh">
+      <RefreshCw :size="16" />
+    </div>
+    <div class="header-action has-badge" :class="{ active: showNotifPanel }" @click="toggleNotifPanel">
+      <Bell :size="16" />
+      <span v-if="unreadCount" class="badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+    </div>
+    <router-link to="/settings" class="header-action" title="设置">
+      <Settings :size="16" />
+    </router-link>
+  </div>
+  <transition name="notif">
+    <div v-if="showNotifPanel" class="notif-panel">
+      <div class="notif-header">
+        <span class="notif-title">通知中心</span>
+        <button class="notif-close" @click="showNotifPanel = false"><X :size="14" /></button>
+      </div>
+      <div v-if="!notifications.length" class="notif-empty">暂无通知</div>
+      <div v-else class="notif-list">
+        <div v-for="(n, i) in notifications.slice(0, 20)" :key="i" class="notif-item">
+          <div class="notif-item-title">{{ n.title }}</div>
+          <div class="notif-item-body">{{ n.body }}</div>
+          <div class="notif-item-time">{{ new Date(n.time).toLocaleTimeString() }}</div>
+        </div>
+      </div>
+    </div>
+  </transition>
+</header>

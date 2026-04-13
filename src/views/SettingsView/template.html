@@ -1,0 +1,328 @@
+<div class="page settings-page">
+  <h1 class="page-title">设置</h1>
+
+  <div class="settings-tabs">
+    <button class="settings-tab" :class="{ active: activeTab === 'ai' }" @click="activeTab = 'ai'">
+      <BrainCircuit :size="15" class="tab-svg" />
+      <span>AI 模型</span>
+    </button>
+    <button class="settings-tab" :class="{ active: activeTab === 'datasource' }" @click="activeTab = 'datasource'">
+      <Database :size="15" class="tab-svg" />
+      <span>数据源</span>
+    </button>
+    <button class="settings-tab" :class="{ active: activeTab === 'prompts' }" @click="activeTab = 'prompts'">
+      <FileText :size="15" class="tab-svg" />
+      <span>提示词</span>
+    </button>
+    <button class="settings-tab" :class="{ active: activeTab === 'notify' }" @click="activeTab = 'notify'">
+      <Bell :size="15" class="tab-svg" />
+      <span>通知</span>
+    </button>
+    <button class="settings-tab" :class="{ active: activeTab === 'appearance' }" @click="activeTab = 'appearance'">
+      <Palette :size="15" class="tab-svg" />
+      <span>外观</span>
+    </button>
+  </div>
+
+  <div v-if="activeTab === 'ai'" class="tab-content">
+    <p class="section-desc">配置 AI 服务商用于新闻情绪分析、策略评估和智能推荐。所有服务商均使用 OpenAI 兼容 API 格式。</p>
+    <div class="data-source-options">
+      <div class="option-row">
+        <span class="option-label">本机模型配置</span>
+        <button class="btn-primary" :disabled="importingLocal" @click="handleImportLocalProvider">
+          {{ importingLocal ? '导入中...' : '导入 OpenCode / 智谱配置' }}
+        </button>
+      </div>
+      <div v-if="localImportResult" class="section-desc">{{ localImportResult }}</div>
+      <div class="option-row">
+        <span class="option-label">Agent 最大研究步数</span>
+        <select class="input select-input" :value="settingsStore.settings.ai.diagnosis.maxSteps" @change="handleDiagnosisMaxSteps">
+          <option :value="4">4 步</option>
+          <option :value="5">5 步</option>
+          <option :value="6">6 步</option>
+          <option :value="7">7 步</option>
+        </select>
+      </div>
+      <div class="option-row">
+        <span class="option-label">显示完整轨迹</span>
+        <label class="switch">
+          <input type="checkbox" :checked="settingsStore.settings.ai.diagnosis.traceVerbose" @change="handleDiagnosisToggle('traceVerbose', $event)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="option-row">
+        <span class="option-label">启动时自动导入本机配置</span>
+        <label class="switch">
+          <input type="checkbox" :checked="settingsStore.settings.ai.diagnosis.autoImportLocalProvider" @change="handleDiagnosisToggle('autoImportLocalProvider', $event)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    <p class="section-desc">自动诊断开关控制的是“数据刷新后是否自动调用 AI”。关闭后页面仍然可以手动点按钮触发，不会偷偷跑模型。</p>
+    <div class="option-list auto-run-list">
+      <div class="option-row option-row-rich">
+        <div class="option-copy">
+          <span class="option-label">首页市场点评自动诊断</span>
+          <small>指数、板块、新闻和资金流刷新后，自动更新首页的市场/政策/未来预期点评。</small>
+        </div>
+        <label class="switch">
+          <input type="checkbox" :checked="settingsStore.settings.ai.autoRun.homeDigest" @change="handleAiAutoRunToggle('homeDigest', $event)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="option-row option-row-rich">
+        <div class="option-copy">
+          <span class="option-label">行情中心自动解读</span>
+          <small>个股列表、板块热度和新闻刷新后，自动重算行情页 AI 解读。</small>
+        </div>
+        <label class="switch">
+          <input type="checkbox" :checked="settingsStore.settings.ai.autoRun.marketDigest" @change="handleAiAutoRunToggle('marketDigest', $event)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="option-row option-row-rich">
+        <div class="option-copy">
+          <span class="option-label">技术分析自动解读</span>
+          <small>K线、个股报价和行业环境刷新后，自动更新技术分析页的 AI 快评。</small>
+        </div>
+        <label class="switch">
+          <input type="checkbox" :checked="settingsStore.settings.ai.autoRun.analysisDigest" @change="handleAiAutoRunToggle('analysisDigest', $event)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="option-row option-row-rich">
+        <div class="option-copy">
+          <span class="option-label">个股详情自动诊股</span>
+          <small>行情和资讯刷新后自动复诊。这个最耗资源，默认保留手动，更适合重点盯盘时再打开。</small>
+        </div>
+        <label class="switch">
+          <input type="checkbox" :checked="settingsStore.settings.ai.autoRun.stockDetailDiagnosis" @change="handleAiAutoRunToggle('stockDetailDiagnosis', $event)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    <div class="provider-list">
+      <ai-provider-card
+        v-for="provider in settingsStore.settings.ai.providers"
+        :key="provider.id"
+        :provider="provider"
+        :is-active="settingsStore.settings.ai.activeProviderId === provider.id"
+        :testing="testingId === provider.id"
+        :testing-result="provider.id === testingId ? testingResult : ''"
+        @update="handleUpdateProvider"
+        @toggle-enabled="handleToggleEnabled"
+        @set-active="handleSetActive"
+        @test="handleTestConnection"
+      />
+    </div>
+    <p class="section-desc">搜索引擎用于补充个股相关的政策、国际与行业消息。AI 会优先使用“优先搜索源”，并按需要合并其他已启用的开源搜索源。</p>
+    <div class="provider-list">
+      <div v-for="provider in settingsStore.settings.ai.diagnosis.searchProviders" :key="provider.id" class="ai-provider-card" :class="{ active: settingsStore.settings.ai.diagnosis.activeSearchProviderId === provider.id }">
+        <div class="provider-header">
+          <div class="provider-info">
+            <span class="provider-name">{{ provider.name }}</span>
+            <span v-if="settingsStore.settings.ai.diagnosis.activeSearchProviderId === provider.id" class="tag tag-info">优先搜索源</span>
+            <span v-else-if="provider.enabled" class="tag tag-neutral">已启用</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" :checked="provider.enabled" @change="handleUpdateSearchProvider(provider.id, { enabled: $event.target.checked })" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="provider-body" v-if="provider.enabled">
+          <div class="field-grid">
+            <label>
+              <span>搜索地址</span>
+              <input class="input" :value="provider.apiUrl" :placeholder="provider.provider === 'zhipu' ? 'https://.../web_search' : provider.provider === 'searxng' ? 'http://127.0.0.1:8080/search' : provider.provider === 'yacy' ? 'http://127.0.0.1:8090/yacysearch.json' : 'https://...'" @change="handleUpdateSearchProvider(provider.id, { apiUrl: $event.target.value })" />
+            </label>
+            <label>
+              <span>访问密钥</span>
+              <input class="input" type="password" :value="provider.apiKey" :placeholder="provider.provider === 'zhipu' ? 'token' : '无则留空'" @change="handleUpdateSearchProvider(provider.id, { apiKey: $event.target.value })" />
+            </label>
+          </div>
+          <div class="provider-actions">
+            <button v-if="settingsStore.settings.ai.diagnosis.activeSearchProviderId !== provider.id" class="btn-primary" @click="handleSetActiveSearchProvider(provider.id)">设为优先源</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="activeTab === 'datasource'" class="tab-content">
+    <div class="data-source-options">
+      <div class="option-row">
+        <span class="option-label">刷新间隔</span>
+        <select class="input select-input" :value="settingsStore.settings.dataSource.refreshInterval" @change="handleRefreshInterval">
+          <option :value="3">3 秒</option>
+          <option :value="5">5 秒</option>
+          <option :value="10">10 秒</option>
+          <option :value="30">30 秒</option>
+          <option :value="60">60 秒</option>
+        </select>
+      </div>
+      <div class="option-row">
+        <span class="option-label">实时推送</span>
+        <label class="switch">
+          <input type="checkbox" :checked="settingsStore.settings.dataSource.realTimeEnabled" @change="handleRealTimeToggle" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    <data-source-table
+      :sources="settingsStore.settings.dataSource.sources"
+      @toggle="handleToggleDataSource"
+      @config="handleConfigDataSource"
+    />
+  </div>
+
+  <div v-if="activeTab === 'prompts'" class="tab-content">
+    <p class="section-desc">编辑 AI 分析策略的提示词模板。支持多因子分析、三重滤网、事件驱动等科学分析框架。</p>
+    <prompt-editor
+      :templates="strategyStore.promptTemplates"
+      @update="handleUpdatePrompt"
+      @reset="handleResetPrompt"
+    />
+  </div>
+
+  <div v-if="activeTab === 'notify'" class="tab-content">
+    <p class="section-desc">提醒规则已经下沉到个股详情页配置，关注与监听中心只负责统一管理。这里保留通知出口和微信桥接的基础设置。</p>
+    <div class="option-list">
+      <div class="option-row">
+        <span class="option-label">桌面通知</span>
+        <label class="switch">
+          <input type="checkbox" :checked="settingsStore.settings.notifications.desktopEnabled" @change="settingsStore.updateNotifications('desktopEnabled', $event.target.checked)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="notify-integration">
+      <h3 class="section-heading">微信通知与自动问股</h3>
+      <p class="section-desc">开启后会在软件启动时恢复监听。收到微信消息后会自动识别股票名称或代码，直接复用 AI 问股逻辑回复，不再暴露外部诊股接口。</p>
+      <div class="option-list">
+        <div class="option-row">
+          <span class="option-label">启用微信桥接</span>
+          <label class="switch">
+            <input type="checkbox" :checked="settingsStore.settings.integrations.openClaw.enabled" @change="handleUpdateOpenClaw('enabled', $event.target.checked)" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="channel-toolbar">
+        <div class="section-desc">价格提醒、涨跌停提醒等规则请在个股详情页直接选择提醒方式；这里仅维护微信登录、监听、自动回复和默认会话。</div>
+        <div class="channel-create-actions">
+          <button class="btn-primary" @click="addChannel">新增微信通道</button>
+        </div>
+      </div>
+
+      <div v-if="wechatChannels.length" class="channel-grid">
+        <article
+          v-for="channel in wechatChannels"
+          :key="channel.id"
+          class="channel-card"
+        >
+          <div class="channel-card-head">
+            <div>
+              <div class="channel-title-row">
+                <strong>{{ channel.name }}</strong>
+                <span class="tag tag-info">微信</span>
+                <span class="tag" :class="channelStatuses[channel.id]?.listening ? 'tag-positive' : channelStatuses[channel.id]?.loggedIn ? 'tag-neutral' : 'tag-down'">
+                  {{ channelStatuses[channel.id]?.status || '未登录' }}
+                </span>
+              </div>
+              <div class="section-desc channel-meta">
+                {{ channelStatuses[channel.id]?.accountId ? `账号 ${channelStatuses[channel.id]?.accountId}` : '当前还没有扫码绑定账号' }}
+              </div>
+            </div>
+            <div class="channel-actions">
+              <button class="btn-ghost" @click="startChannelLogin(channel)">扫码登录</button>
+              <button class="btn-ghost" @click="startChannelListener(channel.id)">开始监听</button>
+              <button class="btn-ghost" @click="stopChannelListener(channel.id)">停止监听</button>
+              <button class="btn-ghost" @click="logoutChannel(channel.id)">退出</button>
+              <button class="btn-ghost danger" @click="removeChannel(channel.id)">删除</button>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>通道名称</span>
+              <input class="input" :value="channel.name" @change="updateChannel(channel.id, 'name', $event.target.value)" />
+            </label>
+            <label>
+              <span>微信服务地址</span>
+              <input class="input" :value="channel.baseUrl" placeholder="https://ilinkai.weixin.qq.com" @change="updateChannel(channel.id, 'baseUrl', $event.target.value)" />
+            </label>
+            <label>
+              <span>默认推送会话 ID</span>
+              <input class="input" :value="channel.defaultPeerId" placeholder="收到过消息后填对方 user id" @change="updateChannel(channel.id, 'defaultPeerId', $event.target.value)" />
+            </label>
+            <label>
+              <span>通道开关</span>
+              <select class="input select-input full-width" :value="channel.enabled ? 'on' : 'off'" @change="updateChannel(channel.id, 'enabled', $event.target.value === 'on')">
+                <option value="on">启用</option>
+                <option value="off">停用</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="option-list compact-options">
+            <div class="option-row">
+              <span class="option-label">启动软件后自动连接并监听</span>
+              <label class="switch">
+                <input type="checkbox" :checked="channel.autoStart" @change="updateChannel(channel.id, 'autoStart', $event.target.checked)" />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="option-row">
+              <span class="option-label">收到微信消息后自动诊股回复</span>
+              <label class="switch">
+                <input type="checkbox" :checked="channel.autoReplyEnabled" @change="updateChannel(channel.id, 'autoReplyEnabled', $event.target.checked)" />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="option-row">
+              <span class="option-label">允许把个股提醒同步到该微信通道</span>
+              <label class="switch">
+                <input type="checkbox" :checked="channel.pushEnabled" @change="updateChannel(channel.id, 'pushEnabled', $event.target.checked)" />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div v-if="qrSessions[channel.id]?.qrcodeImg" class="qr-card">
+            <img :src="qrSessions[channel.id].qrcodeImg" alt="微信扫码登录二维码" />
+            <div class="section-desc">扫码状态：{{ qrSessions[channel.id].status }}</div>
+          </div>
+
+          <div v-if="channelStatuses[channel.id]?.error" class="channel-error">
+            {{ channelStatuses[channel.id].error }}
+          </div>
+        </article>
+      </div>
+      <div v-else class="section-desc">还没有微信通道。新增后可扫码登录、恢复监听，并把个股提醒同步到微信。</div>
+    </div>
+  </div>
+
+  <div v-if="activeTab === 'appearance'" class="tab-content">
+    <div class="option-list">
+      <div class="option-row">
+        <span class="option-label">主题</span>
+        <select class="input select-input" :value="settingsStore.settings.appearance.theme" @change="settingsStore.updateAppearance('theme', $event.target.value)">
+          <option value="dark">深色</option>
+          <option value="light">浅色</option>
+        </select>
+      </div>
+      <div class="option-row">
+        <span class="option-label">字体大小</span>
+        <select class="input select-input" :value="settingsStore.settings.appearance.fontSize" @change="settingsStore.updateAppearance('fontSize', parseInt($event.target.value))">
+          <option :value="12">12px</option>
+          <option :value="13">13px</option>
+          <option :value="14">14px</option>
+          <option :value="15">15px</option>
+          <option :value="16">16px</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>

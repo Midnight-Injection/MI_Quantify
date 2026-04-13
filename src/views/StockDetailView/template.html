@@ -1,0 +1,545 @@
+<div class="page stock-detail-page">
+  <div class="page-shell">
+    <div v-if="!stockInfo" class="detail-loading">
+      <span class="spinner"></span>
+      <span>正在同步个股数据...</span>
+    </div>
+
+    <div v-else class="detail-content">
+    <section class="detail-hero">
+      <div class="hero-left">
+        <button class="btn-back" @click="$router.back()">返回</button>
+        <div class="identity-card">
+          <span class="stock-kicker">{{ profile.board }}</span>
+          <div class="stock-row">
+            <h1 class="stock-name">{{ stockInfo.name }}</h1>
+            <span class="stock-code">{{ code }}</span>
+          </div>
+          <div class="price-row">
+            <span class="current-price" :class="stockInfo.change >= 0 ? 'up' : 'down'">
+              {{ formatPrice(stockInfo.price) }}
+            </span>
+            <span class="price-change" :class="stockInfo.change >= 0 ? 'up' : 'down'">
+              {{ stockInfo.change >= 0 ? '+' : '' }}{{ formatPrice(stockInfo.change) }}
+            </span>
+            <span class="price-percent" :class="stockInfo.change >= 0 ? 'up' : 'down'">
+              {{ formatPercent(stockInfo.changePercent) }}%
+            </span>
+          </div>
+          <p class="hero-summary">
+            今日区间 {{ formatPrice(stockInfo.low) }} - {{ formatPrice(stockInfo.high) }}，涨跌停参考 {{ formatPrice(limitPrices.limitDown) }} / {{ formatPrice(limitPrices.limitUp) }}。
+          </p>
+        </div>
+      </div>
+
+      <div class="hero-actions">
+        <button class="btn-ghost" @click="addToWatchlist">{{ isWatched ? '已在关注中' : '加入关注' }}</button>
+        <button class="btn-primary" :disabled="diagnosisLoading" @click="requestDiagnosis(true)">
+          {{ diagnosisLoading ? '诊股中...' : stockDiagnosisAutoEnabled ? '立即复诊' : 'AI 诊股' }}
+        </button>
+        <span class="mode-pill">{{ stockDiagnosisAutoEnabled ? '自动诊股' : '手动诊股' }}</span>
+      </div>
+    </section>
+
+    <section class="rail-shell rail-shell-metric">
+      <button class="rail-nav rail-nav-prev" :class="{ hidden: !metricCanPrev }" @click="scrollRail('metric', -1)">
+        ‹
+      </button>
+      <div class="metric-grid" ref="metricRail" @scroll="syncRailState('metric')" @wheel="handleRailWheel($event, 'metric')">
+      <article class="metric-card">
+        <div class="label-row">
+          <span class="metric-label">今开 / 昨收</span>
+          <info-tooltip placement="right" title="今开 / 昨收" description="今开是今天第一笔成交价，昨收是昨天收盘价。两者差距越大，说明开盘情绪越明显。" range="今开高于昨收偏强；低于昨收偏弱，还要结合后续量能确认。" />
+        </div>
+        <strong :class="['metric-value', metricValueClass(`${formatPrice(stockInfo.open)} / ${formatPrice(stockInfo.preClose)}`)]">{{ formatPrice(stockInfo.open) }} / {{ formatPrice(stockInfo.preClose) }}</strong>
+      </article>
+      <article class="metric-card">
+        <div class="label-row">
+          <span class="metric-label">振幅 / 换手</span>
+          <info-tooltip placement="right" title="振幅 / 换手" description="振幅反映今天上下波动有多大，换手反映筹码换手速度。" range="振幅过大说明博弈激烈；换手高于 8% 往往代表短线情绪更活跃。" />
+        </div>
+        <strong :class="['metric-value', metricValueClass(`${amplitude} / ${finance.turnover ? finance.turnover.toFixed(2) + '%' : '--'}`)]">{{ amplitude }} / {{ finance.turnover ? finance.turnover.toFixed(2) + '%' : '--' }}</strong>
+      </article>
+      <article class="metric-card">
+        <div class="label-row">
+          <span class="metric-label">成交量 / 成交额</span>
+          <info-tooltip placement="right" title="成交量 / 成交额" description="量看交易股数，额看资金规模。额能更直观看出有没有大资金参与。" range="放量上涨更健康；缩量上涨要小心冲高回落。" />
+        </div>
+        <strong :class="['metric-value', metricValueClass(`${fmtVol(stockInfo.volume)} / ${formatAmount(stockInfo.amount)}`)]">{{ fmtVol(stockInfo.volume) }} / {{ formatAmount(stockInfo.amount) }}</strong>
+      </article>
+      <article class="metric-card">
+        <div class="label-row">
+          <span class="metric-label">5日均量 / 20日均量</span>
+          <info-tooltip placement="right" title="5日均量 / 20日均量" description="短期和中期平均成交量，用来判断今天是放量还是缩量。" range="今天量能明显高于 5 日均量，多半说明资金更活跃。" />
+        </div>
+        <strong :class="['metric-value', metricValueClass(`${fmtVol(technical.avgVolume5)} / ${fmtVol(technical.avgVolume20)}`)]">{{ fmtVol(technical.avgVolume5) }} / {{ fmtVol(technical.avgVolume20) }}</strong>
+      </article>
+      <article class="metric-card">
+        <div class="label-row">
+          <span class="metric-label">PE / PB</span>
+          <info-tooltip placement="right" title="PE / PB" description="PE 看利润估值，PB 看净资产估值。成长股通常会更高，周期股通常更低。" range="没有统一好坏，要放回行业里比较；极端高估值更容易放大波动。" />
+        </div>
+        <strong :class="['metric-value', metricValueClass(pePbDisplay)]">{{ pePbDisplay }}</strong>
+      </article>
+      <article class="metric-card">
+        <div class="label-row">
+          <span class="metric-label">总市值 / 流通市值</span>
+          <info-tooltip placement="right" title="总市值 / 流通市值" description="总市值是公司整体估值，流通市值是当前可交易筹码的体量。" range="流通市值越小，短线拉升更容易，但波动也会更大。" />
+        </div>
+        <strong :class="['metric-value', metricValueClass(marketCapDisplay)]">{{ marketCapDisplay }}</strong>
+      </article>
+      <article class="metric-card">
+        <div class="label-row">
+          <span class="metric-label">盘口委比</span>
+          <info-tooltip placement="right" title="盘口委比" description="买卖挂单的相对强弱，只能当作盘中参考，不能单独当成买卖依据。" range="高于 50% 说明买盘挂单更多；低于 50% 说明卖压更重。" />
+        </div>
+        <strong class="metric-value" :class="bidRatio >= 50 ? 'up' : 'down'">{{ bidRatio.toFixed(1) }}%</strong>
+      </article>
+      <article class="metric-card">
+        <div class="label-row">
+          <span class="metric-label">行情 / 资讯同步</span>
+          <info-tooltip placement="right" title="行情 / 资讯同步" description="显示最近一次行情和资讯刷新时间，方便判断你看到的是不是新数据。" range="时间越接近当前越好；若长时间不更新，要先检查数据源。" />
+        </div>
+        <strong :class="['metric-value', metricValueClass(`${formatSyncTime(quoteUpdatedAt)} / ${formatSyncTime(newsUpdatedAt)}`)]">{{ formatSyncTime(quoteUpdatedAt) }} / {{ formatSyncTime(newsUpdatedAt) }}</strong>
+      </article>
+      </div>
+      <button class="rail-nav rail-nav-next" :class="{ hidden: !metricCanNext }" @click="scrollRail('metric', 1)">
+        ›
+      </button>
+    </section>
+
+    <section class="detail-grid">
+      <div class="main-column">
+        <article class="panel chart-panel">
+          <div class="panel-head">
+            <div>
+              <h3 class="section-title">价格行为</h3>
+              <p class="section-subtitle">上半区看 K 线和均线，下半区看成交量柱。更容易判断放量突破、缩量回踩和关键支撑压力。</p>
+            </div>
+            <div class="chart-controls">
+              <select class="input select-sm" v-model="period">
+                <option value="daily">日线</option>
+                <option value="weekly">周线</option>
+                <option value="monthly">月线</option>
+                <option value="5min">5分钟</option>
+                <option value="15min">15分钟</option>
+                <option value="30min">30分钟</option>
+                <option value="60min">60分钟</option>
+              </select>
+              <select class="input select-sm" v-model="adjust">
+                <option value="qfq">前复权</option>
+                <option value="hfq">后复权</option>
+                <option value="">不复权</option>
+              </select>
+              <select class="input select-sm" v-model="klineLimit">
+                <option :value="30">近30根</option>
+                <option :value="60">近60根</option>
+                <option :value="120">近120根</option>
+                <option :value="250">近250根</option>
+              </select>
+              <button class="btn-ghost" @click="loadKline">刷新 K 线</button>
+            </div>
+          </div>
+
+          <div class="rail-shell rail-shell-subtle">
+            <button class="rail-nav rail-nav-prev rail-nav-subtle" :class="{ hidden: !technicalCanPrev }" @click="scrollRail('technical', -1)">
+              ‹
+            </button>
+            <div class="technical-grid" ref="technicalRail" @scroll="syncRailState('technical')" @wheel="handleRailWheel($event, 'technical')">
+            <div class="technical-chip">
+              <span>MA5 / MA10</span>
+              <strong>{{ technical.ma5 }} / {{ technical.ma10 }}</strong>
+            </div>
+            <div class="technical-chip">
+              <span>MA20 / MA60</span>
+              <strong>{{ technical.ma20 }} / {{ technical.ma60 }}</strong>
+            </div>
+            <div class="technical-chip">
+              <span>RSI14 / MACD</span>
+              <strong>{{ technical.rsi14 }} / {{ technical.macd }}</strong>
+            </div>
+            <div class="technical-chip">
+              <span>成交放大 / 趋势</span>
+              <strong>{{ volumeSignal.value }} / {{ trendSignal.value }}</strong>
+              <small>{{ volumeSignal.summary }}，{{ trendSignal.summary }}</small>
+            </div>
+            <div class="technical-chip">
+              <span>支撑位</span>
+              <strong>{{ formatPrice(technical.supportPrice) }}</strong>
+            </div>
+            <div class="technical-chip">
+              <span>压力位</span>
+              <strong>{{ formatPrice(technical.resistancePrice) }}</strong>
+            </div>
+            </div>
+            <button class="rail-nav rail-nav-next rail-nav-subtle" :class="{ hidden: !technicalCanNext }" @click="scrollRail('technical', 1)">
+              ›
+            </button>
+          </div>
+
+          <div class="chart-legend-row">
+            <div class="chart-legend">
+              <span class="legend-item candle-up">红色阳线</span>
+              <span class="legend-item candle-down">绿色阴线</span>
+              <span class="legend-item ma5">MA5</span>
+              <span class="legend-item ma10">MA10</span>
+              <span class="legend-item ma20">MA20</span>
+              <span class="legend-item volume">下方成交量柱</span>
+            </div>
+            <div v-if="latestBar" class="chart-statline">
+              最新K线 {{ formatBarTime(latestBar.timestamp) }} · 开 {{ formatPrice(latestBar.open) }} / 高 {{ formatPrice(latestBar.high) }} / 低 {{ formatPrice(latestBar.low) }} / 收 {{ formatPrice(latestBar.close) }} · 量 {{ formatVolume(latestBar.volume) }}
+            </div>
+          </div>
+
+          <div class="chart-area">
+            <div v-if="klineLoading" class="chart-empty">
+              <span class="spinner"></span>
+              <span>图表加载中...</span>
+            </div>
+            <div v-else-if="!klineData.length" class="chart-empty">暂无 K 线数据</div>
+            <kline-chart v-else :key="klineChartKey" :data="klineData" :height="460" />
+          </div>
+        </article>
+
+        <div class="dual-grid">
+          <article class="panel panel-company-overview">
+            <div class="panel-head">
+              <div>
+                <h3 class="section-title">公司概览</h3>
+              </div>
+            </div>
+            <div class="profile-grid">
+              <div class="profile-row"><span>所属市场</span><strong>{{ profile.market.toUpperCase() }}</strong></div>
+              <div class="profile-row"><span>交易板块</span><strong>{{ profile.board }}</strong></div>
+              <div class="profile-row"><span>最小买入单位</span><strong>{{ profile.lotSize }} 股</strong></div>
+              <div class="profile-row"><span>涨跌停幅度</span><strong>{{ (limitPrices.ratio * 100).toFixed(0) }}%</strong></div>
+              <div class="profile-row"><span>流通市值</span><strong>{{ fmtCap(finance.circMv) }}</strong></div>
+              <div class="profile-row"><span>总市值</span><strong>{{ fmtCap(finance.totalMv) }}</strong></div>
+              <div class="profile-row"><span>EPS / BPS</span><strong>{{ finance.eps ? finance.eps.toFixed(2) : '--' }} / {{ finance.bps ? finance.bps.toFixed(2) : '--' }}</strong></div>
+              <div class="profile-row"><span>ROE</span><strong>{{ finance.roe ? (finance.roe * 100).toFixed(2) + '%' : '--' }}</strong></div>
+            </div>
+            <div class="tag-row">
+              <span v-for="tag in profile.tags" :key="tag" class="profile-tag">{{ tag }}</span>
+            </div>
+          </article>
+
+          <article class="panel panel-orderbook">
+            <div class="panel-head">
+              <div>
+                <h3 class="section-title">盘口深度</h3>
+                <p class="section-subtitle">中间显示最新成交，左右分别是卖五和买五，用于观察承接与抛压是否失衡。</p>
+              </div>
+            </div>
+            <div class="orderbook-wrap">
+              <div class="orderbook-summary-bar">
+                <div class="orderbook-summary-block sell">
+                  <span>卖盘合计</span>
+                  <strong>{{ fmtVol(askTotalVol) }}</strong>
+                </div>
+                <div class="orderbook-summary-core">
+                  <div class="divider-price" :class="stockInfo.change >= 0 ? 'up' : 'down'">{{ formatPrice(stockInfo.price) }}</div>
+                  <div class="divider-meta">当前成交 · 买卖总量对比 {{ bidRatio.toFixed(1) }}%</div>
+                </div>
+                <div class="orderbook-summary-block buy">
+                  <span>买盘合计</span>
+                  <strong>{{ fmtVol(bidTotalVol) }}</strong>
+                </div>
+              </div>
+              <div class="orderbook-col">
+                <div class="orderbook-head">
+                  <span>卖盘</span>
+                  <span>价格</span>
+                  <span>挂单</span>
+                </div>
+                <div v-for="(item, index) in [...stockInfo.asks].reverse()" :key="'ask' + index" class="orderbook-row">
+                  <span class="orderbook-level">卖{{ 5 - index }}</span>
+                  <strong class="down orderbook-price">{{ formatPrice(item.price) }}</strong>
+                  <span class="orderbook-volume">{{ fmtOrderbookVol(item.volume) }}</span>
+                </div>
+              </div>
+              <div class="orderbook-col">
+                <div class="orderbook-head">
+                  <span>买盘</span>
+                  <span>价格</span>
+                  <span>挂单</span>
+                </div>
+                <div v-for="(item, index) in stockInfo.bids" :key="'bid' + index" class="orderbook-row">
+                  <span class="orderbook-level">买{{ index + 1 }}</span>
+                  <strong class="up orderbook-price">{{ formatPrice(item.price) }}</strong>
+                  <span class="orderbook-volume">{{ fmtOrderbookVol(item.volume) }}</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3 class="section-title">资讯面</h3>
+              <p class="section-subtitle">优先展示与该股票直接相关的资讯，右侧再补充市场宏观背景。</p>
+            </div>
+          </div>
+          <div class="news-grid">
+            <div>
+              <div class="news-group-title">个股新闻</div>
+              <div v-if="stockNews.length" class="news-list">
+                <a v-for="item in stockNews.slice(0, 6)" :key="item.url" :href="item.url" class="news-item" target="_blank" rel="noopener">
+                  <div class="news-head">
+                    <span>{{ item.source }}</span>
+                    <span>{{ formatShortTime(item.publishTime) }}</span>
+                  </div>
+                  <div class="news-title">{{ item.title }}</div>
+                  <div class="news-summary">{{ item.summary || item.content }}</div>
+                </a>
+              </div>
+              <div v-else class="panel-empty">暂无个股新闻。</div>
+            </div>
+            <div>
+              <div class="news-group-title">市场消息</div>
+              <div v-if="macroNews.length" class="news-list">
+                <a v-for="item in macroNews" :key="item.title" :href="item.url" class="news-item" target="_blank" rel="noopener">
+                  <div class="news-head">
+                    <span>{{ item.source }}</span>
+                    <span>{{ formatShortTime(item.publishTime) }}</span>
+                  </div>
+                  <div class="news-title">{{ item.title }}</div>
+                  <div class="news-summary">{{ item.summary || item.content }}</div>
+                </a>
+              </div>
+              <div v-else class="panel-empty">暂无市场消息。</div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="side-column side-column-compact">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3 class="section-title">通知守护</h3>
+              <p class="section-subtitle">支持价格阈值、涨停开板和跌停提醒。</p>
+            </div>
+          </div>
+          <div class="alert-form">
+            <input class="input" type="number" step="0.01" v-model.number="quickAlertPrice" />
+            <select class="input select-sm" v-model="quickAlertDirection">
+              <option value="above">突破提醒</option>
+              <option value="below">跌破提醒</option>
+            </select>
+            <select class="input select-sm" v-model="alertDelivery">
+              <option value="all">桌面 + 微信</option>
+              <option value="desktop">仅桌面</option>
+              <option value="wechat">仅微信</option>
+            </select>
+            <button class="btn-primary" @click="createPriceAlert">添加价格提醒</button>
+          </div>
+          <div class="alert-actions alert-actions-dropdown">
+            <div ref="boardAlertMenuRef" class="alert-select-shell">
+              <button class="btn-ghost alert-select-trigger" type="button" @click="boardAlertMenuOpen = !boardAlertMenuOpen">
+                <span>{{ selectedBoardAlertLabels.length ? `已选 ${selectedBoardAlertLabels.length} 项` : '选择盘口监听条件' }}</span>
+                <span class="alert-select-arrow">{{ boardAlertMenuOpen ? '▴' : '▾' }}</span>
+              </button>
+              <div v-if="boardAlertMenuOpen" class="alert-select-menu">
+                <label v-for="item in boardAlertOptions" :key="item.type" class="alert-select-option">
+                  <input
+                    type="checkbox"
+                    :checked="selectedBoardAlertTypes.includes(item.type)"
+                    :disabled="item.active"
+                    @change="toggleBoardAlertType(item.type)"
+                  />
+                  <span>{{ item.label }}</span>
+                  <small>{{ item.active ? '已添加' : '可监听' }}</small>
+                </label>
+              </div>
+            </div>
+            <button class="btn-primary" :disabled="!selectedBoardAlertTypes.length" @click="createSelectedBoardAlerts">
+              批量添加监听
+            </button>
+          </div>
+          <div v-if="alertFeedback" class="alert-feedback">{{ alertFeedback }}</div>
+          <div v-if="alertsForStock.length" class="alert-list">
+            <div v-for="item in alertsForStock" :key="item.id" class="alert-item">
+              <div>
+                <div class="alert-name">{{ item.note || item.type }}</div>
+                <div class="alert-meta">{{ item.enabled ? '运行中' : '已暂停' }} · {{ formatAlertDelivery(item.metadata?.delivery) }}</div>
+              </div>
+              <button class="alert-remove" @click="removeAlert(item.id)">删除</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3 class="section-title">交易参考</h3>
+              <p class="section-subtitle">适合做盘中快读的关键数字。</p>
+            </div>
+          </div>
+          <div class="reference-list">
+            <div class="reference-row"><span>涨停价</span><strong>{{ formatPrice(limitPrices.limitUp) }}</strong></div>
+            <div class="reference-row"><span>跌停价</span><strong>{{ formatPrice(limitPrices.limitDown) }}</strong></div>
+            <div class="reference-row"><span>支撑位</span><strong>{{ formatPrice(technical.supportPrice) }}</strong></div>
+            <div class="reference-row"><span>压力位</span><strong>{{ formatPrice(technical.resistancePrice) }}</strong></div>
+            <div class="reference-row"><span>量比</span><strong>{{ technical.volumeRatio }}</strong></div>
+            <div class="reference-row"><span>5日均量</span><strong>{{ fmtVol(technical.avgVolume5) }}</strong></div>
+            <div class="reference-row"><span>20日均量</span><strong>{{ fmtVol(technical.avgVolume20) }}</strong></div>
+            <div class="reference-row"><span>MACD</span><strong>{{ technical.macd }}</strong></div>
+            <div class="reference-row"><span>RSI14</span><strong>{{ technical.rsi14 }}</strong></div>
+            <div class="reference-row"><span>更新时间</span><strong>{{ stockInfo.date }} {{ stockInfo.time }}</strong></div>
+          </div>
+          <div class="disclaimer">
+            AI 诊股只用于研究辅助，不代表收益承诺，也不能真实保证 90% 胜率。
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <article class="panel ai-panel ai-panel-full">
+          <div class="panel-head">
+            <div>
+              <h3 class="section-title">AI 诊股</h3>
+              <p class="section-subtitle">Agent 会自主规划研究路径，串行调用行情、新闻、资金与外部搜索工具。</p>
+            </div>
+            <button class="btn-ghost panel-action-btn" :disabled="diagnosisLoading" @click="requestDiagnosis(true)">
+              {{ stockDiagnosisAutoEnabled ? '立即刷新诊股' : '手动触发诊股' }}
+            </button>
+          </div>
+
+          <div v-if="diagnosis" class="diagnosis-body">
+            <div class="ai-hero-card">
+              <div class="ai-hero-top">
+                <span class="ai-badge">AI 重点结论</span>
+                <strong class="ai-recommendation">{{ diagnosis.recommendation }}</strong>
+              </div>
+              <div class="ai-hero-sub">
+                <span>把握 {{ diagnosis.confidence }}%</span>
+                <span>风险 {{ diagnosis.riskLevel }}</span>
+                <span>情绪 {{ diagnosis.prediction }}</span>
+              </div>
+              <div class="ai-signal-grid">
+                <div v-for="item in aiSignalCards" :key="item.label" class="ai-signal-card" :class="item.tone">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+            </div>
+            <div class="diagnosis-score-row">
+              <div class="diagnosis-score">
+                <span>推荐</span>
+                <strong>{{ diagnosis.recommendation }}</strong>
+              </div>
+              <div class="diagnosis-score">
+                <span>置信度</span>
+                <strong>{{ diagnosis.confidence }}%</strong>
+              </div>
+              <div class="diagnosis-score">
+                <span>风险</span>
+                <strong>{{ diagnosis.riskLevel }}</strong>
+              </div>
+            </div>
+            <p class="diagnosis-summary">{{ diagnosis.summary }}</p>
+
+            <div class="range-grid">
+              <div class="range-card">
+                <span>建议买入区间</span>
+                <strong>{{ diagnosis.buyLower ? formatPrice(diagnosis.buyLower) : '--' }} - {{ diagnosis.buyUpper ? formatPrice(diagnosis.buyUpper) : '--' }}</strong>
+              </div>
+              <div class="range-card">
+                <span>建议卖出区间</span>
+                <strong>{{ diagnosis.sellLower ? formatPrice(diagnosis.sellLower) : '--' }} - {{ diagnosis.sellUpper ? formatPrice(diagnosis.sellUpper) : '--' }}</strong>
+              </div>
+            </div>
+
+            <div class="range-grid range-grid-detail">
+              <div class="range-card">
+                <span>止损 / 止盈</span>
+                <strong>{{ diagnosis.stopLossPrice ? formatPrice(diagnosis.stopLossPrice) : '--' }} / {{ diagnosis.takeProfitPrice ? formatPrice(diagnosis.takeProfitPrice) : '--' }}</strong>
+              </div>
+              <div class="range-card">
+                <span>建议仓位 / 股数</span>
+                <strong>{{ diagnosis.positionSize || '--' }} / {{ diagnosis.suggestedShares || '--' }}</strong>
+              </div>
+            </div>
+
+            <div class="bullet-group compact">
+              <div>
+                <div class="bullet-title">入场策略</div>
+                <p class="strategy-copy">{{ diagnosis.entryAdvice || diagnosis.positionAdvice || '等待回踩确认后再分批处理。' }}</p>
+              </div>
+              <div>
+                <div class="bullet-title">离场策略</div>
+                <p class="strategy-copy">{{ diagnosis.exitAdvice || '接近压力位且量价背离时优先锁定利润。' }}</p>
+              </div>
+            </div>
+
+            <div class="scenario-list">
+              <div v-for="item in diagnosis.scenarios" :key="item.label" class="scenario-item">
+                <div>
+                  <div class="scenario-label">{{ item.label }}</div>
+                  <div class="scenario-hint">{{ item.probabilityHint }}</div>
+                </div>
+                <strong>{{ formatPrice(item.expectedPrice) }}</strong>
+              </div>
+            </div>
+
+            <div class="bullet-group">
+              <div>
+                <div class="bullet-title">驱动因素</div>
+                <ul class="bullet-list">
+                  <li v-for="item in diagnosis.catalysts" :key="item">{{ item }}</li>
+                </ul>
+              </div>
+              <div>
+                <div class="bullet-title">风险提示</div>
+                <ul class="bullet-list">
+                  <li v-for="item in diagnosis.risks" :key="item">{{ item }}</li>
+                </ul>
+              </div>
+              <div>
+                <div class="bullet-title">舆情信号</div>
+                <ul class="bullet-list">
+                  <li v-for="item in diagnosis.socialSignals" :key="item">{{ item }}</li>
+                </ul>
+              </div>
+            </div>
+
+            <div v-if="diagnosisEvidence.length" class="evidence-stack">
+              <div class="bullet-title">外部证据</div>
+              <div class="evidence-list">
+                <div v-for="item in diagnosisEvidence" :key="item.title" class="evidence-item">
+                  <div class="evidence-top">
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.source || '研究聚合' }}</span>
+                  </div>
+                  <p>{{ item.summary }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="agentTrace.length" class="trace-panel">
+              <div class="bullet-title">Agent 研究轨迹</div>
+              <div class="trace-list">
+                <div v-for="item in agentTrace" :key="item.id" class="trace-item" :class="item.status">
+                  <div class="trace-top">
+                    <strong>{{ item.title }}</strong>
+                    <span class="tag" :class="item.status === 'done' ? 'tag-positive' : item.status === 'error' ? 'tag-negative' : 'tag-neutral'">
+                      {{ item.status }}
+                    </span>
+                  </div>
+                  <div class="trace-meta">
+                    <span>{{ item.tool || item.strategy || 'planner' }}</span>
+                    <span v-if="item.query">{{ item.query }}</span>
+                  </div>
+                  <p>{{ item.resultSummary }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="panel-empty">
+            <span>{{ diagnosisError || `当前处于${stockDiagnosisAutoEnabled ? '自动' : '手动'}模式，点击“${stockDiagnosisAutoEnabled ? '立即刷新诊股' : 'AI 诊股'}”后会展示研究路径、工具调用和买卖区间。` }}</span>
+          </div>
+        </article>
+    </div>
+  </div>
+</div>

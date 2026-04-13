@@ -1,0 +1,158 @@
+.ai-provider-card {
+  border: 1px solid $border-glass;
+  border-radius: $radius-md;
+  overflow: hidden;
+  transition: all $transition-fast;
+  background: $bg-glass;
+  backdrop-filter: $blur-sm;
+  -webkit-backdrop-filter: $blur-sm;
+
+  &.active {
+    border-color: rgba($color-accent, 0.3);
+    box-shadow: 0 0 0 1px rgba($color-accent, 0.1), $shadow-glow;
+  }
+}
+
+.provider-header {
+  @include flex-between;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: rgba($text-primary, 0.03);
+  }
+}
+
+.provider-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.provider-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.provider-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid $border-light;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+
+  label {
+    font-size: 11px;
+    color: $text-muted;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.key-input {
+  display: flex;
+  gap: 4px;
+
+  .input {
+    flex: 1;
+  }
+}
+
+.btn-eye {
+  @include flex-center;
+  width: 36px;
+  border: 1px solid $border-color;
+  border-radius: $radius-sm;
+  background: $bg-glass;
+  cursor: pointer;
+  font-size: 14px;
+  color: $text-secondary;
+  transition: all $transition-fast;
+
+  &:hover {
+    background: $bg-card-hover;
+  }
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.range-input {
+  width: 120px;
+  accent-color: $color-accent;
+  margin-top: 4px;
+}
+
+.provider-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.text-success {
+  color: $color-success;
+  border-color: $color-success;
+}
+
+.text-danger {
+  color: $color-danger;
+  border-color: $color-danger;
+}
+
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+
+  input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .slider {
+    position: absolute;
+    inset: 0;
+    background: rgba($border-color, 0.6);
+    border-radius: 11px;
+    cursor: pointer;
+    transition: all $transition-fast;
+
+    &::before {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 2px;
+      bottom: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform $transition-fast;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+  }
+
+  input:checked + .slider {
+    background: $gradient-accent;
+    box-shadow: 0 0 8px rgba($color-accent, 0.3);
+    &::before { transform: translateX(18px); }
+  }
+}

@@ -1,0 +1,46 @@
+<nav class="sidebar" :class="{ expanded: !appStore.sidebarCollapsed }">
+  <div class="sidebar-brand" @click="appStore.toggleSidebar">
+    <div class="brand-icon">
+      <TrendingUp :size="20" />
+    </div>
+    <transition name="slide-fade">
+      <div v-show="!appStore.sidebarCollapsed" class="brand-info">
+        <span class="brand-name">MI Quantify</span>
+        <span class="brand-sub">量化分析平台</span>
+      </div>
+    </transition>
+  </div>
+
+  <div class="sidebar-nav">
+    <router-link
+      v-for="(item, idx) in NAV_ITEMS"
+      :key="item.path"
+      :to="item.path"
+      class="nav-item"
+      :class="{ active: currentPath === item.path }"
+      :style="{ '--delay': idx * 0.05 + 's' }"
+      @mouseenter="hoveredItem = item.name"
+      @mouseleave="hoveredItem = null"
+      @click="appStore.setCurrentRoute(item.name)"
+    >
+      <div class="nav-icon-wrap">
+        <component :is="getIcon(item.icon)" :size="18" />
+      </div>
+      <transition name="slide-fade">
+        <span v-show="!appStore.sidebarCollapsed" class="nav-label">{{ item.label }}</span>
+      </transition>
+      <transition name="tooltip">
+        <span v-if="appStore.sidebarCollapsed && hoveredItem === item.name" class="nav-tooltip">{{ item.label }}</span>
+      </transition>
+    </router-link>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="collapse-btn" @click="appStore.toggleSidebar">
+      <component :is="appStore.sidebarCollapsed ? ChevronRight : ChevronLeft" :size="16" />
+      <transition name="slide-fade">
+        <span v-show="!appStore.sidebarCollapsed" class="collapse-label">收起菜单</span>
+      </transition>
+    </div>
+  </div>
+</nav>

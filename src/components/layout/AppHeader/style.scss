@@ -1,0 +1,214 @@
+.header {
+  @include flex-between;
+  height: $header-height;
+  padding: 0 24px;
+  background: $bg-header;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
+  backdrop-filter: $blur-lg;
+  -webkit-backdrop-filter: $blur-lg;
+  position: relative;
+  z-index: 9;
+  box-shadow: 0 12px 30px rgba(29, 38, 55, 0.04);
+}
+
+.header-left {
+  .page-title-text {
+    font-size: 24px;
+    font-weight: 600;
+    font-family: $font-display;
+    color: $text-primary;
+    letter-spacing: -0.03em;
+  }
+}
+
+.header-center {
+  flex: 1;
+  max-width: 400px;
+  margin: 0 24px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: $bg-input;
+  border: 1px solid $border-color;
+  border-radius: 999px;
+  padding: 6px 10px 6px 14px;
+  transition: all $transition-fast;
+
+  &:focus-within {
+    border-color: $color-accent;
+    box-shadow: 0 0 0 3px rgba($color-accent, 0.08);
+    background: $bg-card;
+  }
+
+  .search-icon {
+    color: $text-muted;
+    flex-shrink: 0;
+  }
+}
+
+.search-box :deep(.stock-search-input) {
+  flex: 1;
+}
+
+.search-box :deep(.search-input) {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  min-height: 32px;
+  font-size: 13px;
+}
+
+.search-box :deep(.search-shell.open .search-input) {
+  box-shadow: none;
+}
+
+.search-box :deep(.search-dropdown) {
+  left: -26px;
+  right: -10px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.header-action {
+  @include flex-center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all $transition-fast;
+  text-decoration: none;
+  color: $text-secondary;
+  position: relative;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.82);
+    color: $text-primary;
+  }
+
+  &.has-badge .badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    min-width: 14px;
+    height: 14px;
+    background: $gradient-up;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 7px;
+    @include flex-center;
+    padding: 0 3px;
+  }
+
+  &.active {
+    background: $bg-input;
+  }
+}
+
+.notif-panel {
+  position: absolute;
+  top: $header-height;
+  right: 24px;
+  width: 380px;
+  max-height: 480px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 24px;
+  box-shadow: 0 28px 60px rgba(29, 38, 55, 0.08);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notif-enter-active { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+.notif-leave-active { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.notif-enter-from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+.notif-leave-to { opacity: 0; transform: translateY(-4px) scale(0.99); }
+
+.notif-header {
+  @include flex-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid $border-light;
+  flex-shrink: 0;
+
+  .notif-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  .notif-close {
+    @include flex-center;
+    background: none;
+    border: none;
+    color: $text-muted;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: $radius-xs;
+    transition: all $transition-fast;
+
+    &:hover {
+      background: $bg-input;
+      color: $text-primary;
+    }
+  }
+}
+
+.notif-list {
+  flex: 1;
+  overflow-y: auto;
+  @include custom-scrollbar;
+}
+
+.notif-item {
+  padding: 14px 18px;
+  border-bottom: 1px solid $border-light;
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $bg-card-hover;
+  }
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  .notif-item-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: $text-primary;
+    margin-bottom: 4px;
+  }
+
+  .notif-item-body {
+    font-size: 12px;
+    color: $text-secondary;
+    line-height: 1.6;
+    @include ellipsis(3);
+  }
+
+  .notif-item-time {
+    font-size: 11px;
+    color: $text-muted;
+    margin-top: 6px;
+    font-family: $font-mono;
+  }
+}
+
+.notif-empty {
+  @include flex-center;
+  padding: 48px 18px;
+  font-size: 13px;
+  color: $text-muted;
+}

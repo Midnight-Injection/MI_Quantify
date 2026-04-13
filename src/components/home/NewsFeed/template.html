@@ -1,0 +1,71 @@
+<div class="news-feed">
+  <div class="section-header">
+    <h3 class="section-title">财经资讯</h3>
+    <div class="section-actions">
+      <span v-if="newsList.length" class="count">共 {{ totalItems }} 条</span>
+      <button class="btn-ghost btn-sm" :disabled="loading" @click="$emit('refresh')">
+        {{ loading ? '加载中...' : '刷新' }}
+      </button>
+    </div>
+  </div>
+
+  <div v-if="loading && !newsList.length" class="loading-state">
+    <span class="spinner"></span>
+    <span>正在加载新闻...</span>
+  </div>
+  <div v-else-if="!newsList.length" class="empty-state">
+    <span>暂无新闻数据</span>
+  </div>
+  <template v-else>
+    <div class="news-grid">
+      <div
+        v-for="item in pagedNews"
+        :key="item.id"
+        class="news-card"
+      >
+        <div class="news-card-body">
+          <div class="news-card-top">
+            <span class="news-source-tag">{{ item.source }}</span>
+            <span v-if="item.sentiment" class="sentiment-dot" :class="sentimentClass(item.sentiment)"></span>
+          </div>
+          <a class="news-card-title" :href="item.url" target="_blank" rel="noopener">{{ item.title }}</a>
+          <p class="news-card-summary">{{ item.content.slice(0, 120) }}...</p>
+          <div class="news-card-footer">
+            <span class="news-time">{{ item.publishTime }}</span>
+            <div class="news-card-actions">
+              <span v-if="item.relatedStocks.length" class="news-stocks">
+                <span v-for="code in item.relatedStocks.slice(0, 2)" :key="code" class="tag tag-info">{{ code }}</span>
+              </span>
+              <button
+                v-if="!item.sentiment"
+                class="btn-analyze"
+                :disabled="isAnalyzing(item.id)"
+                @click.stop="$emit('analyze', item.id)"
+              >
+                {{ isAnalyzing(item.id) ? '分析中' : 'AI分析' }}
+              </button>
+              <span v-else class="sentiment-label" :class="sentimentClass(item.sentiment)">
+                {{ sentimentLabel(item.sentiment) }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="totalPages > 1" class="pagination">
+      <button class="page-btn" :disabled="currentPage <= 1" @click="currentPage = currentPage - 1">
+        &laquo;
+      </button>
+      <template v-for="p in displayedPages" :key="p">
+        <span v-if="p === '...'" class="page-ellipsis">...</span>
+        <button v-else class="page-btn" :class="{ active: p === currentPage }" @click="currentPage = Number(p)">
+          {{ p }}
+        </button>
+      </template>
+      <button class="page-btn" :disabled="currentPage >= totalPages" @click="currentPage = currentPage + 1">
+        &raquo;
+      </button>
+    </div>
+  </template>
+</div>

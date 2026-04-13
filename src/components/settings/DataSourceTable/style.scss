@@ -1,0 +1,111 @@
+.data-source-table {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 13px;
+  border-bottom: 1px solid $border-light;
+}
+
+th {
+  color: $text-muted;
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+td {
+  color: $text-primary;
+}
+
+tr:hover td {
+  background: rgba($text-primary, 0.02);
+}
+
+td:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.source-name {
+  font-weight: 500;
+}
+
+.priority {
+  @include flex-center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: $bg-glass;
+  border: 1px solid $border-glass;
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-secondary;
+}
+
+.text-success {
+  color: $color-success;
+  font-size: 13px;
+}
+
+.text-muted {
+  color: $text-muted;
+  font-size: 13px;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.switch-sm {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex-shrink: 0;
+
+  input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .slider-sm {
+    position: absolute;
+    inset: 0;
+    background: rgba($border-color, 0.6);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all $transition-fast;
+
+    &::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 2px;
+      bottom: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform $transition-fast;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+  }
+
+  input:checked + .slider-sm {
+    background: $gradient-accent;
+
+    &::before {
+      transform: translateX(14px);
+    }
+  }
+}

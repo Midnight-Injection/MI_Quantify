@@ -1,0 +1,145 @@
+<div class="page stock-list-page">
+  <div class="page-shell market-page-shell">
+    <section class="market-hero">
+      <div class="hero-copy">
+        <h1 class="page-title">个股行情</h1>
+        <p class="hero-note">只保留筛选与列表。输入股票名称或代码后，结果只在下方列表中过滤显示，列表行点击后进入详情。</p>
+      </div>
+      <div class="market-tabs">
+        <button
+          v-for="tab in marketTabs"
+          :key="tab.value"
+          class="market-tab"
+          :class="{ active: currentMarket === tab.value }"
+          @click="switchMarket(tab.value)"
+        >
+          <span>{{ tab.label }}</span>
+          <small>{{ tab.note }}</small>
+        </button>
+      </div>
+    </section>
+
+    <section class="filter-panel">
+      <div class="filter-head">
+        <div>
+          <h3 class="section-title">筛选过滤</h3>
+          <p class="section-subtitle">条件只作用于当前列表，不再出现搜索下拉，不再从输入框直接跳转详情。</p>
+        </div>
+        <div class="toolbar-info">
+          <span class="count">已加载 {{ currentLoadedCount }} 只</span>
+          <span class="count">筛选结果 {{ filteredStocks.length }} 只</span>
+          <span class="count">实时刷新 {{ refreshSeconds }}s</span>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <label class="filter-label">股票筛选</label>
+        <input
+          v-model="searchKeyword"
+          class="input search-input"
+          placeholder="输入股票名称 / 编号，直接过滤下面列表"
+        />
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-row-header">
+          <label class="filter-label">板块多选</label>
+          <div class="filter-row-actions">
+            <div v-if="currentMarket === 'a'" class="sector-tabs">
+              <button class="sector-tab" :class="{ active: sectorDimension === 'industry' }" @click="sectorDimension = 'industry'">行业</button>
+              <button class="sector-tab" :class="{ active: sectorDimension === 'concept' }" @click="sectorDimension = 'concept'">概念</button>
+            </div>
+            <button v-if="sectorMoreAvailable" class="btn-ghost clear-btn" @click="sectorExpanded = !sectorExpanded">
+              {{ sectorExpanded ? '收起' : '更多' }}
+            </button>
+            <button v-if="selectedSectorCodes.length" class="btn-ghost clear-btn" @click="clearSectors">清空选择</button>
+          </div>
+        </div>
+
+        <div class="chip-list sector-chip-list">
+          <button
+            v-for="item in visibleSectorOptions"
+            :key="item.code"
+            class="sector-chip"
+            :class="{ active: selectedSectorCodes.includes(item.code) }"
+            @click="toggleSector(item.code)"
+          >
+            <span>{{ item.name }}</span>
+            <small v-if="item.companyCount">{{ item.companyCount }} 家</small>
+          </button>
+        </div>
+
+        <div v-if="selectedSectorNames.length" class="selected-sector-strip">
+          <span class="selected-label">已选板块</span>
+          <div class="selected-sector-list">
+            <span v-for="name in selectedSectorNames" :key="name" class="selected-sector-tag">{{ name }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="stock-table-shell">
+      <div class="table-caption">
+        <span>实时列表</span>
+        <span>仅支持通过表格行点击进入个股详情</span>
+      </div>
+      <div class="stock-table-container" ref="tableContainer" @scroll="handleScroll">
+        <table v-if="filteredStocks.length" class="stock-table">
+          <thead>
+            <tr>
+              <th class="col-code">代码</th>
+              <th class="col-name">名称</th>
+              <th class="col-board">板块</th>
+              <th class="col-price">最新价</th>
+              <th class="col-change">涨跌幅</th>
+              <th class="col-change-val">涨跌额</th>
+              <th class="col-range">振幅</th>
+              <th class="col-vol">成交量</th>
+              <th class="col-amount">成交额</th>
+              <th class="col-turnover">换手率</th>
+              <th class="col-pe">市盈率</th>
+              <th class="col-mv">总市值</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="stock in filteredStocks"
+              :key="stock.code"
+              class="stock-row"
+              @click="navigateToStock(stock.code)"
+            >
+              <td class="col-code">{{ stock.code }}</td>
+              <td class="col-name">{{ stock.name }}</td>
+              <td class="col-board">
+                <span class="mini-tag" :title="getDisplaySector(stock)">{{ getDisplaySector(stock) }}</span>
+              </td>
+              <td class="col-price" :class="stock.change >= 0 ? 'up' : 'down'">{{ formatPrice(stock.price) }}</td>
+              <td class="col-change" :class="stock.change >= 0 ? 'up' : 'down'">{{ formatPercent(stock.changePercent) }}%</td>
+              <td class="col-change-val" :class="stock.change >= 0 ? 'up' : 'down'">
+                {{ stock.change >= 0 ? '+' : '' }}{{ formatPrice(stock.change) }}
+              </td>
+              <td class="col-range">{{ formatAmplitude(stock) }}</td>
+              <td class="col-vol">{{ formatVolume(stock.volume) }}</td>
+              <td class="col-amount">{{ formatAmount(stock.amount) }}</td>
+              <td class="col-turnover">{{ stock.turnover ? stock.turnover.toFixed(2) + '%' : '--' }}</td>
+              <td class="col-pe">{{ stock.pe ? stock.pe.toFixed(2) : '--' }}</td>
+              <td class="col-mv">{{ stock.totalMv ? formatMarketCap(stock.totalMv) : '--' }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="sectorLoading || loadingMore" class="loading-more">
+          <span class="search-spinner"></span>
+          <span>{{ sectorLoading ? '板块成分股加载中...' : '加载更多中...' }}</span>
+        </div>
+        <div v-if="!hasMore && filteredStocks.length > 0 && !selectedSectorCodes.length" class="no-more">
+          已加载全部 {{ currentLoadedCount }} 只股票
+        </div>
+      </div>
+    </div>
+
+    <div v-if="!filteredStocks.length && !loadingMore && !sectorLoading" class="empty-state">
+      <span>当前筛选条件下暂无列表数据。</span>
+    </div>
+  </div>
+</div>

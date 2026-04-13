@@ -1,0 +1,74 @@
+.watchlist-table {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead th {
+  padding: 10px 12px;
+  text-align: left;
+  color: $text-muted;
+  font-weight: 500;
+  font-size: 11px;
+  border-bottom: 1px solid $border-light;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+tbody tr {
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: rgba($text-primary, 0.03);
+  }
+}
+
+tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba($border-light, 0.5);
+  white-space: nowrap;
+}
+
+.col-code {
+  font-family: $font-mono;
+  color: $text-secondary;
+  font-size: 12px;
+}
+
+.col-name {
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.col-price, .col-change {
+  font-family: $font-mono;
+  font-weight: 600;
+
+  &.up { color: $color-up; }
+  &.down { color: $color-down; }
+}
+
+.col-volume, .col-amount {
+  font-family: $font-mono;
+  color: $text-secondary;
+  text-align: right;
+  font-size: 12px;
+}
+
+.col-action {
+  text-align: center;
+}
+
+.empty-hint {
+  @include card-glass;
+  @include flex-center;
+  padding: 36px;
+  color: $text-muted;
+  font-size: 13px;
+}

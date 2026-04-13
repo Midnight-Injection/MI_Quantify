@@ -1,0 +1,43 @@
+<div class="data-source-table">
+  <table>
+    <thead>
+      <tr>
+        <th>数据源</th>
+        <th>类型</th>
+        <th>状态</th>
+        <th>优先级</th>
+        <th>配置</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr v-for="source in sources" :key="source.id">
+        <td>
+          <label class="switch-sm">
+            <input type="checkbox" :checked="source.enabled" @change="$emit('toggle', source.id, $event.target.checked)" />
+            <span class="slider-sm"></span>
+          </label>
+          <span class="source-name">{{ source.name }}</span>
+        </td>
+        <td>
+          <span class="tag" :class="source.type === 'free' ? 'tag-positive' : 'tag-neutral'">
+            {{ source.type === 'free' ? '免费' : '付费' }}
+          </span>
+        </td>
+        <td>
+          <span :class="source.enabled ? 'text-success' : 'text-muted'">
+            {{ source.enabled ? '✅ 已启用' : '⬜ 未启用' }}
+          </span>
+        </td>
+        <td>
+          <span class="priority">{{ source.priority }}</span>
+        </td>
+        <td>
+          <button v-if="source.type === 'paid'" class="btn-ghost btn-sm" @click="$emit('config', source.id)">
+            🔑 配置
+          </button>
+          <span v-else class="text-muted">—</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>

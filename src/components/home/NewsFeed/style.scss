@@ -1,0 +1,243 @@
+.news-feed {
+  flex: 1;
+  min-width: 0;
+}
+
+.section-header {
+  @include flex-between;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.count {
+  font-size: 11px;
+  color: $text-muted;
+  font-family: $font-mono;
+}
+
+.loading-state,
+.empty-state {
+  @include card-glass;
+  @include flex-center;
+  padding: 48px;
+  gap: 10px;
+  color: $text-muted;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid $border-color;
+  border-top-color: $color-accent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.news-card {
+  @include card-glass;
+  overflow: hidden;
+  transition: all $transition-normal;
+  cursor: default;
+
+  &:hover {
+    box-shadow: $shadow-md;
+    transform: translateY(-2px);
+    border-color: rgba($color-accent, 0.15);
+  }
+}
+
+.news-card-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+}
+
+.news-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.news-source-tag {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: $text-muted;
+  background: rgba($text-muted, 0.08);
+  padding: 2px 8px;
+  border-radius: $radius-xs;
+}
+
+.sentiment-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+
+  &.tag-positive { background: $color-sentiment-positive; box-shadow: 0 0 6px rgba($color-sentiment-positive, 0.4); }
+  &.tag-negative { background: $color-sentiment-negative; box-shadow: 0 0 6px rgba($color-sentiment-negative, 0.4); }
+  &.tag-neutral { background: $color-sentiment-neutral; box-shadow: 0 0 6px rgba($color-sentiment-neutral, 0.4); }
+}
+
+.news-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: $text-primary;
+  text-decoration: none;
+  line-height: 1.6;
+  transition: color $transition-fast;
+  @include ellipsis(2);
+
+  &:hover {
+    color: $color-accent;
+  }
+}
+
+.news-card-summary {
+  font-size: 12px;
+  color: $text-secondary;
+  line-height: 1.7;
+  @include ellipsis(3);
+  flex: 1;
+}
+
+.news-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid $border-light;
+}
+
+.news-time {
+  font-size: 11px;
+  color: $text-muted;
+  font-family: $font-mono;
+  white-space: nowrap;
+}
+
+.news-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.news-stocks {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-analyze {
+  font-size: 11px;
+  font-weight: 500;
+  color: $color-accent;
+  background: $color-accent-soft;
+  border: 1px solid rgba($color-accent, 0.2);
+  border-radius: $radius-xs;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: all $transition-fast;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: rgba($color-accent, 0.2);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.sentiment-label {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: $radius-xs;
+
+  &.tag-positive {
+    background: rgba($color-sentiment-positive, 0.12);
+    color: $color-sentiment-positive;
+  }
+  &.tag-negative {
+    background: rgba($color-sentiment-negative, 0.12);
+    color: $color-sentiment-negative;
+  }
+  &.tag-neutral {
+    background: rgba($color-sentiment-neutral, 0.12);
+    color: $color-sentiment-neutral;
+  }
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 20px;
+  padding: 12px 0;
+}
+
+.page-btn {
+  min-width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: $font-mono;
+  color: $text-secondary;
+  background: $bg-glass;
+  border: 1px solid $border-glass;
+  border-radius: $radius-sm;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover:not(:disabled):not(.active) {
+    background: $bg-card-hover;
+    border-color: rgba($border-color, 0.6);
+  }
+
+  &.active {
+    background: $gradient-accent;
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 2px 8px rgba($color-accent, 0.3);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+
+.page-ellipsis {
+  color: $text-muted;
+  font-size: 12px;
+  padding: 0 4px;
+}
