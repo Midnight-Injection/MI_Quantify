@@ -170,7 +170,8 @@ impl WechatClient {
             .and_then(|value| value.as_str())
             .ok_or_else(|| WechatApiError::Api("missing qrcode_img_content".to_string()))?;
 
-        let code = QrCode::new(qrcode_content).map_err(|error| WechatApiError::Api(error.to_string()))?;
+        let code =
+            QrCode::new(qrcode_content).map_err(|error| WechatApiError::Api(error.to_string()))?;
         let svg_string = code
             .render::<svg::Color>()
             .min_dimensions(256, 256)
@@ -188,14 +189,21 @@ impl WechatClient {
     }
 
     async fn get_qrcode_status(&self, qrcode: &str) -> Result<WechatLoginStatus, WechatApiError> {
-        let url = format!("{}/ilink/bot/get_qrcode_status?qrcode={}", self.base_url, qrcode);
+        let url = format!(
+            "{}/ilink/bot/get_qrcode_status?qrcode={}",
+            self.base_url, qrcode
+        );
         let response = self.client.get(url).send().await?;
         let body = response.text().await?;
         let json: serde_json::Value = serde_json::from_str(&body)?;
         let data = json.get("data").unwrap_or(&json);
         Self::ensure_success(&json)?;
 
-        let status = match data.get("status").and_then(|value| value.as_str()).unwrap_or("waiting") {
+        let status = match data
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("waiting")
+        {
             "waiting" | "wait" => "waiting",
             "scanned" | "scaned" => "scanned",
             "confirmed" => "confirmed",
@@ -206,10 +214,22 @@ impl WechatClient {
 
         Ok(WechatLoginStatus {
             status: status.to_string(),
-            bot_token: data.get("bot_token").and_then(|value| value.as_str()).map(str::to_string),
-            base_url: data.get("baseurl").and_then(|value| value.as_str()).map(str::to_string),
-            account_id: data.get("ilink_bot_id").and_then(|value| value.as_str()).map(str::to_string),
-            user_id: data.get("ilink_user_id").and_then(|value| value.as_str()).map(str::to_string),
+            bot_token: data
+                .get("bot_token")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+            base_url: data
+                .get("baseurl")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+            account_id: data
+                .get("ilink_bot_id")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+            user_id: data
+                .get("ilink_user_id")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
         })
     }
 
@@ -239,11 +259,19 @@ impl WechatClient {
         let messages = json
             .get("msgs")
             .and_then(|value| value.as_array())
-            .map(|items| items.iter().filter_map(Self::parse_update_message).collect())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Self::parse_update_message)
+                    .collect()
+            })
             .unwrap_or_default();
 
         Ok(GetUpdatesResponse {
-            get_updates_buf: json.get("get_updates_buf").and_then(|value| value.as_str()).map(str::to_string),
+            get_updates_buf: json
+                .get("get_updates_buf")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
             messages,
         })
     }
@@ -307,7 +335,10 @@ impl WechatClient {
     }
 
     fn ensure_success(json: &serde_json::Value) -> Result<(), WechatApiError> {
-        let ret = json.get("ret").and_then(|value| value.as_i64()).unwrap_or(0);
+        let ret = json
+            .get("ret")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0);
         if ret == 0 {
             return Ok(());
         }
@@ -338,8 +369,14 @@ impl WechatClient {
             .and_then(|value| value.as_str())
             .map(str::to_string);
 
-        let from_user_id = value.get("from_user_id").and_then(|value| value.as_str())?.to_string();
-        let create_time_ms = value.get("create_time_ms").and_then(|value| value.as_i64()).unwrap_or_else(now_millis);
+        let from_user_id = value
+            .get("from_user_id")
+            .and_then(|value| value.as_str())?
+            .to_string();
+        let create_time_ms = value
+            .get("create_time_ms")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_else(now_millis);
 
         Some(UpdateMessage {
             from_user_id,
@@ -390,7 +427,11 @@ impl WechatMonitor {
             }
 
             let sync_buf = load_sync_cursor(&app, &self.channel_id)?;
-            match self.client.get_updates(&self.account.bot_token, sync_buf.as_deref()).await {
+            match self
+                .client
+                .get_updates(&self.account.bot_token, sync_buf.as_deref())
+                .await
+            {
                 Ok(response) => {
                     consecutive_failures = 0;
                     if let Some(cursor) = response.get_updates_buf {
@@ -410,7 +451,9 @@ impl WechatMonitor {
                             id: update
                                 .message_id
                                 .map(|value| value.to_string())
-                                .unwrap_or_else(|| format!("{}_{}", update.from_user_id, update.create_time_ms)),
+                                .unwrap_or_else(|| {
+                                    format!("{}_{}", update.from_user_id, update.create_time_ms)
+                                }),
                             from_user_id: update.from_user_id,
                             create_time_ms: update.create_time_ms,
                             text: update.text,
@@ -460,8 +503,12 @@ pub async fn wechat_start_login(
     _channel_id: String,
     base_url: Option<String>,
 ) -> Result<WechatLoginQrCode, String> {
-    let client = WechatClient::with_base_url(resolve_base_url(base_url)).map_err(|error| error.to_string())?;
-    let qr = client.get_bot_qrcode().await.map_err(|error| error.to_string())?;
+    let client = WechatClient::with_base_url(resolve_base_url(base_url))
+        .map_err(|error| error.to_string())?;
+    let qr = client
+        .get_bot_qrcode()
+        .await
+        .map_err(|error| error.to_string())?;
     Ok(WechatLoginQrCode {
         qrcode: qr.qrcode,
         qrcode_img: qr.qrcode_img,
@@ -476,15 +523,22 @@ pub async fn wechat_get_login_status(
     base_url: Option<String>,
 ) -> Result<WechatLoginStatus, String> {
     let resolved_base_url = resolve_base_url(base_url);
-    let client = WechatClient::with_base_url(resolved_base_url.clone()).map_err(|error| error.to_string())?;
-    let status = client.get_qrcode_status(&qrcode).await.map_err(|error| error.to_string())?;
+    let client = WechatClient::with_base_url(resolved_base_url.clone())
+        .map_err(|error| error.to_string())?;
+    let status = client
+        .get_qrcode_status(&qrcode)
+        .await
+        .map_err(|error| error.to_string())?;
     if status.status == "confirmed" {
         let account = StoredWechatAccount {
             channel_id: channel_id.clone(),
             account_id: status.account_id.clone().unwrap_or_default(),
             user_id: status.user_id.clone().unwrap_or_default(),
             base_url: status.base_url.clone().unwrap_or(resolved_base_url),
-            bot_token: status.bot_token.clone().ok_or_else(|| "登录成功但未返回 bot_token".to_string())?,
+            bot_token: status
+                .bot_token
+                .clone()
+                .ok_or_else(|| "登录成功但未返回 bot_token".to_string())?,
         };
         save_account(&app, account)?;
         emit_status(&app, &channel_id, "ready");
@@ -524,8 +578,10 @@ pub async fn wechat_start_listener(
     state: State<'_, WechatRuntimeState>,
     channel_id: String,
 ) -> Result<(), String> {
-    let account = load_account(&app, &channel_id)?.ok_or_else(|| "当前渠道还没有完成扫码登录".to_string())?;
-    let client = WechatClient::with_base_url(account.base_url.clone()).map_err(|error| error.to_string())?;
+    let account =
+        load_account(&app, &channel_id)?.ok_or_else(|| "当前渠道还没有完成扫码登录".to_string())?;
+    let client =
+        WechatClient::with_base_url(account.base_url.clone()).map_err(|error| error.to_string())?;
     let monitor = WechatMonitor::new(channel_id.clone(), client, account);
 
     {
@@ -589,14 +645,27 @@ pub async fn wechat_send_message(
     context_token: Option<String>,
 ) -> Result<(), String> {
     let account = load_account(&app, &channel_id)?.ok_or_else(|| "当前渠道未登录".to_string())?;
-    let client = WechatClient::with_base_url(account.base_url.clone()).map_err(|error| error.to_string())?;
+    let client =
+        WechatClient::with_base_url(account.base_url.clone()).map_err(|error| error.to_string())?;
+    let target_user_id = if to_user_id.trim().is_empty() {
+        load_latest_peer_context(&app, &channel_id)?
+            .map(|item| item.peer_id)
+            .ok_or_else(|| "缺少可用微信会话，请先让该通道收到一条消息".to_string())?
+    } else {
+        to_user_id
+    };
     let token = context_token
         .filter(|value| !value.trim().is_empty())
-        .or_else(|| load_peer_context(&app, &channel_id, &to_user_id).ok().flatten().map(|item| item.context_token))
+        .or_else(|| {
+            load_peer_context(&app, &channel_id, &target_user_id)
+                .ok()
+                .flatten()
+                .map(|item| item.context_token)
+        })
         .ok_or_else(|| "缺少上下文 token，请先让该微信会话发来一条消息".to_string())?;
 
     let message = client
-        .send_text_message(&account.bot_token, &to_user_id, &token, &text)
+        .send_text_message(&account.bot_token, &target_user_id, &token, &text)
         .await
         .map_err(|error| error.to_string())?;
     let _ = app.emit(
@@ -676,7 +745,8 @@ fn write_json_map<T>(path: &PathBuf, value: &HashMap<String, T>) -> Result<(), S
 where
     T: Serialize,
 {
-    let raw = serde_json::to_string_pretty(value).map_err(|error| format!("序列化文件失败: {error}"))?;
+    let raw =
+        serde_json::to_string_pretty(value).map_err(|error| format!("序列化文件失败: {error}"))?;
     fs::write(path, raw).map_err(|error| format!("写入文件失败: {error}"))
 }
 
@@ -709,9 +779,14 @@ fn load_sync_cursor(app: &AppHandle, channel_id: &str) -> Result<Option<String>,
     serde_json::from_str(&raw).map_err(|error| format!("解析游标失败: {error}"))
 }
 
-fn save_sync_cursor(app: &AppHandle, channel_id: &str, value: Option<String>) -> Result<(), String> {
+fn save_sync_cursor(
+    app: &AppHandle,
+    channel_id: &str,
+    value: Option<String>,
+) -> Result<(), String> {
     let file = data_file(app, &format!("wechat-sync-{channel_id}.json"))?;
-    let raw = serde_json::to_string_pretty(&value).map_err(|error| format!("写入游标失败: {error}"))?;
+    let raw =
+        serde_json::to_string_pretty(&value).map_err(|error| format!("写入游标失败: {error}"))?;
     fs::write(file, raw).map_err(|error| format!("保存游标失败: {error}"))
 }
 
@@ -723,7 +798,9 @@ fn delete_sync_cursor(app: &AppHandle, channel_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn load_all_peer_contexts(app: &AppHandle) -> Result<HashMap<String, HashMap<String, StoredPeerContext>>, String> {
+fn load_all_peer_contexts(
+    app: &AppHandle,
+) -> Result<HashMap<String, HashMap<String, StoredPeerContext>>, String> {
     let file = data_file(app, CONTEXT_FILE_NAME)?;
     read_json_map(&file)
 }
@@ -761,7 +838,20 @@ fn load_peer_context(
     peer_id: &str,
 ) -> Result<Option<StoredPeerContext>, String> {
     let all = load_all_peer_contexts(app)?;
-    Ok(all.get(channel_id).and_then(|items| items.get(peer_id)).cloned())
+    Ok(all
+        .get(channel_id)
+        .and_then(|items| items.get(peer_id))
+        .cloned())
+}
+
+fn load_latest_peer_context(
+    app: &AppHandle,
+    channel_id: &str,
+) -> Result<Option<StoredPeerContext>, String> {
+    let all = load_all_peer_contexts(app)?;
+    Ok(all
+        .get(channel_id)
+        .and_then(|items| items.values().max_by_key(|item| item.updated_at).cloned()))
 }
 
 fn clear_peer_contexts(app: &AppHandle, channel_id: &str) -> Result<(), String> {

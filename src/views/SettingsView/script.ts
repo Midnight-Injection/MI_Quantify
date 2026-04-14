@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from '@/stores/settings'
 import { useStrategyStore } from '@/stores/strategy'
-import type { AiProvider, OpenClawChannelSettings, SearchProvider } from '@/types'
+import type { AiProvider, DataSource, OpenClawChannelSettings, SearchProvider } from '@/types'
 import AiProviderCard from '@/components/settings/AiProviderCard/index.vue'
 import DataSourceTable from '@/components/settings/DataSourceTable/index.vue'
 import PromptEditor from '@/components/settings/PromptEditor/index.vue'
@@ -26,6 +26,17 @@ export default defineComponent({
     const unlisteners: Array<() => void> = []
     const wechatChannels = computed(() =>
       settingsStore.settings.integrations.openClaw.channels.filter((item) => item.channelType === 'wechat'),
+    )
+    const configurableDataSources = computed(() =>
+      [...settingsStore.settings.dataSource.sources].sort((a, b) => {
+        if (a.type !== b.type) {
+          return a.type === 'free' ? -1 : 1
+        }
+        if (a.enabled !== b.enabled) {
+          return a.enabled ? -1 : 1
+        }
+        return a.priority - b.priority
+      }),
     )
 
     async function handleTestConnection(provider: AiProvider) {
@@ -73,8 +84,8 @@ export default defineComponent({
       settingsStore.updateDataSource(id, { enabled })
     }
 
-    function handleConfigDataSource(id: string) {
-      console.log('Config data source:', id)
+    function handleUpdateDataSource(id: string, data: Partial<DataSource>) {
+      settingsStore.updateDataSource(id, data)
     }
 
     function handleRefreshInterval(e: Event) {
@@ -149,7 +160,6 @@ export default defineComponent({
         secret: '',
         autoReplyEnabled: true,
         pushEnabled: true,
-        defaultPeerId: '',
       }
     }
 
@@ -192,7 +202,7 @@ export default defineComponent({
         channelStatuses.value[id] = {
           loggedIn: false,
           listening: false,
-          status: channel.pushEnabled ? 'Webhook 推送' : '待配置',
+          status: '待配置',
         }
         return
       }
@@ -340,7 +350,7 @@ export default defineComponent({
       handleUpdateSearchProvider,
       handleSetActiveSearchProvider,
       handleToggleDataSource,
-      handleConfigDataSource,
+      handleUpdateDataSource,
       handleRefreshInterval,
       handleRealTimeToggle,
       handleImportLocalProvider,
@@ -350,6 +360,7 @@ export default defineComponent({
       handleUpdatePrompt,
       handleResetPrompt,
       handleUpdateOpenClaw,
+      configurableDataSources,
       wechatChannels,
       channelStatuses,
       qrSessions,

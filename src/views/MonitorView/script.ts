@@ -1,10 +1,9 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineComponent, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMarketStore } from '@/stores/market'
 import { useNotifications } from '@/composables/useNotifications'
 import { useRealtimeTask } from '@/composables/useRealtimeTask'
 import { formatAmount, formatPercent, formatPrice, formatVolume } from '@/utils/format'
-import { getMonitorDbPath } from '@/utils/monitorPersistence'
 import InfoTooltip from '@/components/common/InfoTooltip/index.vue'
 
 export default defineComponent({
@@ -14,7 +13,6 @@ export default defineComponent({
     const router = useRouter()
     const marketStore = useMarketStore()
     const notifications = useNotifications()
-    const dbPath = ref('~/mi_quantify/mi_quantify.db')
 
     const watchedQuotes = computed(() =>
       marketStore.watchList.map((item) => ({
@@ -57,7 +55,6 @@ export default defineComponent({
         notifications.fetchAlerts(),
       ])
       await refreshQuotes()
-      dbPath.value = await getMonitorDbPath()
     }
 
     async function removeWatch(code: string) {
@@ -100,7 +97,6 @@ export default defineComponent({
     })
 
     return {
-      dbPath,
       summaryCards,
       watchedQuotes,
       enabledAlerts,

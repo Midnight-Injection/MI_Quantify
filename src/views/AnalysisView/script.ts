@@ -1,4 +1,4 @@
-import { computed, defineComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
 import type { AiDiagnosis, DiagnosisEvidence, KlineData, StockQuote } from '@/types'
 import { useRealtimeTask } from '@/composables/useRealtimeTask'
 import { useSettingsStore } from '@/stores/settings'
@@ -201,6 +201,22 @@ export default defineComponent({
       if (!silent) {
         loading.value = true
         analysisError.value = ''
+        diagnosis.value = null
+        currentQuote.value = null
+        finance.value = {
+          pe: 0,
+          pb: 0,
+          totalMv: 0,
+          circMv: 0,
+          roe: 0,
+          eps: 0,
+          bps: 0,
+          turnover: 0,
+        }
+        stockNews.value = []
+        macroNews.value = []
+        policyEvidence.value = []
+        klineData.value = []
       }
       diagnosisLoading.value = true
 
@@ -271,6 +287,14 @@ export default defineComponent({
         await marketStore.fetchStockList('a', 1, 80)
       }
       realtimeTask.start(false)
+    })
+
+    onActivated(() => {
+      realtimeTask.start(false)
+    })
+
+    onDeactivated(() => {
+      realtimeTask.stop()
     })
 
     watch([period, adjust, klineLimit], async () => {

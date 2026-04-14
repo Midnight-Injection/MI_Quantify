@@ -153,9 +153,6 @@
             <p>{{ aiDigest.actionView }}</p>
           </div>
         </div>
-        <div class="sync-strip">
-          <span v-for="item in syncItems" :key="item.label" class="sync-pill">{{ item.label }} {{ item.value }}</span>
-        </div>
       </div>
       <div v-else class="panel-empty">
         {{ aiDigestLoading ? 'AI 点评整理中...' : `当前处于${homeDigestAutoEnabled ? '自动' : '手动'}模式，点击右上角按钮后会生成首页 AI 点评。` }}
@@ -181,7 +178,7 @@
       </div>
     </article>
 
-    <article class="panel">
+    <article class="panel panel-sector">
       <div class="panel-head">
         <div>
           <h3 class="section-title">主力资金方向</h3>
@@ -223,7 +220,6 @@
         <div v-for="item in policyGuides" :key="item.label" class="policy-card" :class="item.tone">
           <div class="policy-top">
             <strong>{{ item.label }}</strong>
-            <span>{{ item.matchCount ? `命中 ${item.matchCount} 条` : '暂无集中消息' }}</span>
           </div>
           <p>{{ item.summary }}</p>
           <div class="policy-meta">

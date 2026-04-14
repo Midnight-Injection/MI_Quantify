@@ -1,4 +1,4 @@
-import { defineComponent, ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
+import { defineComponent, ref, computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSidecar } from '@/composables/useSidecar'
 import { BOARD_ALERT_TYPES, getBoardAlertLabel, isBoardAlertType, type BoardAlertType, useNotifications } from '@/composables/useNotifications'
@@ -90,9 +90,10 @@ export default defineComponent({
     const diagnosis = ref<AiDiagnosis | null>(null)
     const diagnosisLoading = ref(false)
     const diagnosisError = ref('')
+    const priceAlertEnabled = ref(false)
     const quickAlertPrice = ref<number | null>(null)
     const quickAlertDirection = ref<'above' | 'below'>('above')
-    const alertDelivery = ref<'all' | 'desktop' | 'wechat'>('all')
+    const alertDelivery = ref<'desktop' | 'wechat'>('desktop')
     const alertFeedback = ref('')
     const boardAlertMenuOpen = ref(false)
     const boardAlertMenuRef = ref<HTMLElement | null>(null)
@@ -207,6 +208,25 @@ export default defineComponent({
         .filter((item) => selectedBoardAlertTypes.value.includes(item.type))
         .map((item) => item.label),
     )
+    const wechatChannelReady = computed(() =>
+      settingsStore.settings.integrations.openClaw.enabled
+      && settingsStore.settings.integrations.openClaw.channels.some(
+        (item) => item.channelType === 'wechat' && item.enabled,
+      ),
+    )
+    const pendingAlertCount = computed(() =>
+      (priceAlertEnabled.value && typeof quickAlertPrice.value === 'number' ? 1 : 0) + selectedBoardAlertTypes.value.length,
+    )
+    const batchAlertSummary = computed(() => {
+      const segments: string[] = []
+      if (priceAlertEnabled.value && typeof quickAlertPrice.value === 'number') {
+        segments.push(`${quickAlertDirection.value === 'above' ? '突破' : '跌破'} ${quickAlertPrice.value.toFixed(2)}`)
+      }
+      if (selectedBoardAlertLabels.value.length) {
+        segments.push(...selectedBoardAlertLabels.value)
+      }
+      return segments.length ? segments.join(' / ') : '先勾选价格触发或盘口阶段条件，再一次性添加。'
+    })
 
     function metricValueClass(value: string) {
       const compactLength = value.replace(/\s+/g, '').length
@@ -355,18 +375,6 @@ export default defineComponent({
       alertFeedback.value = '已加入关注列表'
     }
 
-    async function createPriceAlert() {
-      if (!stockInfo.value || !quickAlertPrice.value) return
-      await notifications.addAlert(
-        stockInfo.value.code,
-        stockInfo.value.name,
-        quickAlertPrice.value,
-        quickAlertDirection.value,
-        alertDelivery.value,
-      )
-      alertFeedback.value = `已添加${quickAlertDirection.value === 'above' ? '突破' : '跌破'}提醒`
-    }
-
     function toggleBoardAlertType(type: NotificationAlertType) {
       if (!isBoardAlertType(type)) return
       if (selectedBoardAlertTypes.value.includes(type)) {
@@ -382,16 +390,23 @@ export default defineComponent({
       boardAlertMenuOpen.value = false
     }
 
-    async function createSelectedBoardAlerts() {
-      if (!stockInfo.value || !selectedBoardAlertTypes.value.length) return
-      const { added, skipped } = await notifications.addBoardAlerts(
-        stockInfo.value.code,
-        stockInfo.value.name,
-        selectedBoardAlertTypes.value,
-        alertDelivery.value,
-      )
+    async function createBatchAlerts() {
+      if (!stockInfo.value || !pendingAlertCount.value) return
+      const { added, skipped } = await notifications.addBatchAlerts({
+        stockCode: stockInfo.value.code,
+        stockName: stockInfo.value.name,
+        delivery: alertDelivery.value,
+        priceAlert: priceAlertEnabled.value && typeof quickAlertPrice.value === 'number'
+          ? {
+              targetPrice: quickAlertPrice.value,
+              direction: quickAlertDirection.value,
+            }
+          : null,
+        boardTypes: selectedBoardAlertTypes.value,
+      })
       await notifications.fetchAlerts()
       boardAlertMenuOpen.value = false
+      priceAlertEnabled.value = false
       if (added && skipped) {
         alertFeedback.value = `已新增 ${added} 条提醒，${skipped} 条已存在`
       } else if (added) {
@@ -485,23 +500,57 @@ export default defineComponent({
       syncAllRailStates()
     }
 
-    onMounted(async () => {
-      await loadAll()
+    function bindDetailEvents() {
       window.addEventListener('resize', syncAllRailStates)
       document.addEventListener('mousedown', handleDocumentClick)
+    }
+
+    function unbindDetailEvents() {
+      window.removeEventListener('resize', syncAllRailStates)
+      document.removeEventListener('mousedown', handleDocumentClick)
+    }
+
+    function startRealtimeTasks() {
       quoteRealtime.start(false)
       newsRealtime.start(false)
       klineRealtime.start(false)
+    }
+
+    function stopRealtimeTasks() {
+      quoteRealtime.stop()
+      newsRealtime.stop()
+      klineRealtime.stop()
+    }
+
+    onMounted(async () => {
+      await loadAll()
+      if (wechatChannelReady.value) {
+        alertDelivery.value = 'wechat'
+      }
+      bindDetailEvents()
+      startRealtimeTasks()
     })
 
     onBeforeUnmount(() => {
-      window.removeEventListener('resize', syncAllRailStates)
-      document.removeEventListener('mousedown', handleDocumentClick)
+      unbindDetailEvents()
+      stopRealtimeTasks()
+    })
+
+    onActivated(() => {
+      bindDetailEvents()
+      startRealtimeTasks()
+      void nextTick(() => syncAllRailStates())
+    })
+
+    onDeactivated(() => {
+      unbindDetailEvents()
+      stopRealtimeTasks()
     })
 
     watch(code, async () => {
       diagnosis.value = null
       alertFeedback.value = ''
+      priceAlertEnabled.value = false
       boardAlertMenuOpen.value = false
       selectedBoardAlertTypes.value = []
       lastDiagnosisAt.value = 0
@@ -555,9 +604,13 @@ export default defineComponent({
       aiSignalCards,
       quoteUpdatedAt,
       newsUpdatedAt,
+      priceAlertEnabled,
       quickAlertPrice,
       quickAlertDirection,
       alertDelivery,
+      wechatChannelReady,
+      pendingAlertCount,
+      batchAlertSummary,
       boardAlertMenuOpen,
       boardAlertMenuRef,
       boardAlertOptions,
@@ -596,9 +649,8 @@ export default defineComponent({
       runDiagnosis,
       requestDiagnosis,
       addToWatchlist,
-      createPriceAlert,
       toggleBoardAlertType,
-      createSelectedBoardAlerts,
+      createBatchAlerts,
       removeAlert,
       loadKline,
     }

@@ -10,6 +10,11 @@ export interface DataSource {
   apiSecret: string
   apiUrl: string
   priority: number
+  mode?: 'sidecar' | 'remote'
+  coverage?: string
+  description?: string
+  requiresKey?: boolean
+  requiresSecret?: boolean
 }
 
 export interface AppSettings {
@@ -89,9 +94,9 @@ export interface OpenClawChannelSettings {
   baseUrl: string
   pushUrl?: string
   secret?: string
-  autoReplyEnabled: boolean
-  pushEnabled: boolean
-  defaultPeerId: string
+  autoReplyEnabled?: boolean
+  pushEnabled?: boolean
+  defaultPeerId?: string
 }
 
 export interface OpenClawSettings {

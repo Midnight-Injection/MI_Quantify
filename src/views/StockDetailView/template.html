@@ -318,44 +318,71 @@
           <div class="panel-head">
             <div>
               <h3 class="section-title">通知守护</h3>
-              <p class="section-subtitle">支持价格阈值、涨停开板和跌停提醒。</p>
+              <p class="section-subtitle">把价格触发和盘口阶段提醒收进同一个批量监听器里，一次选好渠道后统一添加。</p>
             </div>
           </div>
-          <div class="alert-form">
-            <input class="input" type="number" step="0.01" v-model.number="quickAlertPrice" />
-            <select class="input select-sm" v-model="quickAlertDirection">
-              <option value="above">突破提醒</option>
-              <option value="below">跌破提醒</option>
-            </select>
-            <select class="input select-sm" v-model="alertDelivery">
-              <option value="all">桌面 + 微信</option>
-              <option value="desktop">仅桌面</option>
-              <option value="wechat">仅微信</option>
-            </select>
-            <button class="btn-primary" @click="createPriceAlert">添加价格提醒</button>
-          </div>
-          <div class="alert-actions alert-actions-dropdown">
-            <div ref="boardAlertMenuRef" class="alert-select-shell">
-              <button class="btn-ghost alert-select-trigger" type="button" @click="boardAlertMenuOpen = !boardAlertMenuOpen">
-                <span>{{ selectedBoardAlertLabels.length ? `已选 ${selectedBoardAlertLabels.length} 项` : '选择盘口监听条件' }}</span>
-                <span class="alert-select-arrow">{{ boardAlertMenuOpen ? '▴' : '▾' }}</span>
-              </button>
-              <div v-if="boardAlertMenuOpen" class="alert-select-menu">
-                <label v-for="item in boardAlertOptions" :key="item.type" class="alert-select-option">
-                  <input
-                    type="checkbox"
-                    :checked="selectedBoardAlertTypes.includes(item.type)"
-                    :disabled="item.active"
-                    @change="toggleBoardAlertType(item.type)"
-                  />
-                  <span>{{ item.label }}</span>
-                  <small>{{ item.active ? '已添加' : '可监听' }}</small>
+          <div class="alert-batch-shell">
+            <div class="alert-channel-row">
+              <span class="alert-channel-label">通知渠道</span>
+              <select class="input select-sm" v-model="alertDelivery">
+                <option value="desktop">桌面通知</option>
+                <option value="wechat" :disabled="!wechatChannelReady">微信通道{{ wechatChannelReady ? '' : '（未连接）' }}</option>
+              </select>
+            </div>
+
+            <div class="alert-rule-grid">
+              <div class="alert-rule-card">
+                <label class="alert-rule-head">
+                  <input type="checkbox" v-model="priceAlertEnabled" />
+                  <span>价格触发</span>
+                  <small>把指定价格和突破 / 跌破方向一起放到同一批次里。</small>
                 </label>
+                <div class="alert-rule-body alert-rule-inline">
+                  <select class="input select-sm" v-model="quickAlertDirection" :disabled="!priceAlertEnabled">
+                    <option value="above">突破提醒</option>
+                    <option value="below">跌破提醒</option>
+                  </select>
+                  <input class="input" type="number" step="0.01" v-model.number="quickAlertPrice" :disabled="!priceAlertEnabled" placeholder="输入触发价" />
+                </div>
+              </div>
+
+              <div class="alert-rule-card">
+                <div class="alert-rule-head">
+                  <span>盘口阶段监听</span>
+                  <small>涨停、开板、回封、跌停等条件统一放在这里多选。</small>
+                </div>
+                <div class="alert-rule-body">
+                  <div ref="boardAlertMenuRef" class="alert-select-shell">
+                    <button class="btn-ghost alert-select-trigger" type="button" @click="boardAlertMenuOpen = !boardAlertMenuOpen">
+                      <span>{{ selectedBoardAlertLabels.length ? `已选 ${selectedBoardAlertLabels.length} 项` : '选择盘口监听条件' }}</span>
+                      <span class="alert-select-arrow">{{ boardAlertMenuOpen ? '▴' : '▾' }}</span>
+                    </button>
+                    <div v-if="boardAlertMenuOpen" class="alert-select-menu">
+                      <label v-for="item in boardAlertOptions" :key="item.type" class="alert-select-option">
+                        <input
+                          type="checkbox"
+                          :checked="selectedBoardAlertTypes.includes(item.type)"
+                          :disabled="item.active"
+                          @change="toggleBoardAlertType(item.type)"
+                        />
+                        <span>{{ item.label }}</span>
+                        <small>{{ item.active ? '已添加' : '可监听' }}</small>
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <button class="btn-primary" :disabled="!selectedBoardAlertTypes.length" @click="createSelectedBoardAlerts">
-              批量添加监听
-            </button>
+
+            <div class="alert-batch-foot">
+              <div class="alert-batch-summary">
+                <strong>本次监听</strong>
+                <span>{{ batchAlertSummary }}</span>
+              </div>
+              <button class="btn-primary" :disabled="!pendingAlertCount" @click="createBatchAlerts">
+                批量添加监听
+              </button>
+            </div>
           </div>
           <div v-if="alertFeedback" class="alert-feedback">{{ alertFeedback }}</div>
           <div v-if="alertsForStock.length" class="alert-list">

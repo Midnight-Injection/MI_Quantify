@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from app.services.network_env import create_http_session
@@ -54,6 +54,7 @@ def get_context_news(code: str, limit: int = 20, stock_name: str = "") -> list[d
 
         merged = _dedupe_news_items([*stock_items, *related_market_items])
         filtered = [item for item in merged if _is_stock_related(item, code, stock_name)]
+        filtered = _prefer_recent_news(filtered, limit)
         filtered.sort(
             key=lambda item: (_score_context_item(item, code, stock_name), item.get("timestamp", 0)),
             reverse=True,
@@ -91,7 +92,7 @@ def get_stock_news(code: str, limit: int = 20) -> list[dict]:
         ]
 
         result = []
-        for item in items[:limit]:
+        for item in items:
             publish_time = item.get("date", "") or ""
             timestamp = _to_timestamp_ms(publish_time)
             title = _strip_html(item.get("title", "") or "")
@@ -112,7 +113,8 @@ def get_stock_news(code: str, limit: int = 20) -> list[dict]:
                     "aiSummary": None,
                 }
             )
-        return result
+        result = _prefer_recent_news(_dedupe_news_items(result), limit)
+        return result[:limit]
     except Exception as e:
         print(f"[news] error fetching stock news for {code}: {e}")
         return []
@@ -150,7 +152,7 @@ def _get_sina_roll_news(limit: int) -> list[dict]:
 
 
 def _search_topic_news(keyword: str, limit: int = 6) -> list[dict]:
-    url = _build_eastmoney_search_url(keyword, limit)
+    url = _build_eastmoney_search_url(keyword, max(limit * 3, 18))
     response = _http.get(url, timeout=12)
     payload = _parse_eastmoney_jsonp(response.text)
     groups = payload.get("result", {})
@@ -159,7 +161,7 @@ def _search_topic_news(keyword: str, limit: int = 6) -> list[dict]:
         *groups.get("cmsArticleWeb", []),
     ]
     result = []
-    for item in items[:limit]:
+    for item in items:
         publish_time = item.get("date", "") or ""
         timestamp = _to_timestamp_ms(publish_time)
         title = _strip_html(item.get("title", "") or "")
@@ -179,7 +181,8 @@ def _search_topic_news(keyword: str, limit: int = 6) -> list[dict]:
                 "aiSummary": None,
             }
         )
-    return result
+    result = _prefer_recent_news(_dedupe_news_items(result), limit)
+    return result[:limit]
 
 
 def _fetch_stock_name(code: str) -> str:
@@ -265,6 +268,20 @@ def _is_today_news(item: dict) -> bool:
     if not timestamp:
         return False
     return datetime.fromtimestamp(timestamp / 1000).strftime("%Y-%m-%d") == datetime.now().strftime("%Y-%m-%d")
+
+
+def _prefer_recent_news(items: list[dict], limit: int, recent_days: int = 180) -> list[dict]:
+    if not items:
+        return []
+    now = datetime.now()
+    threshold = now - timedelta(days=recent_days)
+    recent = [
+        item for item in items
+        if int(item.get("timestamp", 0) or 0) and datetime.fromtimestamp(int(item.get("timestamp", 0)) / 1000) >= threshold
+    ]
+    if len(recent) >= max(3, min(limit, 6)):
+        return sorted(recent, key=lambda item: item.get("timestamp", 0), reverse=True)
+    return sorted(items, key=lambda item: item.get("timestamp", 0), reverse=True)
 
 
 def _build_eastmoney_search_url(keyword: str, limit: int) -> str:

@@ -50,6 +50,11 @@
   flex-wrap: wrap;
 }
 
+.market-tabs {
+  flex-wrap: nowrap;
+  width: min(360px, 100%);
+}
+
 .market-tab,
 .board-chip,
 .sector-chip,
@@ -94,7 +99,8 @@
 }
 
 .market-tab {
-  min-width: 112px;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .filter-panel {
@@ -115,6 +121,13 @@
 
 .filter-head {
   align-items: flex-start;
+}
+
+.filter-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .section-subtitle,
@@ -141,6 +154,10 @@
 }
 
 .search-input {
+  min-height: 48px;
+}
+
+.filter-block :deep(.search-input) {
   min-height: 48px;
 }
 
@@ -306,6 +323,14 @@
   .board-chip,
   .sector-chip {
     min-width: calc(50% - 5px);
+  }
+
+  .market-tabs {
+    width: 100%;
+  }
+
+  .market-tab {
+    min-width: 0;
   }
 
   .selected-sector-strip {

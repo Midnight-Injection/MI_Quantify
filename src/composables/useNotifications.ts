@@ -103,23 +103,33 @@ async function addAlert(
   delivery: 'all' | 'desktop' | 'wechat' = 'all',
 ) {
   await init()
+  const normalizedDirection = direction === 'below' ? 'below' : 'above'
+  const normalizedPrice = Number(targetPrice.toFixed(2))
+  const exists = alerts.value.some((item) =>
+    item.stockCode === stockCode
+    && item.type === 'price'
+    && item.direction === normalizedDirection
+    && Number(item.targetPrice ?? 0).toFixed(2) === normalizedPrice.toFixed(2),
+  )
+  if (exists) return false
   const alert: NotificationAlert = {
     id: buildAlertId('price', stockCode),
     stockCode,
     stockName,
     type: 'price',
-    direction: direction === 'below' ? 'below' : 'above',
-    targetPrice,
+    direction: normalizedDirection,
+    targetPrice: normalizedPrice,
     enabled: true,
     triggered: false,
     cooldownMs: 10 * 60 * 1000,
-    note: direction === 'below' ? `跌破 ${targetPrice}` : `突破 ${targetPrice}`,
+    note: normalizedDirection === 'below' ? `跌破 ${normalizedPrice}` : `突破 ${normalizedPrice}`,
     metadata: {
       delivery,
     },
   }
   alerts.value.unshift(alert)
   await upsertPersistedAlert(alert)
+  return true
 }
 
 function boardAlertNote(type: NotificationAlert['type']) {
@@ -194,6 +204,46 @@ async function addBoardAlerts(
   return { added, skipped }
 }
 
+async function addBatchAlerts(options: {
+  stockCode: string
+  stockName: string
+  delivery?: 'all' | 'desktop' | 'wechat'
+  priceAlert?: {
+    targetPrice: number
+    direction: 'above' | 'below'
+  } | null
+  boardTypes?: NotificationAlertType[]
+}) {
+  await init()
+  let added = 0
+  let skipped = 0
+
+  if (options.priceAlert) {
+    const created = await addAlert(
+      options.stockCode,
+      options.stockName,
+      options.priceAlert.targetPrice,
+      options.priceAlert.direction,
+      options.delivery,
+    )
+    if (created) added += 1
+    else skipped += 1
+  }
+
+  if (options.boardTypes?.length) {
+    const result = await addBoardAlerts(
+      options.stockCode,
+      options.stockName,
+      options.boardTypes,
+      options.delivery,
+    )
+    added += result.added
+    skipped += result.skipped
+  }
+
+  return { added, skipped }
+}
+
 async function removeAlert(id: string) {
   await init()
   alerts.value = alerts.value.filter((item) => item.id !== id)
@@ -258,13 +308,13 @@ async function pushOpenClawNotification(title: string, body: string, entry: Part
   if (!openClaw.enabled || (entry as { delivery?: string }).delivery === 'desktop') return
 
   const activeChannels = openClaw.channels.filter(
-    (item) => item.channelType === 'wechat' && item.enabled && item.pushEnabled && item.defaultPeerId,
+    (item) => item.channelType === 'wechat' && item.enabled,
   )
   for (const channel of activeChannels) {
     try {
       await invoke('wechat_send_message', {
         channelId: channel.id,
-        toUserId: channel.defaultPeerId,
+        toUserId: channel.defaultPeerId || '',
         text: `${title}\n${body}`,
         contextToken: '',
       })
@@ -401,6 +451,7 @@ export function useNotifications() {
     addAlert,
     addBoardAlert,
     addBoardAlerts,
+    addBatchAlerts,
     removeAlert,
     toggleAlert,
     fetchTasks,

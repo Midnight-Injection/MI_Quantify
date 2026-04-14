@@ -1,5 +1,5 @@
-use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use tauri::{Emitter, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,7 +52,11 @@ pub async fn alert_remove(state: State<'_, AlertState>, id: String) -> Result<()
 }
 
 #[tauri::command]
-pub async fn alert_toggle(state: State<'_, AlertState>, id: String, enabled: bool) -> Result<(), String> {
+pub async fn alert_toggle(
+    state: State<'_, AlertState>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
     let mut alerts = state.alerts.lock().map_err(|e| e.to_string())?;
     if let Some(alert) = alerts.iter_mut().find(|a| a.id == id) {
         alert.enabled = enabled;
@@ -61,9 +65,16 @@ pub async fn alert_toggle(state: State<'_, AlertState>, id: String, enabled: boo
 }
 
 #[tauri::command]
-pub async fn send_notification(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
-    app.emit("notification", serde_json::json!({ "title": &title, "body": &body }))
-        .map_err(|e: tauri::Error| e.to_string())?;
+pub async fn send_notification(
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+) -> Result<(), String> {
+    app.emit(
+        "notification",
+        serde_json::json!({ "title": &title, "body": &body }),
+    )
+    .map_err(|e: tauri::Error| e.to_string())?;
     Ok(())
 }
 

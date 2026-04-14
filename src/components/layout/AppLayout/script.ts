@@ -76,7 +76,7 @@ export default defineComponent({
       if (!channelId || !message || message.isOutgoing) return
 
       const channel = settingsStore.settings.integrations.openClaw.channels.find(
-        (item) => item.id === channelId && item.enabled && item.autoReplyEnabled,
+        (item) => item.id === channelId && item.enabled,
       )
       if (!channel || !message.text?.trim()) return
 
@@ -133,6 +133,9 @@ export default defineComponent({
       }
     })
 
-    return {}
+    return {
+      cachedViewNames,
+    }
   },
 })
+    const cachedViewNames = ['HomeView', 'AskView', 'AnalysisView', 'StockDetailView', 'StrategyView']

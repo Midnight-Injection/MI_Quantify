@@ -3,32 +3,18 @@
     <div class="strategy-header">
       <div class="strategy-title-area">
         <h1 class="page-title">策略中心</h1>
-        <span class="strategy-badge">{{ strategyStore.strategies.filter(s => s.enabled).length }} 策略运行中</span>
+        <span class="strategy-badge">{{ strategyStore.strategies.filter(s => s.enabled).length }} 个策略已启用</span>
       </div>
       <div class="strategy-summary">
-        <span>近 10 次平均评分 {{ evaluationSummary.avgScore }}</span>
-        <span>{{ evaluationSummary.actionBias }}</span>
-        <span>{{ evaluationSummary.latest }}</span>
+        <span>这里只维护内置与自定义策略模板</span>
+        <span>AI问股 / 个股分析等页面通过下拉直接选择</span>
       </div>
-    </div>
-
-    <div class="strategy-stat-grid">
-      <article v-for="item in strategyStats" :key="item.label" class="strategy-stat-card">
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-        <p>{{ item.detail }}</p>
-      </article>
-    </div>
-
-    <div class="strategy-section section-ai">
-      <h3 class="section-heading">AI 智能评估</h3>
-      <ai-evaluator />
     </div>
 
     <div class="strategy-section strategy-playbook">
       <div class="section-header">
-        <h3 class="section-heading">专业策略框架</h3>
-        <span class="count">内置更多专业交易方法，按场景挑选而不是只盯单一指标</span>
+        <h3 class="section-heading">内置策略框架</h3>
+        <span class="count">这些框架会出现在其他页面的策略下拉中</span>
       </div>
       <div class="playbook-grid">
         <article v-for="item in featuredStrategies" :key="item.id" class="playbook-card">
@@ -41,78 +27,46 @@
       </div>
     </div>
 
-    <div class="strategy-section strategy-metrics">
+    <div class="strategy-section strategy-prompt-editor">
       <div class="section-header">
-        <h3 class="section-heading">关键指标怎么用</h3>
-        <span class="count">只保留“指标作用 + 理想范围”</span>
+        <h3 class="section-heading">策略提示词模板</h3>
+        <span class="count">集中维护内置模板，其他分析页面直接复用</span>
       </div>
-      <div class="metric-grid">
-        <article v-for="item in researchGuides" :key="item.title" class="metric-card">
-          <div class="metric-top">
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.metric }}</span>
-          </div>
-          <p>{{ item.description }}</p>
-          <div class="metric-range">{{ item.range }}</div>
-        </article>
-      </div>
+      <prompt-editor
+        :templates="strategyStore.promptTemplates"
+        @update="handleUpdatePrompt"
+        @reset="handleResetPrompt"
+      />
     </div>
 
-    <div class="strategy-grid">
-      <div class="strategy-left">
-        <div class="strategy-section">
-          <div class="section-header">
-            <h3 class="section-heading">交易策略</h3>
-            <span class="count">{{ strategyStore.strategies.filter(s => s.enabled).length }}/{{ strategyStore.strategies.length }} 已启用 · {{ categoryBreakdown.map(item => `${item.label}${item.count}`).join(' / ') }}</span>
-          </div>
-          <strategy-list :strategies="strategyStore.strategies" @toggle="strategyStore.toggleStrategy" @remove="strategyStore.removeStrategy" />
+    <div class="strategy-grid strategy-grid-single">
+      <div class="strategy-section">
+        <div class="section-header">
+          <h3 class="section-heading">策略库</h3>
+          <span class="count">{{ strategyStore.strategies.filter(s => s.enabled).length }}/{{ strategyStore.strategies.length }} 已启用 · {{ categoryBreakdown.map(item => `${item.label}${item.count}`).join(' / ') }}</span>
         </div>
-
-        <div class="strategy-section strategy-builder">
-          <div class="section-header">
-            <h3 class="section-heading">自定义策略</h3>
-            <span class="count">本地持久化</span>
-          </div>
-          <div class="builder-grid">
-            <input class="input" v-model="customStrategy.name" placeholder="策略名称" />
-            <select class="input" v-model="customStrategy.category">
-              <option v-for="item in categoryOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-            </select>
-            <textarea class="input builder-textarea" v-model="customStrategy.description" placeholder="描述触发逻辑、适用场景和风险控制"></textarea>
-            <textarea class="input builder-textarea" v-model="customStrategy.notes" placeholder="可写入用户自定义规则、仓位原则或特殊约束"></textarea>
-          </div>
-          <div class="builder-actions">
-            <label class="builder-toggle">
-              <input type="checkbox" v-model="customStrategy.enabled" />
-              <span>创建后立即启用</span>
-            </label>
-            <button class="btn-primary" @click="saveCustomStrategy">保存策略</button>
-          </div>
-        </div>
+        <strategy-list :strategies="strategyStore.strategies" @toggle="strategyStore.toggleStrategy" @remove="strategyStore.removeStrategy" />
       </div>
 
-      <div class="strategy-right">
-        <div class="strategy-section">
-          <div class="section-header">
-            <h3 class="section-heading">交易信号</h3>
-          </div>
-          <signal-list :signals="strategyStore.signals" />
+      <div class="strategy-section strategy-builder">
+        <div class="section-header">
+          <h3 class="section-heading">自定义策略</h3>
+          <span class="count">新增后会自动出现在策略下拉里</span>
         </div>
-
-        <div class="strategy-section">
-          <div class="section-header">
-            <h3 class="section-heading">评估历史</h3>
-            <span class="count">{{ strategyStore.evaluations.length }} 条</span>
-          </div>
-          <div v-if="!strategyStore.evaluations.length" class="empty-hint">暂无评估记录</div>
-          <div v-else class="eval-history">
-            <div v-for="ev in strategyStore.evaluations.slice(0, 10)" :key="ev.id" class="eval-history-item">
-              <span class="ev-stock">{{ ev.stockName }} ({{ ev.stockCode }})</span>
-              <span class="ev-score" :class="ev.totalScore >= 7 ? 'high' : ev.totalScore >= 4 ? 'mid' : 'low'">{{ ev.totalScore }}/10</span>
-              <span class="ev-rec">{{ ev.recommendation }}</span>
-              <span class="ev-time">{{ formatTime(ev.timestamp) }}</span>
-            </div>
-          </div>
+        <div class="builder-grid">
+          <input class="input" v-model="customStrategy.name" placeholder="策略名称" />
+          <select class="input" v-model="customStrategy.category">
+            <option v-for="item in categoryOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
+          <textarea class="input builder-textarea" v-model="customStrategy.description" placeholder="描述适用场景、判断逻辑和主要观察点"></textarea>
+          <textarea class="input builder-textarea" v-model="customStrategy.notes" placeholder="写入你的自定义提示词、仓位约束和执行偏好"></textarea>
+        </div>
+        <div class="builder-actions">
+          <label class="builder-toggle">
+            <input type="checkbox" v-model="customStrategy.enabled" />
+            <span>创建后立即启用</span>
+          </label>
+          <button class="btn-primary" @click="saveCustomStrategy">保存策略</button>
         </div>
       </div>
     </div>

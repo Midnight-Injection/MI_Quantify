@@ -5,6 +5,7 @@
 table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 980px;
 }
 
 th, td {
@@ -30,14 +31,30 @@ tr:hover td {
   background: rgba($text-primary, 0.02);
 }
 
-td:first-child {
+tbody > tr:not(.config-row) > td:first-child {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
+tbody > tr:not(.config-row).is-open td {
+  background: rgba(15, 33, 57, 0.03);
+}
+
+.source-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .source-name {
   font-weight: 500;
+}
+
+.source-desc {
+  color: $text-muted;
+  line-height: 1.6;
 }
 
 .priority {
@@ -60,6 +77,91 @@ td:first-child {
 .text-muted {
   color: $text-muted;
   font-size: 13px;
+}
+
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid $border-light;
+}
+
+.mode-sidecar {
+  background: rgba($color-accent, 0.08);
+  color: $color-accent;
+}
+
+.mode-remote {
+  background: rgba($color-success, 0.1);
+  color: $color-success;
+}
+
+.config-toggle-cell {
+  width: 132px;
+}
+
+.config-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 33, 57, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  color: $text-secondary;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color $transition-fast, background $transition-fast, color $transition-fast;
+
+  &:hover {
+    border-color: rgba($color-accent, 0.2);
+    background: rgba($color-accent, 0.06);
+    color: $text-primary;
+  }
+}
+
+.config-toggle-arrow {
+  font-size: 11px;
+  color: $text-muted;
+}
+
+.config-row td {
+  padding-top: 0;
+  background: rgba(15, 33, 57, 0.015);
+}
+
+.config-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-radius: 0 0 18px 18px;
+}
+
+.config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: $text-muted;
+  }
 }
 
 .btn-sm {
@@ -107,5 +209,11 @@ td:first-child {
     &::before {
       transform: translateX(14px);
     }
+  }
+}
+
+@media (max-width: 980px) {
+  .config-grid {
+    grid-template-columns: 1fr;
   }
 }

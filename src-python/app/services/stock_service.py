@@ -6,6 +6,7 @@ import subprocess
 from datetime import datetime
 from app.services.network_env import create_http_session, get_original_proxy_env
 from app.services.news_service import get_stock_news as get_stock_news_feed
+from app.services.market_service import get_realtime_quotes
 
 _sina = create_http_session()
 
@@ -44,6 +45,30 @@ def get_stock_info(code: str) -> dict:
         "asks": [],
     }
     try:
+        normalized = str(code or "").strip().upper()
+        if re.fullmatch(r"\d{5}", normalized) or re.fullmatch(r"[A-Z][A-Z0-9.\-]*", normalized):
+            quotes = get_realtime_quotes([normalized])
+            if quotes:
+                quote = quotes[0]
+                return {
+                    "code": quote.get("code", normalized),
+                    "name": quote.get("name", ""),
+                    "price": _safe_float(quote.get("price", 0)),
+                    "open": _safe_float(quote.get("open", 0)),
+                    "high": _safe_float(quote.get("high", 0)),
+                    "low": _safe_float(quote.get("low", 0)),
+                    "preClose": _safe_float(quote.get("preClose", 0)),
+                    "change": _safe_float(quote.get("change", 0)),
+                    "changePercent": _safe_float(quote.get("changePercent", 0)),
+                    "volume": _safe_float(quote.get("volume", 0)),
+                    "amount": _safe_float(quote.get("amount", 0)),
+                    "turnover": _safe_float(quote.get("turnover", 0)),
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "time": "",
+                    "bids": [],
+                    "asks": [],
+                }
+
         if code.startswith("6"):
             sc = f"sh{code}"
         elif code.startswith(("0", "3")):

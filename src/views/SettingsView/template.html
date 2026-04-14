@@ -149,6 +149,7 @@
   </div>
 
   <div v-if="activeTab === 'datasource'" class="tab-content">
+    <p class="section-desc">这里会同时显示当前内置免费源和可选外部付费源。点击每一项右侧的配置即可在该项下方展开地址、Key 等信息，不再统一堆到表格底部。</p>
     <div class="data-source-options">
       <div class="option-row">
         <span class="option-label">刷新间隔</span>
@@ -169,10 +170,12 @@
       </div>
     </div>
     <data-source-table
-      :sources="settingsStore.settings.dataSource.sources"
+      v-if="configurableDataSources.length"
+      :sources="configurableDataSources"
       @toggle="handleToggleDataSource"
-      @config="handleConfigDataSource"
+      @update="handleUpdateDataSource"
     />
+    <p v-else class="section-desc">当前没有需要手动配置的外部数据源。</p>
   </div>
 
   <div v-if="activeTab === 'prompts'" class="tab-content">
@@ -198,7 +201,7 @@
 
     <div class="notify-integration">
       <h3 class="section-heading">微信通知与自动问股</h3>
-      <p class="section-desc">开启后会在软件启动时恢复监听。收到微信消息后会自动识别股票名称或代码，直接复用 AI 问股逻辑回复，不再暴露外部诊股接口。</p>
+      <p class="section-desc">开启后会在软件启动时恢复监听。收到微信消息后会自动识别股票名称或代码并直接复用 AI 问股逻辑回复；个股提醒也会默认走已连接的微信会话，不再单独配置自动回复、提醒同步或默认会话。</p>
       <div class="option-list">
         <div class="option-row">
           <span class="option-label">启用微信桥接</span>
@@ -210,7 +213,7 @@
       </div>
 
       <div class="channel-toolbar">
-        <div class="section-desc">价格提醒、涨跌停提醒等规则请在个股详情页直接选择提醒方式；这里仅维护微信登录、监听、自动回复和默认会话。</div>
+        <div class="section-desc">价格提醒、涨跌停提醒等规则请在个股详情页直接选择提醒方式；这里仅维护微信登录、监听和通道连接。</div>
         <div class="channel-create-actions">
           <button class="btn-primary" @click="addChannel">新增微信通道</button>
         </div>
@@ -254,10 +257,6 @@
               <input class="input" :value="channel.baseUrl" placeholder="https://ilinkai.weixin.qq.com" @change="updateChannel(channel.id, 'baseUrl', $event.target.value)" />
             </label>
             <label>
-              <span>默认推送会话 ID</span>
-              <input class="input" :value="channel.defaultPeerId" placeholder="收到过消息后填对方 user id" @change="updateChannel(channel.id, 'defaultPeerId', $event.target.value)" />
-            </label>
-            <label>
               <span>通道开关</span>
               <select class="input select-input full-width" :value="channel.enabled ? 'on' : 'off'" @change="updateChannel(channel.id, 'enabled', $event.target.value === 'on')">
                 <option value="on">启用</option>
@@ -274,20 +273,6 @@
                 <span class="slider"></span>
               </label>
             </div>
-            <div class="option-row">
-              <span class="option-label">收到微信消息后自动诊股回复</span>
-              <label class="switch">
-                <input type="checkbox" :checked="channel.autoReplyEnabled" @change="updateChannel(channel.id, 'autoReplyEnabled', $event.target.checked)" />
-                <span class="slider"></span>
-              </label>
-            </div>
-            <div class="option-row">
-              <span class="option-label">允许把个股提醒同步到该微信通道</span>
-              <label class="switch">
-                <input type="checkbox" :checked="channel.pushEnabled" @change="updateChannel(channel.id, 'pushEnabled', $event.target.checked)" />
-                <span class="slider"></span>
-              </label>
-            </div>
           </div>
 
           <div v-if="qrSessions[channel.id]?.qrcodeImg" class="qr-card">
@@ -300,7 +285,7 @@
           </div>
         </article>
       </div>
-      <div v-else class="section-desc">还没有微信通道。新增后可扫码登录、恢复监听，并把个股提醒同步到微信。</div>
+      <div v-else class="section-desc">还没有微信通道。新增后扫码连接 WechatClaw 即可开始监听和自动回复。</div>
     </div>
   </div>
 

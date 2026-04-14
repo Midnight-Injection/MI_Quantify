@@ -126,7 +126,11 @@ fn init_schema(conn: &Connection) -> Result<(), MonitorDbError> {
 }
 
 fn bool_to_int(value: bool) -> i64 {
-    if value { 1 } else { 0 }
+    if value {
+        1
+    } else {
+        0
+    }
 }
 
 fn int_to_bool(value: i64) -> bool {
@@ -158,7 +162,8 @@ pub async fn monitor_watchlist_list() -> Result<Vec<WatchlistRecord>, String> {
             })
         })?;
 
-        rows.collect::<Result<Vec<_>, _>>().map_err(MonitorDbError::from)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(MonitorDbError::from)
     })
 }
 
@@ -173,7 +178,13 @@ pub async fn monitor_watchlist_upsert(entry: WatchlistRecord) -> Result<(), Stri
                added_at = excluded.added_at,
                group_name = excluded.group_name,
                note = excluded.note",
-            params![entry.code, entry.name, entry.added_at, entry.group, entry.note],
+            params![
+                entry.code,
+                entry.name,
+                entry.added_at,
+                entry.group,
+                entry.note
+            ],
         )?;
         Ok(())
     })
@@ -213,7 +224,9 @@ pub async fn monitor_alert_list() -> Result<Vec<MonitorAlert>, String> {
             ))
         })?;
 
-        let raw_rows = rows.collect::<Result<Vec<_>, _>>().map_err(MonitorDbError::from)?;
+        let raw_rows = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(MonitorDbError::from)?;
         raw_rows
             .into_iter()
             .map(|row| {
@@ -300,14 +313,22 @@ pub async fn monitor_alert_toggle(id: String, enabled: bool) -> Result<(), Strin
     with_connection(|conn| {
         conn.execute(
             "UPDATE alerts SET enabled = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, bool_to_int(enabled), chrono::Utc::now().timestamp_millis()],
+            params![
+                id,
+                bool_to_int(enabled),
+                chrono::Utc::now().timestamp_millis()
+            ],
         )?;
         Ok(())
     })
 }
 
 #[tauri::command]
-pub async fn monitor_alert_touch(id: String, triggered: bool, last_triggered_at: Option<i64>) -> Result<(), String> {
+pub async fn monitor_alert_touch(
+    id: String,
+    triggered: bool,
+    last_triggered_at: Option<i64>,
+) -> Result<(), String> {
     with_connection(|conn| {
         conn.execute(
             "UPDATE alerts
@@ -325,7 +346,9 @@ pub async fn monitor_alert_touch(id: String, triggered: bool, last_triggered_at:
 }
 
 #[tauri::command]
-pub async fn monitor_notification_list(limit: Option<u32>) -> Result<Vec<MonitorNotification>, String> {
+pub async fn monitor_notification_list(
+    limit: Option<u32>,
+) -> Result<Vec<MonitorNotification>, String> {
     with_connection(|conn| {
         let count = limit.unwrap_or(100).clamp(1, 500);
         let mut stmt = conn.prepare(
@@ -345,7 +368,8 @@ pub async fn monitor_notification_list(limit: Option<u32>) -> Result<Vec<Monitor
             })
         })?;
 
-        rows.collect::<Result<Vec<_>, _>>().map_err(MonitorDbError::from)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(MonitorDbError::from)
     })
 }
 
@@ -355,7 +379,13 @@ pub async fn monitor_notification_add(entry: MonitorNotification) -> Result<(), 
         conn.execute(
             "INSERT INTO notifications (title, body, time, stock_code, type)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![entry.title, entry.body, entry.time, entry.stock_code, entry.entry_type],
+            params![
+                entry.title,
+                entry.body,
+                entry.time,
+                entry.stock_code,
+                entry.entry_type
+            ],
         )?;
 
         conn.execute(

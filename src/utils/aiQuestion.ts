@@ -34,6 +34,20 @@ function normalizeSearchText(input: string) {
     .replace(/[\s"'`~!@#$%^&*()_+\-=[\]{};:,.<>/?\\|，。！？、；：“”‘’（）【】《》]/g, '')
 }
 
+function inferCandidateMarket(code: string) {
+  const normalized = normalizeSecurityCode(code).toUpperCase()
+  if (/^\d{6}$/.test(normalized)) return 'a'
+  if (/^\d{5}$/.test(normalized)) return 'hk'
+  return 'us'
+}
+
+function inferPreferredMarket(keyword: string): 'a' | 'hk' | 'us' {
+  const raw = String(keyword || '').toLowerCase()
+  if (/(港股|香港|hk\b|恒生)/i.test(raw)) return 'hk'
+  if (/(美股|纳指|纳斯达克|道琼斯|标普|us\b|nasdaq|nyse)/i.test(raw)) return 'us'
+  return 'a'
+}
+
 function extractDirectCode(input: string) {
   const prefixed = input.match(/\b(?:sh|sz|bj|hk|us)\d{5,6}\b/i)?.[0]
   if (prefixed) return normalizeSecurityCode(prefixed)
@@ -69,31 +83,38 @@ function rankCandidate(candidate: ResolvedStockCandidate, keyword: string) {
   const normalizedKeyword = normalizeSearchText(keyword)
   const normalizedName = normalizeSearchText(candidate.name)
   const normalizedCode = normalizeSecurityCode(candidate.code).toLowerCase()
+  const preferredMarket = inferPreferredMarket(keyword)
+  const candidateMarket = inferCandidateMarket(candidate.code)
+  const marketBias = candidateMarket === preferredMarket
+    ? 12
+    : preferredMarket === 'a' && candidateMarket === 'hk'
+      ? 2
+      : 0
 
   if (!normalizedKeyword) return null
 
   if (normalizedCode === normalizedKeyword.toLowerCase()) {
-    return { ...candidate, score: 150, matchMode: 'direct_code' as const }
+    return { ...candidate, score: 150 + marketBias, matchMode: 'direct_code' as const }
   }
 
   if (normalizedName && normalizedName === normalizedKeyword) {
-    return { ...candidate, score: 136, matchMode: 'name_exact' as const }
+    return { ...candidate, score: 136 + marketBias, matchMode: 'name_exact' as const }
   }
 
   if (normalizedName && normalizedName.startsWith(normalizedKeyword)) {
-    return { ...candidate, score: 122 - Math.min(18, Math.max(0, normalizedName.length - normalizedKeyword.length)), matchMode: 'name_prefix' as const }
+    return { ...candidate, score: 122 + marketBias - Math.min(18, Math.max(0, normalizedName.length - normalizedKeyword.length)), matchMode: 'name_prefix' as const }
   }
 
   if (normalizedName && normalizedName.includes(normalizedKeyword)) {
-    return { ...candidate, score: 112 - Math.min(24, normalizedName.indexOf(normalizedKeyword) * 2), matchMode: 'name_contains' as const }
+    return { ...candidate, score: 112 + marketBias - Math.min(24, normalizedName.indexOf(normalizedKeyword) * 2), matchMode: 'name_contains' as const }
   }
 
   if (normalizedCode.includes(normalizedKeyword.toLowerCase())) {
-    return { ...candidate, score: 98, matchMode: 'code_contains' as const }
+    return { ...candidate, score: 98 + marketBias, matchMode: 'code_contains' as const }
   }
 
   if (normalizedName && normalizedKeyword.length >= 2 && normalizedKeyword.includes(normalizedName)) {
-    return { ...candidate, score: 92, matchMode: 'fuzzy' as const }
+    return { ...candidate, score: 92 + marketBias, matchMode: 'fuzzy' as const }
   }
 
   return null

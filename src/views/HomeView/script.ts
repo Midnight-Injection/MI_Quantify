@@ -1,4 +1,4 @@
-import { defineComponent, ref, computed, onMounted } from 'vue'
+import { defineComponent, ref, computed, onActivated, onDeactivated, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSidecar } from '@/composables/useSidecar'
 import { useMarketStore } from '@/stores/market'
@@ -952,14 +952,6 @@ export default defineComponent({
       ]
     })
 
-    const syncItems = computed(() => [
-      { label: '指数', value: formatSyncTime(marketStore.indicesUpdatedAt) },
-      { label: '板块', value: formatSyncTime(marketStore.sectorsUpdatedAt) },
-      { label: '列表', value: formatSyncTime(marketStore.stockListUpdatedAt) },
-      { label: '新闻', value: formatSyncTime(newsStore.lastUpdated) },
-      { label: '资金', value: formatSyncTime(fundflowUpdatedAt.value) },
-    ])
-
     const sessionInsights = computed(() => {
       if (currentMarket.value !== 'a') {
         const watched = hotStocks.value.slice(0, 3)
@@ -1100,10 +1092,6 @@ export default defineComponent({
       return timeStr.slice(5, 16)
     }
 
-    function formatSyncTime(value: number) {
-      return value ? new Date(value).toLocaleTimeString('zh-CN', { hour12: false }) : '--'
-    }
-
     async function refreshDigest() {
       aiDigestLoading.value = true
       try {
@@ -1190,6 +1178,18 @@ export default defineComponent({
       secondaryPolling.start()
     })
 
+    onActivated(() => {
+      heroPolling.start()
+      newsPolling.start(false)
+      secondaryPolling.start()
+    })
+
+    onDeactivated(() => {
+      heroPolling.stop()
+      newsPolling.stop()
+      secondaryPolling.stop()
+    })
+
     return {
       currentMarket,
       indexExpanded,
@@ -1216,7 +1216,6 @@ export default defineComponent({
       policySectionSubtitle,
       policyGuides,
       marketOutlookCards,
-      syncItems,
       newsSentiment,
       marketMood,
       marketNarrative,
@@ -1229,7 +1228,6 @@ export default defineComponent({
       formatVolume,
       formatAmount,
       formatNewsTime,
-      formatSyncTime,
       switchMarket,
       navigateToStock,
       requestDigest,

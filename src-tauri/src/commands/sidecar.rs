@@ -19,12 +19,6 @@ pub async fn sidecar_start(state: State<'_, SidecarState>) -> Result<String, Str
     let child = StdCommand::new(&python_path)
         .arg(&script_path)
         .current_dir(&script_dir)
-        .env_remove("HTTP_PROXY")
-        .env_remove("HTTPS_PROXY")
-        .env_remove("http_proxy")
-        .env_remove("https_proxy")
-        .env_remove("ALL_PROXY")
-        .env_remove("all_proxy")
         .spawn()
         .map_err(|e| format!("failed to start sidecar: {}", e))?;
 
@@ -69,9 +63,7 @@ pub async fn sidecar_status(state: State<'_, SidecarState>) -> Result<bool, Stri
         Some(pid) => {
             #[cfg(unix)]
             {
-                unsafe {
-                    Ok(libc::kill(pid as i32, 0) == 0)
-                }
+                unsafe { Ok(libc::kill(pid as i32, 0) == 0) }
             }
             #[cfg(windows)]
             {
@@ -95,11 +87,7 @@ fn find_python(script_dir: &std::path::Path) -> Result<String, String> {
 
     let candidates = ["python3", "python"];
     for cmd in &candidates {
-        if StdCommand::new(cmd)
-            .arg("--version")
-            .output()
-            .is_ok()
-        {
+        if StdCommand::new(cmd).arg("--version").output().is_ok() {
             return Ok(cmd.to_string());
         }
     }

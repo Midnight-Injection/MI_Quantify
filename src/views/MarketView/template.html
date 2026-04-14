@@ -3,7 +3,7 @@
     <section class="market-hero">
       <div class="hero-copy">
         <h1 class="page-title">个股行情</h1>
-        <p class="hero-note">只保留筛选与列表。输入股票名称或代码后，结果只在下方列表中过滤显示，列表行点击后进入详情。</p>
+        <p class="hero-note">输入框与顶部搜索共用同一套股票模糊匹配。命中关键词后，下方列表会切换到全市场匹配结果，再叠加板块条件筛选，只有列表行可进入详情。</p>
       </div>
       <div class="market-tabs">
         <button
@@ -23,10 +23,10 @@
       <div class="filter-head">
         <div>
           <h3 class="section-title">筛选过滤</h3>
-          <p class="section-subtitle">条件只作用于当前列表，不再出现搜索下拉，不再从输入框直接跳转详情。</p>
+          <p class="section-subtitle">股票名称和编号都走全量模糊查询，板块条件会继续叠加到匹配结果上。</p>
         </div>
         <div class="toolbar-info">
-          <span class="count">已加载 {{ currentLoadedCount }} 只</span>
+          <span class="count">{{ searchKeyword ? '匹配结果' : '已加载' }} {{ currentLoadedCount }} 只</span>
           <span class="count">筛选结果 {{ filteredStocks.length }} 只</span>
           <span class="count">实时刷新 {{ refreshSeconds }}s</span>
         </div>
@@ -34,21 +34,24 @@
 
       <div class="filter-block">
         <label class="filter-label">股票筛选</label>
-        <input
+        <stock-search-input
           v-model="searchKeyword"
-          class="input search-input"
-          placeholder="输入股票名称 / 编号，直接过滤下面列表"
+          placeholder="输入股票名称 / 编号，按全市场模糊匹配"
+          @select="handleSelectStock"
+          @enter="refreshKeywordMatches"
         />
       </div>
 
       <div class="filter-block">
         <div class="filter-row-header">
-          <label class="filter-label">板块多选</label>
-          <div class="filter-row-actions">
+          <div class="filter-title-row">
+            <label class="filter-label">板块多选</label>
             <div v-if="currentMarket === 'a'" class="sector-tabs">
               <button class="sector-tab" :class="{ active: sectorDimension === 'industry' }" @click="sectorDimension = 'industry'">行业</button>
               <button class="sector-tab" :class="{ active: sectorDimension === 'concept' }" @click="sectorDimension = 'concept'">概念</button>
             </div>
+          </div>
+          <div class="filter-row-actions">
             <button v-if="sectorMoreAvailable" class="btn-ghost clear-btn" @click="sectorExpanded = !sectorExpanded">
               {{ sectorExpanded ? '收起' : '更多' }}
             </button>
@@ -132,13 +135,17 @@
           <span class="search-spinner"></span>
           <span>{{ sectorLoading ? '板块成分股加载中...' : '加载更多中...' }}</span>
         </div>
-        <div v-if="!hasMore && filteredStocks.length > 0 && !selectedSectorCodes.length" class="no-more">
+        <div v-else-if="keywordSearching" class="loading-more">
+          <span class="search-spinner"></span>
+          <span>正在全市场检索股票...</span>
+        </div>
+        <div v-if="!searchKeyword && !hasMore && filteredStocks.length > 0 && !selectedSectorCodes.length" class="no-more">
           已加载全部 {{ currentLoadedCount }} 只股票
         </div>
       </div>
     </div>
 
-    <div v-if="!filteredStocks.length && !loadingMore && !sectorLoading" class="empty-state">
+    <div v-if="!filteredStocks.length && !loadingMore && !sectorLoading && !keywordSearching" class="empty-state">
       <span>当前筛选条件下暂无列表数据。</span>
     </div>
   </div>

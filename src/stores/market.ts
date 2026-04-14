@@ -35,6 +35,11 @@ export const useMarketStore = defineStore('market', () => {
   const sectorsUpdatedAt = ref(0)
   const stockListUpdatedAt = ref(0)
 
+  function syncLegacyWatchList() {
+    settingsStore.settings.watchList.stocks = [...watchList.value]
+    void settingsStore.saveSettings()
+  }
+
   async function fetchIndices(market: 'a' | 'hk' | 'us' = currentMarket.value) {
     try {
       currentMarket.value = market
@@ -130,6 +135,7 @@ export const useMarketStore = defineStore('market', () => {
       const persisted = await listPersistedWatchlist()
       if (persisted.length) {
         watchList.value = persisted
+        syncLegacyWatchList()
         return
       }
     } catch (error) {
@@ -145,11 +151,13 @@ export const useMarketStore = defineStore('market', () => {
         console.warn('[watchlist] legacy import failed:', error)
       }
     }
+    syncLegacyWatchList()
   }
 
   async function addToWatchList(stock: WatchListStock) {
     if (!watchList.value.find((s) => s.code === stock.code)) {
       watchList.value = [stock, ...watchList.value]
+      syncLegacyWatchList()
       try {
         await upsertPersistedWatchlist(stock)
       } catch (error) {
@@ -160,6 +168,7 @@ export const useMarketStore = defineStore('market', () => {
 
   async function removeFromWatchList(code: string) {
     watchList.value = watchList.value.filter((s) => s.code !== code)
+    syncLegacyWatchList()
     try {
       await removePersistedWatchlist(code)
     } catch (error) {

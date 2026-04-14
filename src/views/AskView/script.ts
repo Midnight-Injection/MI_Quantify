@@ -1,4 +1,4 @@
-import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import type { DiagnosisAgentProgressEvent, DiagnosisAgentResult } from '@/agents/diagnosisAgent'
 import { runDiagnosisAgent } from '@/agents/diagnosisAgent'
 import type { DiagnosisAgentStep, Strategy } from '@/types'
@@ -79,6 +79,14 @@ export default defineComponent({
       if (!strategyPickerRef.value) return
       if (event.target instanceof Node && strategyPickerRef.value.contains(event.target)) return
       strategyMenuOpen.value = false
+    }
+
+    function bindPageEvents() {
+      document.addEventListener('mousedown', handleDocumentClick)
+    }
+
+    function unbindPageEvents() {
+      document.removeEventListener('mousedown', handleDocumentClick)
     }
 
     function patchMessage(id: string, updater: (message: ChatMessage) => ChatMessage) {
@@ -256,14 +264,23 @@ export default defineComponent({
     )
 
     onBeforeUnmount(() => {
-      document.removeEventListener('mousedown', handleDocumentClick)
+      unbindPageEvents()
     })
 
     onMounted(async () => {
-      document.addEventListener('mousedown', handleDocumentClick)
+      bindPageEvents()
       if (!marketStore.stockList.length) {
         await marketStore.fetchStockList('a', 1, 80)
       }
+    })
+
+    onActivated(() => {
+      bindPageEvents()
+      void scrollToBottom()
+    })
+
+    onDeactivated(() => {
+      unbindPageEvents()
     })
 
     return {

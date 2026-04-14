@@ -1,5 +1,5 @@
-use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,13 +18,19 @@ pub struct SchedulerState {
 }
 
 #[tauri::command]
-pub async fn scheduler_list(state: State<'_, SchedulerState>) -> Result<Vec<ScheduledTask>, String> {
+pub async fn scheduler_list(
+    state: State<'_, SchedulerState>,
+) -> Result<Vec<ScheduledTask>, String> {
     let tasks = state.tasks.lock().map_err(|e| e.to_string())?;
     Ok(tasks.clone())
 }
 
 #[tauri::command]
-pub async fn scheduler_toggle(state: State<'_, SchedulerState>, id: String, enabled: bool) -> Result<(), String> {
+pub async fn scheduler_toggle(
+    state: State<'_, SchedulerState>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
     let mut tasks = state.tasks.lock().map_err(|e| e.to_string())?;
     if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
         task.enabled = enabled;

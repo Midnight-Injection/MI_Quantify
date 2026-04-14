@@ -1,22 +1,31 @@
 <div class="data-source-table">
   <table>
     <thead>
-      <tr>
+      <tr :class="{ 'is-open': isExpanded(source.id) }">
         <th>数据源</th>
+        <th>覆盖</th>
         <th>类型</th>
         <th>状态</th>
         <th>优先级</th>
+        <th>接入方式</th>
         <th>配置</th>
       </tr>
     </thead>
     <tbody>
-      <tr v-for="source in sources" :key="source.id">
+      <template v-for="source in sources" :key="source.id">
+      <tr>
         <td>
           <label class="switch-sm">
             <input type="checkbox" :checked="source.enabled" @change="$emit('toggle', source.id, $event.target.checked)" />
             <span class="slider-sm"></span>
           </label>
-          <span class="source-name">{{ source.name }}</span>
+          <div class="source-copy">
+            <span class="source-name">{{ source.name }}</span>
+            <small v-if="source.description" class="source-desc">{{ source.description }}</small>
+          </div>
+        </td>
+        <td>
+          <span class="tag tag-neutral">{{ source.coverage || '通用' }}</span>
         </td>
         <td>
           <span class="tag" :class="source.type === 'free' ? 'tag-positive' : 'tag-neutral'">
@@ -32,12 +41,60 @@
           <span class="priority">{{ source.priority }}</span>
         </td>
         <td>
-          <button v-if="source.type === 'paid'" class="btn-ghost btn-sm" @click="$emit('config', source.id)">
-            🔑 配置
+          <span class="mode-pill" :class="source.mode === 'remote' ? 'mode-remote' : 'mode-sidecar'">
+            {{ source.mode === 'remote' ? '远程 API' : '本地聚合' }}
+          </span>
+        </td>
+        <td class="config-toggle-cell">
+          <button class="config-toggle-btn" type="button" @click="toggleExpanded(source.id)">
+            <span>{{ isExpanded(source.id) ? '收起配置' : '打开配置' }}</span>
+            <span class="config-toggle-arrow">{{ isExpanded(source.id) ? '▴' : '▾' }}</span>
           </button>
-          <span v-else class="text-muted">—</span>
         </td>
       </tr>
+      <tr v-if="isExpanded(source.id)" class="config-row">
+        <td colspan="7">
+          <div class="config-card">
+            <div class="config-head">
+              <strong>{{ source.name }}</strong>
+              <span class="text-muted">{{ getConfigHint(source) }}</span>
+            </div>
+
+            <div class="config-grid">
+              <label>
+                <span>数据地址</span>
+                <input
+                  class="input"
+                  :value="source.apiUrl"
+                  :readonly="source.mode === 'sidecar'"
+                  @change="$emit('update', source.id, { apiUrl: $event.target.value })"
+                />
+              </label>
+              <label v-if="source.mode === 'remote' || source.apiKey || source.requiresKey">
+                <span>API Key</span>
+                <input
+                  class="input"
+                  type="password"
+                  :value="source.apiKey"
+                  :placeholder="source.requiresKey ? '必填' : '可选'"
+                  @change="$emit('update', source.id, { apiKey: $event.target.value })"
+                />
+              </label>
+              <label v-if="source.mode === 'remote' || source.apiSecret">
+                <span>API Secret</span>
+                <input
+                  class="input"
+                  type="password"
+                  :value="source.apiSecret"
+                  :placeholder="source.requiresSecret ? '必填' : '可选'"
+                  @change="$emit('update', source.id, { apiSecret: $event.target.value })"
+                />
+              </label>
+            </div>
+          </div>
+        </td>
+      </tr>
+      </template>
     </tbody>
   </table>
 </div>

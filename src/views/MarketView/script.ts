@@ -1,8 +1,10 @@
-import { computed, defineComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import StockSearchInput from '@/components/common/StockSearchInput/index.vue'
 import { useSidecar } from '@/composables/useSidecar'
 import { useRealtimeTask } from '@/composables/useRealtimeTask'
-import type { SectorData, StockListItem } from '@/types'
+import { useMarketStore } from '@/stores/market'
+import type { SectorData, StockListItem, StockQuote } from '@/types'
 import { formatAmount, formatPercent, formatPrice, formatVolume } from '@/utils/format'
 import { getStockProfile } from '@/utils/marketMetrics'
 import { normalizeSecurityCode } from '@/utils/security'
@@ -42,8 +44,10 @@ function normalizeMenuKey(value: string) {
 
 export default defineComponent({
   name: 'MarketView',
+  components: { StockSearchInput },
   setup() {
     const router = useRouter()
+    const marketStore = useMarketStore()
     const { get } = useSidecar()
     const currentMarket = ref<MarketType>('a')
     const currentPage = ref(1)
@@ -55,17 +59,83 @@ export default defineComponent({
     const hasMore = ref(true)
     const loadingMore = ref(false)
     const sectorLoading = ref(false)
+    const keywordSearching = ref(false)
     const tableContainer = ref<HTMLElement | null>(null)
     const searchKeyword = ref('')
+    const keywordMatchedStocks = ref<StockListItem[]>([])
     const sectorDimension = ref<SectorDimension>('industry')
     const selectedSectorCodes = ref<string[]>([])
     const sectorExpanded = ref(false)
+    let keywordSearchTimer: ReturnType<typeof setTimeout> | null = null
+    let keywordSearchToken = 0
 
     const marketTabs = [
       { value: 'a' as MarketType, label: 'A股', note: '全量列表' },
       { value: 'hk' as MarketType, label: '港股', note: '核心主题' },
       { value: 'us' as MarketType, label: '美股', note: '核心主题' },
     ]
+
+    function clearKeywordSearchTimer() {
+      if (keywordSearchTimer) {
+        clearTimeout(keywordSearchTimer)
+        keywordSearchTimer = null
+      }
+    }
+
+    function resolveMarketType(code: string): MarketType {
+      const profile = getStockProfile(code)
+      if (profile.market === 'hk') return 'hk'
+      if (profile.market === 'us') return 'us'
+      return 'a'
+    }
+
+    function normalizeQuoteToListItem(item: StockQuote): StockListItem {
+      return {
+        code: normalizeSecurityCode(item.code),
+        name: item.name,
+        price: item.price,
+        change: item.change,
+        changePercent: item.changePercent,
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        preClose: item.preClose,
+        volume: item.volume,
+        amount: item.amount,
+        turnover: item.turnover,
+      }
+    }
+
+    function appendSelectedSectorTags(stocks: StockListItem[]) {
+      if (currentMarket.value === 'a' || !selectedSectorCodes.value.length) return stocks
+      return stocks.map((item) => ({
+        ...item,
+        sectorTags: selectedSectorCodes.value
+          .map((code) => selectedSectorMap.value.get(code))
+          .filter((option) => option?.symbols?.some((symbol) => normalizeMenuKey(symbol) === normalizeMenuKey(item.code)))
+          .map((option) => option?.name || ''),
+      }))
+    }
+
+    async function refreshKeywordMatches(keyword = searchKeyword.value) {
+      const trimmed = keyword.trim()
+      const currentToken = ++keywordSearchToken
+
+      if (!trimmed) {
+        keywordMatchedStocks.value = []
+        keywordSearching.value = false
+        return
+      }
+
+      keywordSearching.value = true
+      const matched = await marketStore.searchStock(trimmed)
+      if (currentToken !== keywordSearchToken) return
+
+      keywordMatchedStocks.value = matched
+        .map(normalizeQuoteToListItem)
+        .filter((item) => resolveMarketType(item.code) === currentMarket.value)
+      keywordSearching.value = false
+    }
 
     const sectorOptions = computed<SectorFilterOption[]>(() => {
       if (currentMarket.value === 'a') {
@@ -97,48 +167,33 @@ export default defineComponent({
       return new Map(options.map((item) => [item.code, item]))
     })
 
+    const searchActive = computed(() => !!searchKeyword.value.trim())
+
+    const candidateStocks = computed(() => (searchActive.value ? keywordMatchedStocks.value : allStocks.value))
+
     const baseStocks = computed(() => {
       if (currentMarket.value === 'a' && selectedSectorCodes.value.length) {
-        return sectorStocks.value
+        if (!searchActive.value) return sectorStocks.value
+        const selectedCodes = new Set(sectorStocks.value.map((item) => normalizeSecurityCode(item.code)))
+        return keywordMatchedStocks.value.filter((item) => selectedCodes.has(normalizeSecurityCode(item.code)))
       }
 
       if (currentMarket.value !== 'a' && selectedSectorCodes.value.length) {
         const symbolSet = new Set(
           selectedSectorCodes.value.flatMap((code) => selectedSectorMap.value.get(code)?.symbols?.map((item) => normalizeMenuKey(item)) || []),
         )
-        return allStocks.value
-          .filter((item) => symbolSet.has(normalizeMenuKey(item.code)))
-          .map((item) => ({
-            ...item,
-            sectorTags: selectedSectorCodes.value
-              .map((code) => selectedSectorMap.value.get(code))
-              .filter((option) => option?.symbols?.some((symbol) => normalizeMenuKey(symbol) === normalizeMenuKey(item.code)))
-              .map((option) => option?.name || ''),
-          }))
+        return appendSelectedSectorTags(
+          candidateStocks.value.filter((item) => symbolSet.has(normalizeMenuKey(item.code))),
+        )
       }
 
-      return allStocks.value
+      return candidateStocks.value
     })
 
-    const filteredStocks = computed(() => {
-      const rawKeyword = searchKeyword.value.trim()
-      const keywordUpper = rawKeyword.toUpperCase()
-      const normalizedKeyword = normalizeSecurityCode(rawKeyword).toUpperCase()
-
-      return baseStocks.value.filter((item) => {
-        if (!rawKeyword) return true
-
-        const code = normalizeSecurityCode(item.code).toUpperCase()
-        const name = String(item.name || '').toUpperCase()
-        return (
-          code.includes(normalizedKeyword)
-          || code.includes(keywordUpper)
-          || name.includes(keywordUpper)
-        )
-      })
-    })
+    const filteredStocks = computed(() => baseStocks.value)
 
     const currentLoadedCount = computed(() => {
+      if (searchActive.value) return keywordMatchedStocks.value.length
       if (currentMarket.value === 'a' && selectedSectorCodes.value.length) return sectorStocks.value.length
       return allStocks.value.length
     })
@@ -213,6 +268,7 @@ export default defineComponent({
       allStocks.value = []
       sectorStocks.value = []
       searchKeyword.value = ''
+      keywordMatchedStocks.value = []
       selectedSectorCodes.value = []
       sectorExpanded.value = false
       await Promise.all([
@@ -242,6 +298,7 @@ export default defineComponent({
     }
 
     function handleScroll() {
+      if (searchActive.value) return
       if (currentMarket.value === 'a' && selectedSectorCodes.value.length) return
       if (!tableContainer.value || loadingMore.value || !hasMore.value) return
       const { scrollTop, scrollHeight, clientHeight } = tableContainer.value
@@ -276,7 +333,19 @@ export default defineComponent({
       return getBoardLabel(stock.code)
     }
 
+    function handleSelectStock(item: StockQuote) {
+      if (resolveMarketType(item.code) !== currentMarket.value) {
+        keywordMatchedStocks.value = []
+        return
+      }
+      keywordMatchedStocks.value = [normalizeQuoteToListItem(item)]
+    }
+
     const realtimeRefresh = useRealtimeTask(async () => {
+      if (searchActive.value) {
+        await refreshKeywordMatches()
+        return
+      }
       if (currentMarket.value === 'a' && selectedSectorCodes.value.length) {
         await loadSelectedSectorStocks()
         return
@@ -304,10 +373,27 @@ export default defineComponent({
       sectorExpanded.value = false
     })
 
+    watch(searchKeyword, (value) => {
+      clearKeywordSearchTimer()
+      if (!value.trim()) {
+        keywordSearchToken += 1
+        keywordMatchedStocks.value = []
+        keywordSearching.value = false
+        return
+      }
+      keywordSearchTimer = setTimeout(() => {
+        void refreshKeywordMatches(value)
+      }, 220)
+    })
+
     onMounted(async () => {
       await Promise.all([loadPage(1, false), loadSectorDimension()])
       realtimeRefresh.start(false)
       sectorRefresh.start(false)
+    })
+
+    onBeforeUnmount(() => {
+      clearKeywordSearchTimer()
     })
 
     return {
@@ -323,6 +409,7 @@ export default defineComponent({
       searchKeyword,
       allStocks,
       filteredStocks,
+      keywordSearching,
       hasMore,
       loadingMore,
       sectorLoading,
@@ -339,6 +426,8 @@ export default defineComponent({
       switchMarket,
       toggleSector,
       clearSectors,
+      refreshKeywordMatches,
+      handleSelectStock,
       navigateToStock,
       handleScroll,
     }

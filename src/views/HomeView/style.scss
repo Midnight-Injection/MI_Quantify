@@ -374,7 +374,8 @@
 }
 
 .panel-hot,
-.panel-news {
+.panel-news,
+.panel-sector {
   min-height: 0;
 }
 
@@ -577,7 +578,8 @@
 .policy-scroll,
 .outlook-scroll,
 .stock-scroll,
-.news-scroll {
+.news-scroll,
+.sector-list {
   overflow: auto;
   padding-right: 6px;
 
@@ -611,6 +613,7 @@
   overflow: auto;
 }
 
+.sector-list,
 .news-scroll {
   max-height: 900px;
 }
@@ -864,9 +867,13 @@
 
 .deep-dive-card {
   padding: 14px 16px;
+  min-height: 172px;
+  max-height: 172px;
   border-radius: 18px;
   background: rgba(15, 33, 57, 0.04);
   border: 1px solid rgba(15, 33, 57, 0.06);
+  overflow: auto;
+  @include custom-scrollbar;
 
   span {
     font-size: 12px;
@@ -939,9 +946,13 @@
 
 .digest-card {
   padding: 14px 16px;
+  min-height: 188px;
+  max-height: 188px;
   border-radius: 18px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(244, 243, 239, 0.82));
   border: 1px solid rgba(15, 33, 57, 0.08);
+  overflow: auto;
+  @include custom-scrollbar;
 
   span {
     display: block;
@@ -955,21 +966,6 @@
     color: $text-primary;
     line-height: 1.7;
   }
-}
-
-.sync-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.sync-pill {
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(15, 33, 57, 0.05);
-  color: $text-secondary;
-  font-size: 11px;
-  font-family: $font-mono;
 }
 
 @keyframes pulse-dot {

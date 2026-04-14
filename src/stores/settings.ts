@@ -37,6 +37,14 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function mergePresetItems<T extends { id: string }>(defaults: T[], saved: T[] | undefined): T[] {
+    if (!saved?.length) return defaults
+    const savedMap = new Map(saved.map((item) => [item.id, item]))
+    const merged = defaults.map((item) => ({ ...item, ...(savedMap.get(item.id) || {}) }))
+    const extra = saved.filter((item) => !defaults.some((preset) => preset.id === item.id))
+    return [...merged, ...extra]
+  }
+
   function mergeSettings(saved: Partial<AppSettings>): AppSettings {
     const defaults = buildDefaultSettings()
     return {
@@ -45,13 +53,11 @@ export const useSettingsStore = defineStore('settings', () => {
       ai: {
         ...defaults.ai,
         ...saved.ai,
-        providers: saved.ai?.providers?.length ? saved.ai.providers : defaults.ai.providers,
+        providers: mergePresetItems(defaults.ai.providers, saved.ai?.providers),
         diagnosis: {
           ...defaults.ai.diagnosis,
           ...saved.ai?.diagnosis,
-          searchProviders: saved.ai?.diagnosis?.searchProviders?.length
-            ? saved.ai.diagnosis.searchProviders
-            : defaults.ai.diagnosis.searchProviders,
+          searchProviders: mergePresetItems(defaults.ai.diagnosis.searchProviders, saved.ai?.diagnosis?.searchProviders),
         },
         autoRun: {
           ...defaults.ai.autoRun,
@@ -61,7 +67,7 @@ export const useSettingsStore = defineStore('settings', () => {
       dataSource: {
         ...defaults.dataSource,
         ...saved.dataSource,
-        sources: saved.dataSource?.sources?.length ? saved.dataSource.sources : defaults.dataSource.sources,
+        sources: mergePresetItems(defaults.dataSource.sources, saved.dataSource?.sources),
       },
       watchList: {
         ...defaults.watchList,
@@ -81,6 +87,8 @@ export const useSettingsStore = defineStore('settings', () => {
             ? saved.integrations.openClaw.channels.map((channel) => ({
               ...channel,
               autoStart: channel.autoStart ?? channel.channelType === 'wechat',
+              autoReplyEnabled: true,
+              pushEnabled: true,
             }))
             : defaults.integrations.openClaw.channels,
         },
@@ -138,6 +146,7 @@ export const useSettingsStore = defineStore('settings', () => {
         apiKey: string
         apiUrl: string
         model: string
+        searchApiUrl?: string
         searchApiKey?: string
       } | null>('load_local_ai_config')
 
@@ -157,6 +166,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const searchProvider = settings.value.ai.diagnosis.searchProviders.find((item) => item.id === 'zhipu-web-search')
       if (searchProvider) {
         searchProvider.apiKey = local.searchApiKey || local.apiKey
+        searchProvider.apiUrl = local.searchApiUrl || searchProvider.apiUrl
         searchProvider.enabled = true
         if (!settings.value.ai.diagnosis.activeSearchProviderId) {
           settings.value.ai.diagnosis.activeSearchProviderId = searchProvider.id

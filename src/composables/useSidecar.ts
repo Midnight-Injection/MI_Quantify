@@ -58,7 +58,7 @@ async function waitForHealth(maxRetries = 10, interval = 1000) {
     } catch {}
     await new Promise((r) => setTimeout(r, interval))
   }
-  throw new Error('sidecar health check failed')
+  throw new Error('sidecar health check failed: 请检查本地 Python sidecar 是否已启动、src-python 依赖是否安装完成，以及系统代理 / 网络是否能访问新浪和东方财富接口')
 }
 
 async function request(input: string, init?: RequestInit) {
