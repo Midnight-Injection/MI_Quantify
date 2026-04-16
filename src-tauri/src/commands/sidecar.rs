@@ -1,6 +1,6 @@
 use std::process::Command as StdCommand;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 
 pub struct SidecarState {
     pub process: Mutex<Option<u32>>,
@@ -82,7 +82,7 @@ fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, St
     );
 
     if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled = resource_dir.join("binaries").join(&binary_name);
+        let bundled: std::path::PathBuf = resource_dir.join("binaries").join(&binary_name);
         if bundled.exists() {
             return Ok(bundled);
         }
