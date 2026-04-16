@@ -9,8 +9,10 @@ fn greet(name: &str) -> String {
 pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(commands::sidecar::init_state())
         .manage(commands::scheduler::init_scheduler_state())
         .manage(commands::notifications::init_alert_state())
@@ -18,8 +20,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             commands::ai::ai_chat,
+            commands::ai::ai_chat_stream,
             commands::ai::test_ai_connection,
-            commands::ai::load_local_ai_config,
             commands::monitor::monitor_db_path,
             commands::monitor::monitor_watchlist_list,
             commands::monitor::monitor_watchlist_upsert,
@@ -32,6 +34,7 @@ pub fn run() {
             commands::monitor::monitor_notification_list,
             commands::monitor::monitor_notification_add,
             commands::monitor::monitor_notification_clear,
+            commands::monitor::monitor_notification_mark_read,
             commands::sidecar::sidecar_start,
             commands::sidecar::sidecar_stop,
             commands::sidecar::sidecar_status,
@@ -50,6 +53,13 @@ pub fn run() {
             commands::wechat::wechat_stop_listener,
             commands::wechat::wechat_logout_channel,
             commands::wechat::wechat_send_message,
+            commands::chat::chat_conversation_list,
+            commands::chat::chat_conversation_create,
+            commands::chat::chat_conversation_update_title,
+            commands::chat::chat_conversation_delete,
+            commands::chat::chat_message_list,
+            commands::chat::chat_message_add,
+            commands::chat::chat_message_clear,
         ]);
 
     #[cfg(debug_assertions)]

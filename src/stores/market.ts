@@ -42,11 +42,17 @@ export const useMarketStore = defineStore('market', () => {
 
   async function fetchIndices(market: 'a' | 'hk' | 'us' = currentMarket.value) {
     try {
+      const switchingMarket = market !== currentMarket.value
       currentMarket.value = market
       const { get } = useSidecar()
       const res = await get<{ data: MarketIndex[] }>(`/api/market/indices?market=${market}`)
-      indices.value = res.data
-      indicesUpdatedAt.value = Date.now()
+      const nextData = res.data ?? []
+      if (switchingMarket || nextData.length || !indices.value.length) {
+        indices.value = nextData
+      }
+      if (nextData.length) {
+        indicesUpdatedAt.value = Date.now()
+      }
     } catch (e) {
       console.error('Failed to fetch indices:', e)
     }
@@ -68,14 +74,21 @@ export const useMarketStore = defineStore('market', () => {
   async function fetchStockList(market: 'a' | 'hk' | 'us' = currentMarket.value, page = 1, pageSize = 50) {
     loading.value = true
     try {
+      const switchingMarket = market !== currentMarket.value
+      currentMarket.value = market
       const { get } = useSidecar()
       const res = await get<{ data: StockListItem[]; total: number; page: number }>(
         `/api/market/stocks?market=${market}&page=${page}&pageSize=${pageSize}`
       )
-      stockList.value = res.data
-      stockListTotal.value = res.total
-      stockListPage.value = res.page
-      stockListUpdatedAt.value = Date.now()
+      const nextData = res.data ?? []
+      if (switchingMarket || nextData.length || !stockList.value.length) {
+        stockList.value = nextData
+        stockListTotal.value = res.total
+        stockListPage.value = res.page
+      }
+      if (nextData.length) {
+        stockListUpdatedAt.value = Date.now()
+      }
     } catch (e) {
       console.error('Failed to fetch stock list:', e)
     } finally {
@@ -88,6 +101,9 @@ export const useMarketStore = defineStore('market', () => {
     try {
       const { get } = useSidecar()
       const res = await get<{ data: StockQuote[] }>(`/api/market/quotes?codes=${codes.join(',')}`)
+      if (!res.data?.length && quotes.value.size) {
+        return
+      }
       const map = new Map<string, StockQuote>()
       for (const q of res.data) {
         map.set(q.code, q)
@@ -107,8 +123,13 @@ export const useMarketStore = defineStore('market', () => {
       const { get } = useSidecar()
       const path = type === 'industry' ? '/api/sector/industry' : '/api/sector/concept'
       const res = await get<{ data: SectorData[] }>(path)
-      sectors.value = res.data
-      sectorsUpdatedAt.value = Date.now()
+      const nextData = res.data ?? []
+      if (nextData.length || !sectors.value.length) {
+        sectors.value = nextData
+      }
+      if (nextData.length) {
+        sectorsUpdatedAt.value = Date.now()
+      }
     } catch (e) {
       console.error('Failed to fetch sectors:', e)
     } finally {

@@ -9,6 +9,7 @@ import {
   clearPersistedNotifications,
   listPersistedAlerts,
   listPersistedNotifications,
+  markPersistedNotificationsRead,
   removePersistedAlert,
   togglePersistedAlert,
   touchPersistedAlert,
@@ -100,7 +101,7 @@ async function addAlert(
   stockName: string,
   targetPrice: number,
   direction: string,
-  delivery: 'all' | 'desktop' | 'wechat' = 'all',
+  delivery: string = 'all',
 ) {
   await init()
   const normalizedDirection = direction === 'below' ? 'below' : 'above'
@@ -157,7 +158,7 @@ async function addBoardAlert(
   stockCode: string,
   stockName: string,
   type: BoardAlertType,
-  delivery: 'all' | 'desktop' | 'wechat' = 'all',
+  delivery: string = 'all',
 ) {
   await init()
   const exists = alerts.value.some((item) => item.stockCode === stockCode && item.type === type)
@@ -184,7 +185,7 @@ async function addBoardAlerts(
   stockCode: string,
   stockName: string,
   types: NotificationAlertType[],
-  delivery: 'all' | 'desktop' | 'wechat' = 'all',
+  delivery: string = 'all',
 ) {
   await init()
   let added = 0
@@ -280,15 +281,21 @@ async function runTaskNow(id: string) {
 async function pushNotification(
   title: string,
   body: string,
-  entry: Partial<NotificationEntry> & { delivery?: 'all' | 'desktop' | 'wechat' } = {},
+  entry: Partial<NotificationEntry> & { delivery?: string } = {},
 ) {
   await init()
   const settingsStore = useSettingsStore()
+  const delivery = entry.delivery
+  const isDesktopOnly = delivery === 'desktop'
+  const isChannelDelivery = !!delivery && delivery !== 'desktop' && delivery !== 'all' && delivery !== 'wechat'
+
   try {
-    if (entry.delivery !== 'wechat' && settingsStore.settings.notifications.desktopEnabled) {
+    if (!isChannelDelivery && !isDesktopOnly && settingsStore.settings.notifications.desktopEnabled) {
       await invoke('send_notification', { title, body })
     }
   } catch {}
+  await pushOpenClawNotification(title, body, entry)
+  if (isChannelDelivery) return
   const notificationEntry: NotificationEntry = {
     title,
     body,
@@ -298,29 +305,61 @@ async function pushNotification(
   }
   notifications.value.unshift(notificationEntry)
   notifications.value = notifications.value.slice(0, 100)
-  await pushOpenClawNotification(title, body, entry)
   await addPersistedNotification(notificationEntry)
 }
 
 async function pushOpenClawNotification(title: string, body: string, entry: Partial<NotificationEntry> = {}) {
   const settingsStore = useSettingsStore()
   const openClaw = settingsStore.settings.integrations.openClaw
-  if (!openClaw.enabled || (entry as { delivery?: string }).delivery === 'desktop') return
+  const delivery = (entry as { delivery?: string }).delivery
+  if (!openClaw.enabled || delivery === 'desktop') return
 
-  const activeChannels = openClaw.channels.filter(
-    (item) => item.channelType === 'wechat' && item.enabled,
+  let targetChannels = openClaw.channels.filter(
+    (item) => item.channelType === 'wechat',
   )
-  for (const channel of activeChannels) {
+  if (delivery && delivery !== 'all' && delivery !== 'wechat' && delivery !== 'desktop') {
+    targetChannels = targetChannels.filter((item) => item.id === delivery)
+  }
+  const errors: string[] = []
+  let delivered = false
+  for (const channel of targetChannels) {
     try {
+      const status = await invoke<{ loggedIn: boolean; listening: boolean }>('wechat_get_channel_status', {
+        channelId: channel.id,
+      })
+      if (!status.loggedIn) {
+        errors.push(`${channel.name}: 微信未登录或 token 已失效，请重新扫码登录`)
+        continue
+      }
+      if (!channel.defaultPeerId?.trim()) {
+        errors.push(`${channel.name}: 未记录默认联系人，请先让该微信渠道收到一条消息`)
+        continue
+      }
       await invoke('wechat_send_message', {
         channelId: channel.id,
-        toUserId: channel.defaultPeerId || '',
+        toUserId: channel.defaultPeerId,
         text: `${title}\n${body}`,
         contextToken: '',
       })
+      delivered = true
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      errors.push(`${channel.name}: ${reason}`)
       console.warn('[channel-push] push failed:', error)
     }
+  }
+
+  if (!delivered && errors.length) {
+    const failureEntry: NotificationEntry = {
+      title: '微信推送失败',
+      body: errors[0],
+      time: Date.now(),
+      stockCode: entry.stockCode,
+      type: 'system',
+    }
+    notifications.value.unshift(failureEntry)
+    notifications.value = notifications.value.slice(0, 100)
+    await addPersistedNotification(failureEntry)
   }
 }
 
@@ -440,6 +479,13 @@ async function clearNotifications() {
   await clearPersistedNotifications()
 }
 
+async function markAllRead() {
+  for (const n of notifications.value) {
+    n.read = true
+  }
+  await markPersistedNotificationsRead()
+}
+
 export function useNotifications() {
   return {
     alerts,
@@ -461,5 +507,6 @@ export function useNotifications() {
     scanQuotes,
     getTrackedCodes,
     clearNotifications,
+    markAllRead,
   }
 }

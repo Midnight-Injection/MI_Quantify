@@ -1,180 +1,266 @@
-<div class="page ask-page ask-page-immersive">
+<div class="page ask-page">
   <div class="page-shell ask-shell">
-    <section class="ask-hero">
-      <div>
-        <h1 class="page-title">AI问股</h1>
+    <aside v-if="sidebarOpen" class="chat-sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">对话记录</span>
+        <button type="button" class="sidebar-btn" @click="startNewConversation" title="新建对话">
+          <Plus :size="16" />
+        </button>
       </div>
-      <div class="hero-badge" :class="{ inactive: !settingsStore.activeProvider }">
-        {{ providerLabel }}
-      </div>
-    </section>
-
-    <section class="chat-shell">
-      <div ref="chatListRef" class="chat-list">
-        <article
-          v-for="message in messages"
-          :key="message.id"
-          class="chat-message"
-          :class="[message.role, { 'with-diagnosis': !!message.diagnosis }]"
+      <div class="sidebar-list">
+        <button
+          v-for="conv in conversations"
+          :key="conv.id"
+          type="button"
+          class="sidebar-item"
+          :class="{ active: activeConversationId === conv.id }"
+          @click="switchConversation(conv.id)"
         >
-          <div class="message-meta">
-            <div class="message-role-wrap">
-              <span class="message-role">{{ message.role === 'user' ? '你' : 'AI研究员' }}</span>
-              <span v-if="message.code" class="message-code">
-                {{ message.stockName || message.diagnosis?.stockInfo.name || message.code }} · {{ message.code }}
-              </span>
+          <span class="sidebar-item-title">{{ conv.title }}</span>
+          <span class="sidebar-item-time">{{ formatConversationTime(conv.updatedAt) }}</span>
+          <button type="button" class="sidebar-item-delete" @click.stop="removeConversation(conv.id)" title="删除">
+            <Trash2 :size="12" />
+          </button>
+        </button>
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: !activeConversationId }"
+          @click="switchConversation(null)"
+        >
+          <span class="sidebar-item-title">新对话</span>
+        </button>
+      </div>
+      <div class="sidebar-footer">
+        <button type="button" class="sidebar-collapse-btn" @click="toggleSidebar" title="收起侧栏">
+          <ChevronLeft :size="14" />
+          <span>收起</span>
+        </button>
+      </div>
+    </aside>
+
+    <button v-if="!sidebarOpen" type="button" class="sidebar-expand-arrow" @click="toggleSidebar" title="展开对话">
+      <ChevronRight :size="16" />
+    </button>
+
+    <section class="chat-shell" :class="{ 'sidebar-collapsed': !sidebarOpen }">
+      <div ref="chatListRef" class="chat-list" @scroll="handleChatScroll">
+        <template v-for="message in messages" :key="message.id">
+          <div v-if="message.role === 'user'" class="bubble-row user-row">
+            <div class="bubble bubble-user">
+              <pre class="bubble-text">{{ message.content }}</pre>
             </div>
-            <div class="message-tags">
-              <span v-if="message.strategyName || message.diagnosis?.selectedStrategy" class="message-tag">
-                {{ message.diagnosis?.selectedStrategy?.name || message.strategyName }}
-              </span>
-              <span v-if="message.streaming" class="message-tag live">处理中</span>
+            <div class="avatar avatar-user">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
           </div>
 
-          <div v-if="message.diagnosis" class="insight-grid">
-            <div class="insight-card primary">
-              <span>结论</span>
-              <strong>{{ message.diagnosis.diagnosis.recommendation }}</strong>
-              <p>{{ message.diagnosis.diagnosis.prediction }}</p>
+          <div v-else class="bubble-row assistant-row">
+            <div class="avatar avatar-assistant">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="8" r="1.5"/></svg>
             </div>
-            <div class="insight-card accent">
-              <span>建议买入区间</span>
-              <strong>{{ formatRange(message.diagnosis.diagnosis.buyLower, message.diagnosis.diagnosis.buyUpper) }}</strong>
-              <p>{{ message.diagnosis.diagnosis.entryAdvice || '等回踩确认后分批介入。' }}</p>
+            <div class="assistant-content">
+            <div v-if="message.loading || message.streaming || message.streamSteps?.length || message.streamingText || message.synthesisRunning" class="assistant-live-stack">
+              <div class="bubble bubble-thinking">
+                <div class="thinking-header" @click="toggleThinking(message.id)">
+                  <span class="thinking-icon">思考</span>
+                  <span class="thinking-title">思考轨迹</span>
+                  <span class="thinking-count">{{ getThinkingSteps(message).length || 1 }}</span>
+                  <span class="thinking-toggle" :class="{ open: isThinkingExpanded(message) }">⌄</span>
+                </div>
+                <div v-if="isThinkingExpanded(message)" class="thinking-body">
+                  <pre class="thinking-merged-text">{{ getThinkingText(message) }}</pre>
+                </div>
+              </div>
+
+              <div class="bubble bubble-tools">
+                <div class="tools-header" @click="toggleTools(message.id)">
+                  <span class="tools-icon">工具</span>
+                  <span class="tools-title">工具调用</span>
+                  <span class="tools-count">{{ getToolSteps(message).length }}</span>
+                  <span class="tools-toggle" :class="{ open: isToolsExpanded(message) }">⌄</span>
+                </div>
+                <div v-if="isToolsExpanded(message)" class="tools-body">
+                  <div v-if="!getToolSteps(message).length" class="tool-empty">等待开始调用工具...</div>
+                  <div
+                    v-for="step in getToolSteps(message)"
+                    :key="step.id"
+                    class="tool-item"
+                    :class="step.status"
+                  >
+                    <div class="tool-row">
+                      <span class="step-dot" :class="step.status"></span>
+                      <span class="tool-name">{{ step.tool || step.title }}</span>
+                      <span class="tool-status" :class="step.status">{{ getToolStatusLabel(step) }}</span>
+                      <span class="tool-time">{{ getStepDurationLabel(step) }}</span>
+                    </div>
+                    <p class="tool-summary">{{ step.resultSummary || step.query || step.inputSummary || '等待工具返回...' }}</p>
+                    <div class="tool-io-grid">
+                      <div class="tool-io-card">
+                        <span class="tool-io-label">入参</span>
+                        <pre class="tool-io-text">{{ getToolInputText(step) }}</pre>
+                      </div>
+                      <div class="tool-io-card">
+                        <span class="tool-io-label">出参</span>
+                        <pre class="tool-io-text">{{ getToolOutputText(step) }}</pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="!message.diagnosis && !message.recommendationResult" class="bubble bubble-synthesis">
+                <div class="synthesis-header">
+                  <span class="synthesis-icon">总结</span>
+                  <span class="synthesis-title">结论生成</span>
+                  <span v-if="getMessageElapsedLabel(message)" class="synthesis-time">总耗时 {{ getMessageElapsedLabel(message) }}</span>
+                  <span v-if="message.synthesisRunning || message.loading || message.streaming" class="synthesis-spinner"></span>
+                </div>
+                <pre class="synthesis-text synthesis-merged-text">{{ getResultText(message) }}</pre>
+              </div>
+
+              <button v-if="message.loading || message.streaming || message.synthesisRunning || message.streamSteps?.length" type="button" class="bubble-stop-btn" @click="stopCurrentAskTask">立即停止</button>
             </div>
-            <div class="insight-card accent">
-              <span>建议卖出区间</span>
-              <strong>{{ formatRange(message.diagnosis.diagnosis.sellLower, message.diagnosis.diagnosis.sellUpper) }}</strong>
-              <p>{{ message.diagnosis.diagnosis.exitAdvice || '到达目标区间后分批兑现。' }}</p>
+
+            <div v-if="message.recommendationResult" class="bubble bubble-recommendation">
+              <div class="recommendation-topline">
+                <div>
+                  <h3>{{ message.recommendationResult.marketSummary }}</h3>
+                </div>
+              </div>
+
+              <div class="basis-tags">
+                <span v-for="item in message.recommendationResult.basisSummary" :key="item" class="basis-tag">{{ item }}</span>
+              </div>
+
+              <div class="candidate-list">
+                <article v-for="candidate in message.recommendationResult.candidates" :key="candidate.code" class="candidate-card">
+                  <div class="candidate-head">
+                    <div>
+                      <span class="candidate-rank">No.{{ candidate.rank }}</span>
+                      <h4>{{ candidate.name }}</h4>
+                      <p>{{ candidate.code }} · {{ getCandidateMarketLabel(candidate.code) }}</p>
+                    </div>
+                    <div class="candidate-score">{{ candidate.score }}</div>
+                  </div>
+
+                  <p class="candidate-summary">{{ candidate.summary }}</p>
+
+                  <div class="candidate-metrics">
+                    <div class="candidate-metric">
+                      <span>预计启动</span>
+                      <strong>{{ candidate.launchWindow.label }}</strong>
+                      <small>{{ candidate.launchWindow.reason }}</small>
+                    </div>
+                    <div class="candidate-metric">
+                      <span>观察 / 介入区间</span>
+                      <strong>{{ formatRange(candidate.analysis.buyLower, candidate.analysis.buyUpper) }}</strong>
+                      <small>{{ candidate.analysis.entryAdvice || candidate.shortlistReason }}</small>
+                    </div>
+                  </div>
+
+                  <div class="candidate-section">
+                    <span class="candidate-section-title">入选理由</span>
+                    <div class="candidate-pills">
+                      <span v-for="item in candidate.whySelected" :key="item" class="candidate-pill">{{ item }}</span>
+                    </div>
+                  </div>
+
+                  <div class="candidate-section">
+                    <span class="candidate-section-title">主要风险</span>
+                    <div class="candidate-pills warning">
+                      <span v-for="item in candidate.analysis.risks.slice(0, 3)" :key="item" class="candidate-pill">{{ item }}</span>
+                    </div>
+                  </div>
+
+                  <div class="candidate-section">
+                    <span class="candidate-section-title">证据摘要</span>
+                    <p class="candidate-evidence">{{ candidate.evidence.slice(0, 2).map(item => item.summary).join('；') || '当前更多基于实时行情、K线与消息面综合判断。' }}</p>
+                  </div>
+                </article>
+              </div>
+
+              <pre class="bubble-text result-text">{{ message.content }}</pre>
             </div>
-            <div class="insight-card">
-              <span>建议仓位 / 股数</span>
-              <strong>{{ message.diagnosis.diagnosis.positionSize || '--' }} / {{ formatShares(message.diagnosis.diagnosis.suggestedShares) }}</strong>
-              <p>{{ message.diagnosis.diagnosis.positionAdvice || '仓位应服从止损与账户风险。' }}</p>
+
+            <div v-if="message.diagnosis" class="bubble bubble-result">
+              <div class="result-meta">
+                <span class="result-stock">{{ message.stockName || message.diagnosis?.stockInfo?.name }} · {{ message.code || message.diagnosis?.stockInfo?.code }}</span>
+                <span v-if="message.diagnosis?.selectedStrategy" class="result-strategy">{{ message.diagnosis.selectedStrategy.name }}</span>
+              </div>
+
+              <div class="insight-grid">
+                <div class="insight-card primary">
+                  <span class="insight-label">结论</span>
+                  <strong class="insight-value">{{ message.diagnosis.diagnosis.recommendation }}</strong>
+                  <p class="insight-desc">{{ message.diagnosis.diagnosis.prediction }}</p>
+                </div>
+                <div class="insight-card">
+                  <span class="insight-label">买入区间</span>
+                  <strong class="insight-value">{{ formatRange(message.diagnosis.diagnosis.buyLower, message.diagnosis.diagnosis.buyUpper) }}</strong>
+                  <p class="insight-desc">{{ message.diagnosis.diagnosis.entryAdvice || '等回踩确认后分批介入。' }}</p>
+                </div>
+                <div class="insight-card">
+                  <span class="insight-label">卖出区间</span>
+                  <strong class="insight-value">{{ formatRange(message.diagnosis.diagnosis.sellLower, message.diagnosis.diagnosis.sellUpper) }}</strong>
+                  <p class="insight-desc">{{ message.diagnosis.diagnosis.exitAdvice || '到达目标区间后分批兑现。' }}</p>
+                </div>
+                <div class="insight-card">
+                  <span class="insight-label">仓位建议</span>
+                  <strong class="insight-value">{{ message.diagnosis.diagnosis.positionSize || '--' }} / {{ formatShares(message.diagnosis.diagnosis.suggestedShares) }}</strong>
+                  <p class="insight-desc">{{ message.diagnosis.diagnosis.positionAdvice || '仓位应服从止损与账户风险。' }}</p>
+                </div>
+              </div>
+
+              <pre class="bubble-text result-text">{{ message.content }}</pre>
+            </div>
+
+            <div v-if="message.loading && !message.streamSteps?.length && !message.content" class="bubble bubble-loading">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+
+            <div v-else-if="!message.recommendationResult && !message.diagnosis && !message.streamingText && !(message.streaming && message.streamSteps?.length)" class="bubble bubble-plain">
+              <pre class="bubble-text">{{ message.content }}</pre>
+            </div>
+
+            <div v-if="message.quickReplies?.length && !message.loading" class="quick-replies">
+              <button
+                v-for="option in message.quickReplies"
+                :key="option"
+                type="button"
+                class="quick-reply-chip"
+                @click="sendQuickReply(option)"
+              >
+                {{ option }}
+              </button>
+            </div>
             </div>
           </div>
-
-          <pre class="message-content">{{ message.content }}</pre>
-
-          <div v-if="message.diagnosis || message.streamSteps?.length" class="message-sections">
-            <details class="message-section" :open="message.streaming">
-              <summary>
-                <span>思考过程</span>
-                <span class="message-section-count">{{ getThinkingSteps(message).length }}</span>
-              </summary>
-              <div class="section-stack">
-                <div v-for="item in getThinkingSteps(message)" :key="item.id" class="trace-card" :class="item.status">
-                  <div class="trace-head">
-                    <strong>{{ item.title }}</strong>
-                    <span>{{ item.strategy || 'planner' }}</span>
-                  </div>
-                  <div v-if="item.query" class="trace-query">
-                    <span>关注方向</span>
-                    <p>{{ item.query }}</p>
-                  </div>
-                  <div class="trace-meta">
-                    <span>{{ getToolStatusLabel(item) }}</span>
-                    <span>耗时 {{ formatDuration(item.durationMs) }}</span>
-                  </div>
-                  <div class="trace-io">
-                    <div v-if="item.inputSummary" class="io-block">
-                      <span>看了什么</span>
-                      <p>{{ item.inputSummary }}</p>
-                    </div>
-                    <div v-if="item.resultSummary" class="io-block output">
-                      <span>得到什么</span>
-                      <p>{{ item.resultSummary }}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </details>
-
-            <details class="message-section" :open="message.streaming">
-              <summary>
-                <span>工具采集</span>
-                <span class="message-section-count">{{ getToolSteps(message).length }}</span>
-              </summary>
-              <div class="section-stack">
-                <div v-for="item in getToolSteps(message)" :key="item.id" class="trace-card tool" :class="item.status">
-                  <div class="trace-head">
-                    <strong>{{ item.title }}</strong>
-                    <span>{{ item.tool || item.strategy || 'tool' }}</span>
-                  </div>
-                  <div class="trace-meta">
-                    <span>{{ getToolStatusLabel(item) }}</span>
-                    <span>耗时 {{ formatDuration(item.durationMs) }}</span>
-                  </div>
-                  <div v-if="item.query" class="trace-query">
-                    <span>搜索方向</span>
-                    <p>{{ item.query }}</p>
-                  </div>
-                  <div class="trace-io">
-                    <div v-if="item.inputSummary" class="io-block">
-                      <span>输入</span>
-                      <p>{{ item.inputSummary }}</p>
-                    </div>
-                    <div v-if="item.resultSummary" class="io-block output">
-                      <span>输出</span>
-                      <p>{{ item.resultSummary }}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </details>
-
-            <details v-if="getEvidence(message).length" class="message-section">
-              <summary>
-                <span>核心证据</span>
-                <span class="message-section-count">{{ getEvidence(message).length }}</span>
-              </summary>
-              <div class="evidence-grid">
-                <div v-for="item in getEvidence(message)" :key="`${item.source}-${item.title}`" class="evidence-card">
-                  <div class="trace-head">
-                    <strong>{{ item.title }}</strong>
-                    <span>{{ item.source || '研究证据' }}</span>
-                  </div>
-                  <p>{{ item.summary }}</p>
-                </div>
-              </div>
-            </details>
-
-            <details v-if="getScenarios(message).length" class="message-section">
-              <summary>
-                <span>情景推演</span>
-                <span class="message-section-count">{{ getScenarios(message).length }}</span>
-              </summary>
-              <div class="scenario-grid">
-                <div v-for="item in getScenarios(message)" :key="item.label" class="scenario-card">
-                  <span>{{ item.label }}</span>
-                  <strong>{{ item.expectedPrice.toFixed(2) }}</strong>
-                  <p>{{ item.probabilityHint }}</p>
-                </div>
-              </div>
-            </details>
-          </div>
-        </article>
+        </template>
       </div>
 
       <div class="composer-shell">
         <div class="composer-select-row">
+          <div class="composer-toggle-group">
+            <div class="mode-switch">
+              <button type="button" class="mode-button" :class="{ active: activeMode === 'recommendation' }" @click="setMode('recommendation')">
+                <span>AI荐股</span>
+              </button>
+              <button type="button" class="mode-button" :class="{ active: activeMode === 'diagnosis' }" @click="setMode('diagnosis')">
+                <span>AI问股</span>
+              </button>
+            </div>
+          </div>
           <div ref="strategyPickerRef" class="composer-select strategy-picker">
-            <span class="input-label">评估策略</span>
             <button class="strategy-trigger" type="button" @click="strategyMenuOpen = !strategyMenuOpen">
               <div class="strategy-trigger-copy">
-                <strong>{{ selectedStrategy?.name || '默认综合框架' }}</strong>
-                <small>{{ selectedStrategy ? '按所选框架执行' : '价格 / 量能 / 消息' }}</small>
+                <strong>{{ selectedStrategy?.name || 'AI综合评估策略' }}</strong>
               </div>
               <ChevronDown :size="16" class="strategy-trigger-icon" :class="{ open: strategyMenuOpen }" />
             </button>
             <div v-if="strategyMenuOpen" class="strategy-menu">
-              <button class="strategy-option" type="button" :class="{ active: !selectedStrategyId }" @click="selectStrategy('')">
-                <div class="strategy-option-copy">
-                  <strong>默认综合框架</strong>
-                  <p>同时检查价格、量能、消息和风险收益比。</p>
-                </div>
-              </button>
               <button
                 v-for="item in strategyOptions"
                 :key="item.id"
@@ -190,23 +276,15 @@
               </button>
             </div>
           </div>
-          <div class="composer-note">
-            <div class="composer-note-kicker">当前框架</div>
-            <div class="composer-note-title">{{ selectedStrategy?.name || '默认综合框架' }}</div>
-            <div class="composer-note-copy">{{ strategyCaption }}</div>
-          </div>
         </div>
 
-        <textarea
-          v-model="input"
-          class="input chat-input"
-          placeholder="问一只股票，例如：宁德时代现在还能不能追？也可以直接输入 300750。"
-          @keydown.enter.exact.prevent="sendMessage"
-        ></textarea>
-
-        <div class="composer-footer">
-          <span>回车发送，Shift + Enter 换行</span>
-          <span>{{ sending ? '正在逐步分析并实时刷新步骤...' : '发送后会先显示规划，再逐步更新工具和结论。' }}</span>
+        <div class="composer-input-row">
+          <textarea
+            v-model="input"
+            class="input chat-input"
+            :placeholder="inputPlaceholder"
+            @keydown.enter.exact.prevent="sendMessage"
+          ></textarea>
         </div>
       </div>
     </section>

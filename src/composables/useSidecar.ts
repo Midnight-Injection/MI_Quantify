@@ -5,6 +5,42 @@ const baseUrl = 'http://127.0.0.1:18911'
 const running = ref(false)
 const requestTimeoutMs = 12000
 const inflightGetRequests = new Map<string, Promise<any>>()
+let _registeredProxySignature = ''
+
+function buildProxySignature(proxies: {
+  id: string
+  name: string
+  host: string
+  port: number
+  protocol: string
+  username: string
+  password: string
+  enabled: boolean
+}[]) {
+  return JSON.stringify(
+    [...proxies]
+      .map((proxy) => ({
+        id: proxy.id,
+        name: proxy.name,
+        host: proxy.host.trim(),
+        port: proxy.port,
+        protocol: proxy.protocol,
+        username: proxy.username,
+        password: proxy.password,
+        enabled: proxy.enabled,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  )
+}
+
+async function syncProxiesToSidecar(proxies: { id: string; name: string; host: string; port: number; protocol: string; username: string; password: string; enabled: boolean }[]) {
+  const currentSignature = buildProxySignature(proxies)
+  if (currentSignature === _registeredProxySignature) return
+  try {
+    await post('/api/proxy/register', { proxies })
+    _registeredProxySignature = currentSignature
+  } catch {}
+}
 
 async function start() {
   try {
@@ -140,5 +176,5 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export function useSidecar() {
-  return { running, start, stop, status, ensureRunning, get, post }
+  return { running, start, stop, status, ensureRunning, get, post, syncProxiesToSidecar }
 }

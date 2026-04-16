@@ -118,8 +118,8 @@
   position: absolute;
   top: $header-height;
   right: 24px;
-  width: 380px;
-  max-height: 480px;
+  width: 420px;
+  max-height: 520px;
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 24px;
@@ -137,23 +137,77 @@
 
 .notif-header {
   @include flex-between;
-  padding: 14px 18px;
+  padding: 12px 16px;
   border-bottom: 1px solid $border-light;
   flex-shrink: 0;
+  gap: 8px;
 
-  .notif-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: $text-primary;
+  .notif-tabs {
+    display: flex;
+    gap: 2px;
+    background: $bg-input;
+    border-radius: 10px;
+    padding: 2px;
   }
 
-  .notif-close {
+  .notif-tab {
+    position: relative;
+    background: none;
+    border: none;
+    font-size: 12px;
+    font-weight: 500;
+    color: $text-muted;
+    cursor: pointer;
+    padding: 5px 12px;
+    border-radius: 8px;
+    transition: all $transition-fast;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    &:hover {
+      color: $text-secondary;
+    }
+
+    &.active {
+      background: $bg-card;
+      color: $text-primary;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    }
+
+    .tab-badge {
+      font-size: 9px;
+      font-weight: 600;
+      background: rgba($text-muted, 0.15);
+      color: $text-muted;
+      padding: 0 5px;
+      border-radius: 6px;
+      min-width: 16px;
+      height: 14px;
+      @include flex-center;
+    }
+
+    .tab-badge-active {
+      background: rgba($color-accent, 0.15);
+      color: $color-accent;
+      animation: pulse-badge 2s infinite;
+    }
+  }
+
+  .notif-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .notif-action-btn {
     @include flex-center;
     background: none;
     border: none;
     color: $text-muted;
     cursor: pointer;
-    padding: 4px;
+    padding: 5px;
     border-radius: $radius-xs;
     transition: all $transition-fast;
 
@@ -162,6 +216,34 @@
       color: $text-primary;
     }
   }
+
+  .notif-close {
+    @include flex-center;
+    background: none;
+    border: none;
+    color: $text-muted;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: $radius-xs;
+    transition: all $transition-fast;
+
+    &:hover {
+      background: $bg-input;
+      color: $text-primary;
+    }
+  }
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.notif-tab-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .notif-list {
@@ -211,4 +293,173 @@
   padding: 48px 18px;
   font-size: 13px;
   color: $text-muted;
+}
+
+.ai-log-list {
+  flex: 1;
+  overflow-y: auto;
+  @include custom-scrollbar;
+}
+
+.ai-log-task {
+  border-bottom: 1px solid $border-light;
+  padding: 12px 16px;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.ai-log-task-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ai-log-task-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ai-log-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  &.running {
+    background: $color-accent;
+    animation: pulse-dot 1.5s infinite;
+  }
+
+  &.success {
+    background: $color-up;
+  }
+
+  &.failed {
+    background: $color-down;
+  }
+
+  &.cancelled {
+    background: $text-muted;
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+.ai-log-task-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: $text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-log-task-source {
+  font-size: 10px;
+  color: $text-muted;
+  background: $bg-input;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.ai-log-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ai-log-task-time {
+  font-size: 11px;
+  color: $text-muted;
+  font-family: $font-mono;
+}
+
+.ai-log-task-duration {
+  font-size: 10px;
+  color: $text-muted;
+  background: $bg-input;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: $font-mono;
+}
+
+.ai-log-cancel-btn {
+  font-size: 11px;
+  color: $color-down;
+  background: rgba($color-down, 0.08);
+  border: none;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all $transition-fast;
+
+  &:hover {
+    background: rgba($color-down, 0.15);
+  }
+}
+
+.ai-log-entries {
+  padding-left: 4px;
+}
+
+.ai-log-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 11px;
+  line-height: 1.5;
+
+  &.success .ai-log-entry-msg { color: $color-up; }
+  &.error .ai-log-entry-msg { color: $color-down; }
+  &.warn .ai-log-entry-msg { color: darken(#f59e0b, 10%); }
+  &.info .ai-log-entry-msg { color: $text-secondary; }
+}
+
+.ai-log-entry-time {
+  color: $text-muted;
+  font-family: $font-mono;
+  flex-shrink: 0;
+  font-size: 10px;
+  min-width: 52px;
+}
+
+.ai-log-entry-level {
+  @include flex-center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+
+  .spin-icon {
+    animation: spin 1s linear infinite;
+  }
+
+  .log-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: $text-muted;
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.ai-log-entry-msg {
+  color: $text-secondary;
+  word-break: break-all;
 }

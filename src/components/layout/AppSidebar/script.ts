@@ -9,7 +9,6 @@ import {
   BrainCircuit,
   MessageSquareText,
   Settings,
-  TrendingUp,
   BellRing,
   ChevronLeft,
   ChevronRight,
@@ -27,7 +26,7 @@ const ICON_MAP: Record<string, any> = {
 
 export default defineComponent({
   name: 'AppSidebar',
-  components: { TrendingUp, ChevronLeft, ChevronRight },
+  components: { ChevronLeft, ChevronRight },
   setup() {
     const route = useRoute()
     const appStore = useAppStore()

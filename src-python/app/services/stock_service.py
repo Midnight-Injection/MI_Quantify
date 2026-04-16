@@ -2,13 +2,10 @@ import re
 import json
 import threading
 import time
-import subprocess
 from datetime import datetime
-from app.services.network_env import create_http_session, get_original_proxy_env
+from app.services.network_env import create_http_session
 from app.services.news_service import get_stock_news as get_stock_news_feed
 from app.services.market_service import get_realtime_quotes
-
-_sina = create_http_session()
 
 _finance_cache = {}
 _finance_cache_time = 0
@@ -16,6 +13,10 @@ _finance_lock = threading.Lock()
 _finance_loading = False
 _eastmoney_quote_cache = {}
 _eastmoney_quote_cache_time = {}
+
+
+def _http_get(url: str, referer: str = "https://finance.sina.com.cn", **kwargs):
+    return create_http_session(referer=referer, target_url=url).get(url, **kwargs)
 
 
 def _safe_float(v):
@@ -77,7 +78,7 @@ def get_stock_info(code: str) -> dict:
             sc = f"bj{code}"
 
         url = f"https://hq.sinajs.cn/list={sc}"
-        r = _sina.get(url, timeout=10)
+        r = _http_get(url, timeout=10)
         m = re.search(r'"([^"]*)"', r.text)
         if not m or not m.group(1):
             return default
@@ -155,7 +156,7 @@ def _load_finance_batch():
         for p in range(1, 71):
             url = f"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={p}&num=80&sort=changepercent&asc=0&node=hs_a&_s_r_a=auto"
             try:
-                r = _sina.get(url, timeout=15)
+                r = _http_get(url, timeout=15)
                 stocks = json.loads(r.text)
                 if not isinstance(stocks, list):
                     continue
@@ -250,15 +251,7 @@ def _fetch_eastmoney_finance(code: str, current_price: float) -> dict | None:
         "&fields=f57,f58,f116,f117,f162,f167,f168,f173,f187,f188,f192,f193,f194,f195,f196"
     )
     try:
-        curl_env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"}
-        curl_env.update(get_original_proxy_env())
-        raw = subprocess.run(
-            ["curl", "-sL", "--max-time", "15", url],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=curl_env,
-        ).stdout.strip()
+        raw = _http_get(url, referer="https://emweb.securities.eastmoney.com/", timeout=15).text.strip()
         if not raw:
             return None
         payload = json.loads(raw)
@@ -311,7 +304,7 @@ def _fetch_sina_finance_for_code(code: str) -> dict | None:
                 "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
                 f"Market_Center.getHQNodeData?page={page}&num=80&sort=changepercent&asc=0&node=hs_a&_s_r_a=auto"
             )
-            response = _sina.get(url, timeout=12)
+            response = _http_get(url, timeout=12)
             stocks = json.loads(response.text)
             if not isinstance(stocks, list):
                 continue

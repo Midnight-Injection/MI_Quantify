@@ -9,4 +9,6 @@ export interface AiInsightDigest {
   confidenceLabel: string
   source: 'ai' | 'rule'
   generatedAt: number
+  futureOutlook?: string
+  keyRisks?: string[]
 }

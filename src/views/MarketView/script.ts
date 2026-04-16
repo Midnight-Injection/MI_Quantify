@@ -4,6 +4,7 @@ import StockSearchInput from '@/components/common/StockSearchInput/index.vue'
 import { useSidecar } from '@/composables/useSidecar'
 import { useRealtimeTask } from '@/composables/useRealtimeTask'
 import { useMarketStore } from '@/stores/market'
+import { useSettingsStore } from '@/stores/settings'
 import type { SectorData, StockListItem, StockQuote } from '@/types'
 import { formatAmount, formatPercent, formatPrice, formatVolume } from '@/utils/format'
 import { getStockProfile } from '@/utils/marketMetrics'
@@ -48,6 +49,7 @@ export default defineComponent({
   setup() {
     const router = useRouter()
     const marketStore = useMarketStore()
+    const settingsStore = useSettingsStore()
     const { get } = useSidecar()
     const currentMarket = ref<MarketType>('a')
     const currentPage = ref(1)
@@ -70,10 +72,11 @@ export default defineComponent({
     let keywordSearchToken = 0
 
     const marketTabs = [
-      { value: 'a' as MarketType, label: 'A股', note: '全量列表' },
-      { value: 'hk' as MarketType, label: '港股', note: '核心主题' },
-      { value: 'us' as MarketType, label: '美股', note: '核心主题' },
+      { value: 'a' as MarketType, label: 'A股' },
+      { value: 'hk' as MarketType, label: '港股' },
+      { value: 'us' as MarketType, label: '美股' },
     ]
+    const realtimeMarket = computed(() => currentMarket.value)
 
     function clearKeywordSearchTimer() {
       if (keywordSearchTimer) {
@@ -199,6 +202,7 @@ export default defineComponent({
     })
 
     const refreshSeconds = computed(() => Math.round(realtimeRefresh.resolvedInterval.value / 1000))
+    const dataRealtimeEnabled = computed(() => settingsStore.settings.dataSource.realTimeEnabled)
 
     async function loadPage(page: number, append = false) {
       if (!hasMore.value && append) return
@@ -357,7 +361,14 @@ export default defineComponent({
       )
       allStocks.value = res.data ?? []
       hasMore.value = allStocks.value.length < (res.total || 0)
-    }, { intervalMultiplier: 1, immediate: false, minimumMs: 5000, pauseWhenHidden: true })
+    }, {
+      intervalMultiplier: 1,
+      immediate: false,
+      minimumMs: 3000,
+      pauseWhenHidden: true,
+      market: () => realtimeMarket.value,
+      skipWhenMarketClosed: true,
+    })
 
     const sectorRefresh = useRealtimeTask(async () => {
       if (currentMarket.value !== 'a') return
@@ -365,7 +376,14 @@ export default defineComponent({
       if (selectedSectorCodes.value.length) {
         await loadSelectedSectorStocks()
       }
-    }, { intervalMultiplier: 3, immediate: false, minimumMs: 15000, pauseWhenHidden: true })
+    }, {
+      intervalMultiplier: 1,
+      immediate: false,
+      minimumMs: 3000,
+      pauseWhenHidden: true,
+      market: () => realtimeMarket.value,
+      skipWhenMarketClosed: true,
+    })
 
     watch(sectorDimension, () => {
       selectedSectorCodes.value = []
@@ -415,6 +433,7 @@ export default defineComponent({
       sectorLoading,
       tableContainer,
       currentLoadedCount,
+      dataRealtimeEnabled,
       formatPrice,
       formatPercent,
       formatVolume,

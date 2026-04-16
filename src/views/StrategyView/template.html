@@ -5,16 +5,11 @@
         <h1 class="page-title">策略中心</h1>
         <span class="strategy-badge">{{ strategyStore.strategies.filter(s => s.enabled).length }} 个策略已启用</span>
       </div>
-      <div class="strategy-summary">
-        <span>这里只维护内置与自定义策略模板</span>
-        <span>AI问股 / 个股分析等页面通过下拉直接选择</span>
-      </div>
     </div>
 
     <div class="strategy-section strategy-playbook">
       <div class="section-header">
         <h3 class="section-heading">内置策略框架</h3>
-        <span class="count">这些框架会出现在其他页面的策略下拉中</span>
       </div>
       <div class="playbook-grid">
         <article v-for="item in featuredStrategies" :key="item.id" class="playbook-card">
@@ -30,7 +25,6 @@
     <div class="strategy-section strategy-prompt-editor">
       <div class="section-header">
         <h3 class="section-heading">策略提示词模板</h3>
-        <span class="count">集中维护内置模板，其他分析页面直接复用</span>
       </div>
       <prompt-editor
         :templates="strategyStore.promptTemplates"
@@ -51,7 +45,6 @@
       <div class="strategy-section strategy-builder">
         <div class="section-header">
           <h3 class="section-heading">自定义策略</h3>
-          <span class="count">新增后会自动出现在策略下拉里</span>
         </div>
         <div class="builder-grid">
           <input class="input" v-model="customStrategy.name" placeholder="策略名称" />

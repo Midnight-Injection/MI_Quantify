@@ -35,15 +35,20 @@
   .brand-icon {
     width: 36px;
     height: 36px;
-    border-radius: $radius-md;
-    background: linear-gradient(135deg, #b7955f, #d5b37c);
+    border-radius: 10px;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    box-shadow: 0 10px 24px rgba(183, 149, 95, 0.24);
-    color: #1b2330;
+    box-shadow: 0 10px 24px rgba(24, 177, 170, 0.18);
     transition: transform $transition-fast;
+
+    img {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
 
     &:hover {
       transform: scale(1.05);

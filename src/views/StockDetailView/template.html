@@ -10,7 +10,6 @@
       <div class="hero-left">
         <button class="btn-back" @click="$router.back()">返回</button>
         <div class="identity-card">
-          <span class="stock-kicker">{{ profile.board }}</span>
           <div class="stock-row">
             <h1 class="stock-name">{{ stockInfo.name }}</h1>
             <span class="stock-code">{{ code }}</span>
@@ -26,18 +25,24 @@
               {{ formatPercent(stockInfo.changePercent) }}%
             </span>
           </div>
-          <p class="hero-summary">
-            今日区间 {{ formatPrice(stockInfo.low) }} - {{ formatPrice(stockInfo.high) }}，涨跌停参考 {{ formatPrice(limitPrices.limitDown) }} / {{ formatPrice(limitPrices.limitUp) }}。
-          </p>
         </div>
       </div>
 
       <div class="hero-actions">
         <button class="btn-ghost" @click="addToWatchlist">{{ isWatched ? '已在关注中' : '加入关注' }}</button>
-        <button class="btn-primary" :disabled="diagnosisLoading" @click="requestDiagnosis(true)">
-          {{ diagnosisLoading ? '诊股中...' : stockDiagnosisAutoEnabled ? '立即复诊' : 'AI 诊股' }}
+        <button v-if="!stockDiagnosisAutoEnabled && !diagnosisLoading" class="btn-primary ai-trigger-btn" @click="requestDiagnosis(true)">
+          AI评估
         </button>
-        <span class="mode-pill">{{ stockDiagnosisAutoEnabled ? '自动诊股' : '手动诊股' }}</span>
+        <button v-if="diagnosisLoading" class="btn-primary ai-trigger-btn ai-cancel-btn" @click="cancelDiagnosis">
+          立即停止
+        </button>
+        <label class="hero-strategy-select">
+          <select v-model="selectedStrategyId" class="input select-sm">
+            <option v-for="item in strategyOptions" :key="item.id" :value="item.id">
+              {{ item.name }}
+            </option>
+          </select>
+        </label>
       </div>
     </section>
 
@@ -114,7 +119,6 @@
           <div class="panel-head">
             <div>
               <h3 class="section-title">价格行为</h3>
-              <p class="section-subtitle">上半区看 K 线和均线，下半区看成交量柱。更容易判断放量突破、缩量回踩和关键支撑压力。</p>
             </div>
             <div class="chart-controls">
               <select class="input select-sm" v-model="period">
@@ -161,7 +165,6 @@
             <div class="technical-chip">
               <span>成交放大 / 趋势</span>
               <strong>{{ volumeSignal.value }} / {{ trendSignal.value }}</strong>
-              <small>{{ volumeSignal.summary }}，{{ trendSignal.summary }}</small>
             </div>
             <div class="technical-chip">
               <span>支撑位</span>
@@ -205,21 +208,98 @@
           <article class="panel panel-company-overview">
             <div class="panel-head">
               <div>
-                <h3 class="section-title">公司概览</h3>
+                <h3 class="section-title">公司信息</h3>
+              </div>
+              <div class="company-tabs">
+                <button class="company-tab" :class="{ active: companyTab === 'overview' }" @click="companyTab = 'overview'">概览</button>
+                <button class="company-tab" :class="{ active: companyTab === 'finance' }" @click="companyTab = 'finance'; loadFinanceReport()">财报</button>
               </div>
             </div>
-            <div class="profile-grid">
-              <div class="profile-row"><span>所属市场</span><strong>{{ profile.market.toUpperCase() }}</strong></div>
-              <div class="profile-row"><span>交易板块</span><strong>{{ profile.board }}</strong></div>
-              <div class="profile-row"><span>最小买入单位</span><strong>{{ profile.lotSize }} 股</strong></div>
-              <div class="profile-row"><span>涨跌停幅度</span><strong>{{ (limitPrices.ratio * 100).toFixed(0) }}%</strong></div>
-              <div class="profile-row"><span>流通市值</span><strong>{{ fmtCap(finance.circMv) }}</strong></div>
-              <div class="profile-row"><span>总市值</span><strong>{{ fmtCap(finance.totalMv) }}</strong></div>
-              <div class="profile-row"><span>EPS / BPS</span><strong>{{ finance.eps ? finance.eps.toFixed(2) : '--' }} / {{ finance.bps ? finance.bps.toFixed(2) : '--' }}</strong></div>
-              <div class="profile-row"><span>ROE</span><strong>{{ finance.roe ? (finance.roe * 100).toFixed(2) + '%' : '--' }}</strong></div>
+            <div v-if="companyTab === 'overview'">
+              <div class="profile-grid">
+                <div class="profile-row"><span>所属市场</span><strong>{{ profile.market.toUpperCase() }}</strong></div>
+                <div class="profile-row"><span>交易板块</span><strong>{{ profile.board }}</strong></div>
+                <div class="profile-row"><span>最小买入单位</span><strong>{{ profile.lotSize }} 股</strong></div>
+                <div class="profile-row"><span>涨跌停幅度</span><strong>{{ (limitPrices.ratio * 100).toFixed(0) }}%</strong></div>
+                <div class="profile-row"><span>流通市值</span><strong>{{ fmtCap(finance.circMv) }}</strong></div>
+                <div class="profile-row"><span>总市值</span><strong>{{ fmtCap(finance.totalMv) }}</strong></div>
+                <div class="profile-row"><span>EPS / BPS</span><strong>{{ finance.eps ? finance.eps.toFixed(2) : '--' }} / {{ finance.bps ? finance.bps.toFixed(2) : '--' }}</strong></div>
+                <div class="profile-row"><span>ROE</span><strong>{{ finance.roe ? (finance.roe * 100).toFixed(2) + '%' : '--' }}</strong></div>
+              </div>
+              <div class="tag-row">
+                <span v-for="tag in profile.tags" :key="tag" class="profile-tag">{{ tag }}</span>
+              </div>
             </div>
-            <div class="tag-row">
-              <span v-for="tag in profile.tags" :key="tag" class="profile-tag">{{ tag }}</span>
+            <div v-else-if="companyTab === 'finance'">
+              <div v-if="financeReportLoading" class="panel-empty"><span class="spinner"></span><span>加载财报数据...</span></div>
+              <div v-else-if="financeReportError" class="panel-empty">
+                <span>{{ financeReportError }}</span>
+                <button class="btn-ghost" style="margin-top:8px" @click="loadFinanceReport">重试</button>
+              </div>
+              <div v-else-if="financeReport" class="finance-report">
+                <div class="finance-section-title">资产负债表（近4期）</div>
+                <div class="finance-table-wrap">
+                  <table class="finance-table" v-if="financeReport.balanceSheet && financeReport.balanceSheet.length">
+                    <thead>
+                      <tr>
+                        <th>指标</th>
+                        <th v-for="item in financeReport.balanceSheet" :key="item.reportDate">{{ item.reportDate }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>总资产</td><td v-for="item in financeReport.balanceSheet" :key="item.reportDate">{{ fmtCap(item.totalAssets / 1) }}</td></tr>
+                      <tr><td>总负债</td><td v-for="item in financeReport.balanceSheet" :key="item.reportDate">{{ fmtCap(item.totalLiabilities / 1) }}</td></tr>
+                      <tr><td>净资产</td><td v-for="item in financeReport.balanceSheet" :key="item.reportDate">{{ fmtCap(item.totalEquity / 1) }}</td></tr>
+                      <tr><td>货币资金</td><td v-for="item in financeReport.balanceSheet" :key="item.reportDate">{{ fmtCap(item.cash / 1) }}</td></tr>
+                      <tr><td>应收账款</td><td v-for="item in financeReport.balanceSheet" :key="item.reportDate">{{ fmtCap(item.accountsReceivable / 1) }}</td></tr>
+                      <tr><td>存货</td><td v-for="item in financeReport.balanceSheet" :key="item.reportDate">{{ fmtCap(item.inventory / 1) }}</td></tr>
+                      <tr><td>短期借款</td><td v-for="item in financeReport.balanceSheet" :key="item.reportDate">{{ fmtCap(item.shortTermBorrowings / 1) }}</td></tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="panel-empty">暂无资产负债表数据</div>
+                </div>
+
+                <div class="finance-section-title">利润表（近4期）</div>
+                <div class="finance-table-wrap">
+                  <table class="finance-table" v-if="financeReport.incomeStatement && financeReport.incomeStatement.length">
+                    <thead>
+                      <tr>
+                        <th>指标</th>
+                        <th v-for="item in financeReport.incomeStatement" :key="item.reportDate">{{ item.reportDate }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>营业总收入</td><td v-for="item in financeReport.incomeStatement" :key="item.reportDate">{{ fmtCap(item.totalRevenue / 1) }}</td></tr>
+                      <tr><td>营业成本</td><td v-for="item in financeReport.incomeStatement" :key="item.reportDate">{{ fmtCap(item.operatingCost / 1) }}</td></tr>
+                      <tr><td>净利润</td><td v-for="item in financeReport.incomeStatement" :key="item.reportDate">{{ fmtCap(item.netProfit / 1) }}</td></tr>
+                      <tr><td>归母净利润</td><td v-for="item in financeReport.incomeStatement" :key="item.reportDate">{{ fmtCap(item.netProfitAttributable / 1) }}</td></tr>
+                      <tr><td>销售费用</td><td v-for="item in financeReport.incomeStatement" :key="item.reportDate">{{ fmtCap(item.sellingExpense / 1) }}</td></tr>
+                      <tr><td>管理费用</td><td v-for="item in financeReport.incomeStatement" :key="item.reportDate">{{ fmtCap(item.adminExpense / 1) }}</td></tr>
+                      <tr><td>研发费用</td><td v-for="item in financeReport.incomeStatement" :key="item.reportDate">{{ fmtCap(item.rdExpense / 1) }}</td></tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="panel-empty">暂无利润表数据</div>
+                </div>
+
+                <div class="finance-section-title">现金流量表（近4期）</div>
+                <div class="finance-table-wrap">
+                  <table class="finance-table" v-if="financeReport.cashflowStatement && financeReport.cashflowStatement.length">
+                    <thead>
+                      <tr>
+                        <th>指标</th>
+                        <th v-for="item in financeReport.cashflowStatement" :key="item.reportDate">{{ item.reportDate }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>经营现金流</td><td v-for="item in financeReport.cashflowStatement" :key="item.reportDate">{{ fmtCap(item.operatingCashFlow / 1) }}</td></tr>
+                      <tr><td>投资现金流</td><td v-for="item in financeReport.cashflowStatement" :key="item.reportDate">{{ fmtCap(item.investingCashFlow / 1) }}</td></tr>
+                      <tr><td>筹资现金流</td><td v-for="item in financeReport.cashflowStatement" :key="item.reportDate">{{ fmtCap(item.financingCashFlow / 1) }}</td></tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="panel-empty">暂无现金流量表数据</div>
+                </div>
+              </div>
+              <div v-else class="panel-empty">点击上方"财报"标签加载数据</div>
             </div>
           </article>
 
@@ -227,7 +307,6 @@
             <div class="panel-head">
               <div>
                 <h3 class="section-title">盘口深度</h3>
-                <p class="section-subtitle">中间显示最新成交，左右分别是卖五和买五，用于观察承接与抛压是否失衡。</p>
               </div>
             </div>
             <div class="orderbook-wrap">
@@ -277,13 +356,13 @@
           <div class="panel-head">
             <div>
               <h3 class="section-title">资讯面</h3>
-              <p class="section-subtitle">优先展示与该股票直接相关的资讯，右侧再补充市场宏观背景。</p>
             </div>
           </div>
           <div class="news-grid">
             <div>
               <div class="news-group-title">个股新闻</div>
-              <div v-if="stockNews.length" class="news-list">
+              <div v-if="newsLoading && !stockNews.length" class="panel-empty panel-loading-state"><span class="spinner"></span><span>加载中...</span></div>
+              <div v-else-if="stockNews.length" class="news-list">
                 <a v-for="item in stockNews.slice(0, 6)" :key="item.url" :href="item.url" class="news-item" target="_blank" rel="noopener">
                   <div class="news-head">
                     <span>{{ item.source }}</span>
@@ -297,7 +376,8 @@
             </div>
             <div>
               <div class="news-group-title">市场消息</div>
-              <div v-if="macroNews.length" class="news-list">
+              <div v-if="newsLoading && !macroNews.length" class="panel-empty panel-loading-state"><span class="spinner"></span><span>加载中...</span></div>
+              <div v-else-if="macroNews.length" class="news-list">
                 <a v-for="item in macroNews" :key="item.title" :href="item.url" class="news-item" target="_blank" rel="noopener">
                   <div class="news-head">
                     <span>{{ item.source }}</span>
@@ -318,89 +398,43 @@
           <div class="panel-head">
             <div>
               <h3 class="section-title">通知守护</h3>
-              <p class="section-subtitle">把价格触发和盘口阶段提醒收进同一个批量监听器里，一次选好渠道后统一添加。</p>
             </div>
           </div>
-          <div class="alert-batch-shell">
-            <div class="alert-channel-row">
-              <span class="alert-channel-label">通知渠道</span>
-              <select class="input select-sm" v-model="alertDelivery">
-                <option value="desktop">桌面通知</option>
-                <option value="wechat" :disabled="!wechatChannelReady">微信通道{{ wechatChannelReady ? '' : '（未连接）' }}</option>
+          <div class="guard-shell">
+            <div class="guard-form">
+              <select class="input guard-rule-select" v-model="guardRuleType">
+                <optgroup label="盘口阶段">
+                  <option v-for="opt in guardRuleOptions.filter(o => !o.value.startsWith('price_'))" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </optgroup>
+                <optgroup label="价格触发">
+                  <option value="price_above">突破价格</option>
+                  <option value="price_below">跌破价格</option>
+                </optgroup>
               </select>
+              <input v-if="guardNeedsPrice" class="input guard-price-input" type="number" step="0.01" v-model.number="guardPriceValue" :placeholder="stockInfo ? `当前 ${stockInfo.price.toFixed(2)}` : '输入价格'" />
+               <select class="input guard-channel-select" v-model="guardDelivery">
+                 <option v-for="opt in deliveryOptions" :key="opt.value" :value="opt.value" :disabled="opt.disabled">{{ opt.label }}</option>
+               </select>
+              <button class="btn-primary guard-add-btn" :disabled="!guardCanAdd" @click="addGuardRule">添加监听</button>
             </div>
-
-            <div class="alert-rule-grid">
-              <div class="alert-rule-card">
-                <label class="alert-rule-head">
-                  <input type="checkbox" v-model="priceAlertEnabled" />
-                  <span>价格触发</span>
-                  <small>把指定价格和突破 / 跌破方向一起放到同一批次里。</small>
-                </label>
-                <div class="alert-rule-body alert-rule-inline">
-                  <select class="input select-sm" v-model="quickAlertDirection" :disabled="!priceAlertEnabled">
-                    <option value="above">突破提醒</option>
-                    <option value="below">跌破提醒</option>
-                  </select>
-                  <input class="input" type="number" step="0.01" v-model.number="quickAlertPrice" :disabled="!priceAlertEnabled" placeholder="输入触发价" />
-                </div>
+          </div>
+          <div v-if="alertsForStock.length" class="guard-active-list">
+            <div class="guard-active-title">已添加的监听规则</div>
+            <div v-for="item in alertsForStock" :key="item.id" class="guard-active-item">
+              <div class="guard-active-info">
+                <span class="guard-active-type" :class="item.type === 'price' ? (item.direction === 'above' ? 'above' : 'below') : 'board'">{{ getAlertLabel(item) }}</span>
+                <span class="guard-active-meta">{{ formatAlertDelivery(item.metadata?.delivery) }}</span>
               </div>
-
-              <div class="alert-rule-card">
-                <div class="alert-rule-head">
-                  <span>盘口阶段监听</span>
-                  <small>涨停、开板、回封、跌停等条件统一放在这里多选。</small>
-                </div>
-                <div class="alert-rule-body">
-                  <div ref="boardAlertMenuRef" class="alert-select-shell">
-                    <button class="btn-ghost alert-select-trigger" type="button" @click="boardAlertMenuOpen = !boardAlertMenuOpen">
-                      <span>{{ selectedBoardAlertLabels.length ? `已选 ${selectedBoardAlertLabels.length} 项` : '选择盘口监听条件' }}</span>
-                      <span class="alert-select-arrow">{{ boardAlertMenuOpen ? '▴' : '▾' }}</span>
-                    </button>
-                    <div v-if="boardAlertMenuOpen" class="alert-select-menu">
-                      <label v-for="item in boardAlertOptions" :key="item.type" class="alert-select-option">
-                        <input
-                          type="checkbox"
-                          :checked="selectedBoardAlertTypes.includes(item.type)"
-                          :disabled="item.active"
-                          @change="toggleBoardAlertType(item.type)"
-                        />
-                        <span>{{ item.label }}</span>
-                        <small>{{ item.active ? '已添加' : '可监听' }}</small>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="alert-batch-foot">
-              <div class="alert-batch-summary">
-                <strong>本次监听</strong>
-                <span>{{ batchAlertSummary }}</span>
-              </div>
-              <button class="btn-primary" :disabled="!pendingAlertCount" @click="createBatchAlerts">
-                批量添加监听
-              </button>
+              <button class="guard-active-del" @click="removeAlert(item.id)">移除</button>
             </div>
           </div>
           <div v-if="alertFeedback" class="alert-feedback">{{ alertFeedback }}</div>
-          <div v-if="alertsForStock.length" class="alert-list">
-            <div v-for="item in alertsForStock" :key="item.id" class="alert-item">
-              <div>
-                <div class="alert-name">{{ item.note || item.type }}</div>
-                <div class="alert-meta">{{ item.enabled ? '运行中' : '已暂停' }} · {{ formatAlertDelivery(item.metadata?.delivery) }}</div>
-              </div>
-              <button class="alert-remove" @click="removeAlert(item.id)">删除</button>
-            </div>
-          </div>
         </article>
 
         <article class="panel">
           <div class="panel-head">
             <div>
               <h3 class="section-title">交易参考</h3>
-              <p class="section-subtitle">适合做盘中快读的关键数字。</p>
             </div>
           </div>
           <div class="reference-list">
@@ -416,7 +450,7 @@
             <div class="reference-row"><span>更新时间</span><strong>{{ stockInfo.date }} {{ stockInfo.time }}</strong></div>
           </div>
           <div class="disclaimer">
-            AI 诊股只用于研究辅助，不代表收益承诺，也不能真实保证 90% 胜率。
+            AI评估只用于研究辅助，不代表收益承诺，也不能真实保证 90% 胜率。
           </div>
         </article>
       </div>
@@ -425,12 +459,8 @@
     <article class="panel ai-panel ai-panel-full">
           <div class="panel-head">
             <div>
-              <h3 class="section-title">AI 诊股</h3>
-              <p class="section-subtitle">Agent 会自主规划研究路径，串行调用行情、新闻、资金与外部搜索工具。</p>
+              <h3 class="section-title">AI评估</h3>
             </div>
-            <button class="btn-ghost panel-action-btn" :disabled="diagnosisLoading" @click="requestDiagnosis(true)">
-              {{ stockDiagnosisAutoEnabled ? '立即刷新诊股' : '手动触发诊股' }}
-            </button>
           </div>
 
           <div v-if="diagnosis" class="diagnosis-body">
@@ -500,7 +530,26 @@
               </div>
             </div>
 
-            <div class="scenario-list">
+            <div v-if="diagnosis.klineAnalysis" class="bullet-group compact">
+              <div>
+                <div class="bullet-title">K线走势研判</div>
+                <p class="strategy-copy">
+                  当前阶段：<strong>{{ diagnosis.klineAnalysis.currentPhase || '--' }}</strong>
+                  · 均线排列：<strong>{{ diagnosis.klineAnalysis.maAlignment || '--' }}</strong>
+                  · 量能信号：<strong>{{ diagnosis.klineAnalysis.volumeSignal || '--' }}</strong>
+                </p>
+              </div>
+              <div>
+                <div class="bullet-title">短期预测（1-5日）</div>
+                <p class="strategy-copy">{{ diagnosis.klineAnalysis.shortTermForecast || '--' }}</p>
+              </div>
+              <div>
+                <div class="bullet-title">中期趋势（1-4周）</div>
+                <p class="strategy-copy">{{ diagnosis.klineAnalysis.mediumTermForecast || '--' }}</p>
+              </div>
+            </div>
+
+            <div v-if="diagnosis.scenarios && diagnosis.scenarios.length" class="scenario-list">
               <div v-for="item in diagnosis.scenarios" :key="item.label" class="scenario-item">
                 <div>
                   <div class="scenario-label">{{ item.label }}</div>
@@ -529,10 +578,21 @@
                   <li v-for="item in diagnosis.socialSignals" :key="item">{{ item }}</li>
                 </ul>
               </div>
+              <div v-if="diagnosis.policyImpact">
+                <div class="bullet-title">政策影响</div>
+                <p class="strategy-copy">{{ diagnosis.policyImpact }}</p>
+              </div>
+              <div v-if="diagnosis.internationalFactors">
+                <div class="bullet-title">国际因素</div>
+                <p class="strategy-copy">{{ diagnosis.internationalFactors }}</p>
+              </div>
             </div>
 
-            <div v-if="diagnosisEvidence.length" class="evidence-stack">
-              <div class="bullet-title">外部证据</div>
+            <button v-if="diagnosisEvidence.length" class="collapse-toggle" @click="showEvidence = !showEvidence">
+              <span class="collapse-arrow" :class="{ open: showEvidence }">›</span>
+              外部证据（{{ diagnosisEvidence.length }}）
+            </button>
+            <div v-if="showEvidence && diagnosisEvidence.length" class="evidence-stack">
               <div class="evidence-list">
                 <div v-for="item in diagnosisEvidence" :key="item.title" class="evidence-item">
                   <div class="evidence-top">
@@ -544,8 +604,11 @@
               </div>
             </div>
 
-            <div v-if="agentTrace.length" class="trace-panel">
-              <div class="bullet-title">Agent 研究轨迹</div>
+            <button v-if="agentTrace.length" class="collapse-toggle" @click="showTrace = !showTrace">
+              <span class="collapse-arrow" :class="{ open: showTrace }">›</span>
+              Agent 研究轨迹（{{ agentTrace.length }}）
+            </button>
+            <div v-if="showTrace && agentTrace.length" class="trace-panel">
               <div class="trace-list">
                 <div v-for="item in agentTrace" :key="item.id" class="trace-item" :class="item.status">
                   <div class="trace-top">
@@ -564,7 +627,7 @@
             </div>
           </div>
           <div v-else class="panel-empty">
-            <span>{{ diagnosisError || `当前处于${stockDiagnosisAutoEnabled ? '自动' : '手动'}模式，点击“${stockDiagnosisAutoEnabled ? '立即刷新诊股' : 'AI 诊股'}”后会展示研究路径、工具调用和买卖区间。` }}</span>
+            <span>{{ diagnosisError || `当前处于${stockDiagnosisAutoEnabled ? '自动' : '手动'}模式，${stockDiagnosisAutoEnabled ? '系统会按设置自动执行AI评估。' : '点击上方“AI评估”后会展示研究路径、工具调用和买卖区间。'}` }}</span>
           </div>
         </article>
     </div>

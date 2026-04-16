@@ -1,7 +1,8 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import market, kline, sector, fundflow, news, openclaw
+from app.routers import market, kline, sector, fundflow, news, openclaw, finance
+from app.services.network_env import register_proxies
 
 for k in [
     "HTTP_PROXY",
@@ -30,8 +31,16 @@ app.include_router(sector.router, prefix="/api/sector", tags=["sector"])
 app.include_router(fundflow.router, prefix="/api/fundflow", tags=["fundflow"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(openclaw.router, prefix="/api/openclaw", tags=["openclaw"])
+app.include_router(finance.router, prefix="/api/finance", tags=["finance"])
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "mi-quantify-sidecar"}
+
+
+@app.post("/api/proxy/register")
+async def proxy_register(payload: dict = Body(default={})):
+    proxies = payload.get("proxies", []) or []
+    register_proxies(proxies)
+    return {"status": "ok", "count": len(proxies)}

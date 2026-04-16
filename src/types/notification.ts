@@ -28,4 +28,5 @@ export interface NotificationEntry {
   time: number
   stockCode?: string
   type?: NotificationAlertType | 'ai' | 'system' | 'strategy' | 'news'
+  read?: boolean
 }

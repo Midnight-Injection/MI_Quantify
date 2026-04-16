@@ -7,7 +7,9 @@
     "core:default",
     "opener:default",
     "mcp-bridge:default",
+    "process:default",
     "store:default",
-    "shell:default"
+    "shell:default",
+    "updater:default"
   ]
 }

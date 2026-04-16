@@ -8,8 +8,6 @@ from app.services.network_env import clear_proxy_env, create_http_session
 clear_proxy_env()
 from typing import Optional
 
-_sina = create_http_session()
-
 _ad_cache = {
     "data": {"advance": 0, "decline": 0, "flat": 0, "total": 0, "totalAmount": 0},
     "updated": 0,
@@ -19,6 +17,10 @@ _ad_refresh_interval = 30
 _hk_share_cache: dict[str, dict] = {}
 _hk_share_lock = threading.Lock()
 _HK_SHARE_CACHE_TTL = 6 * 60 * 60
+
+
+def _http_get(url: str, **kwargs):
+    return create_http_session(target_url=url).get(url, **kwargs)
 
 
 def _bg_refresh_advance_decline():
@@ -40,13 +42,6 @@ def ensure_ad_thread():
     global _threading_started
     if not _threading_started:
         _threading_started = True
-        try:
-            data = _compute_advance_decline()
-            with _ad_lock:
-                _ad_cache["data"] = data
-                _ad_cache["updated"] = time.time()
-        except Exception as e:
-            print(f"[market] initial advance/decline error: {e}")
         t = threading.Thread(target=_bg_refresh_advance_decline, daemon=True)
         t.start()
 
@@ -59,19 +54,93 @@ def _parse_sina_line(line: str):
 
 
 HK_CURATED_UNIVERSE = [
-    "00005", "00388", "00700", "00857", "00883", "00939", "00941", "00981", "00992", "01024",
-    "01093", "01109", "01299", "01347", "01398", "01772", "01810", "02007", "02015", "02269",
-    "02318", "02319", "02331", "02382", "02628", "03690", "03800", "03888", "06030", "06160",
-    "06618", "06862", "09618", "09626", "09633", "09863", "09866", "09868", "09888", "09988",
-    "09992", "09999",
+    "00005",
+    "00388",
+    "00700",
+    "00857",
+    "00883",
+    "00939",
+    "00941",
+    "00981",
+    "00992",
+    "01024",
+    "01093",
+    "01109",
+    "01299",
+    "01347",
+    "01398",
+    "01772",
+    "01810",
+    "02007",
+    "02015",
+    "02269",
+    "02318",
+    "02319",
+    "02331",
+    "02382",
+    "02628",
+    "03690",
+    "03800",
+    "03888",
+    "06030",
+    "06160",
+    "06618",
+    "06862",
+    "09618",
+    "09626",
+    "09633",
+    "09863",
+    "09866",
+    "09868",
+    "09888",
+    "09988",
+    "09992",
+    "09999",
 ]
 
 US_CURATED_UNIVERSE = [
-    "AAPL", "ADBE", "AMD", "AMZN", "AVGO", "BABA", "BIDU", "COIN", "COST", "CRM",
-    "CSCO", "DIS", "GOOGL", "HOOD", "INTC", "JD", "KO", "LI", "MA", "META",
-    "MCD", "MELI", "MSFT", "NFLX", "NIO", "NKE", "NVDA", "ORCL", "PDD", "PLTR",
-    "PYPL", "QCOM", "SMCI", "SOFI", "TSLA", "TSM", "TME", "UBER", "UNH", "V",
-    "WMT", "XPEV",
+    "AAPL",
+    "ADBE",
+    "AMD",
+    "AMZN",
+    "AVGO",
+    "BABA",
+    "BIDU",
+    "COIN",
+    "COST",
+    "CRM",
+    "CSCO",
+    "DIS",
+    "GOOGL",
+    "HOOD",
+    "INTC",
+    "JD",
+    "KO",
+    "LI",
+    "MA",
+    "META",
+    "MCD",
+    "MELI",
+    "MSFT",
+    "NFLX",
+    "NIO",
+    "NKE",
+    "NVDA",
+    "ORCL",
+    "PDD",
+    "PLTR",
+    "PYPL",
+    "QCOM",
+    "SMCI",
+    "SOFI",
+    "TSLA",
+    "TSM",
+    "TME",
+    "UBER",
+    "UNH",
+    "V",
+    "WMT",
+    "XPEV",
 ]
 
 
@@ -132,7 +201,7 @@ def get_market_indices(market: str = "a") -> list[dict]:
 def _get_a_indices() -> list[dict]:
     keys = list(A_INDEX_CODES.keys())
     url = f"https://hq.sinajs.cn/list={','.join(keys)}"
-    r = _sina.get(url, timeout=10)
+    r = _http_get(url, timeout=10)
     result = []
     for line in r.text.strip().split("\n"):
         m = re.search(r"var hq_str_(\S+?)=", line)
@@ -161,7 +230,7 @@ def _get_a_indices() -> list[dict]:
 
 def _get_hk_indices() -> list[dict]:
     url = f"https://hq.sinajs.cn/list={','.join(HK_INDEX_CODES.keys())}"
-    r = _sina.get(url, timeout=10)
+    r = _http_get(url, timeout=10)
     result = []
     for line in r.text.strip().split("\n"):
         for key, (code, name) in HK_INDEX_CODES.items():
@@ -189,7 +258,7 @@ def _get_hk_indices() -> list[dict]:
 
 def _get_us_indices() -> list[dict]:
     url = f"https://hq.sinajs.cn/list={','.join(US_INDEX_CODES.keys())}"
-    r = _sina.get(url, timeout=10)
+    r = _http_get(url, timeout=10)
     result = []
     for line in r.text.strip().split("\n"):
         for key, (code, name) in US_INDEX_CODES.items():
@@ -220,11 +289,15 @@ def get_advance_decline() -> dict:
         return dict(_ad_cache["data"])
 
 
+_AD_COMPUTE_TIMEOUT = 60
+
+
 def _compute_advance_decline() -> dict:
     default = {"advance": 0, "decline": 0, "flat": 0, "total": 0, "totalAmount": 0}
+    deadline = time.time() + _AD_COMPUTE_TIMEOUT
     try:
         total_url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCount?node=hs_a&symbol="
-        tr = _sina.get(total_url, timeout=10)
+        tr = _http_get(total_url, timeout=10)
         total = (
             int(tr.text.strip().strip('"'))
             if tr.text.strip().strip('"').isdigit()
@@ -240,9 +313,13 @@ def _compute_advance_decline() -> dict:
         pages = max(1, (total + 79) // 80)
         pages = min(pages, 70)
         for p in range(1, pages + 1):
+            if time.time() > deadline:
+                print(f"[market] advance/decline compute timed out after page {p - 1}")
+                break
             url = f"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={p}&num=80&sort=changepercent&asc=0&node=hs_a&symbol=&_s_r_a=auto"
             try:
-                r = _sina.get(url, timeout=15)
+                remaining = max(5, int(deadline - time.time()))
+                r = _http_get(url, timeout=min(15, remaining))
                 if r.status_code != 200 or not r.text.strip():
                     continue
                 stocks = json.loads(r.text)
@@ -294,7 +371,7 @@ def get_realtime_quotes(codes: list[str]) -> list[dict]:
                 has_hk_codes = True
 
         url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
-        r = _sina.get(url, timeout=10)
+        r = _http_get(url, timeout=10)
         result = []
         for line in r.text.strip().split("\n"):
             m = re.search(r"var hq_str_(\S+?)=", line)
@@ -335,7 +412,7 @@ def _get_a_stock_list_sina(page: int, page_size: int) -> dict:
     try:
         num = page_size
         url = f"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num={num}&sort=changepercent&asc=0&node=hs_a&symbol=&_s_r_a=auto"
-        r = _sina.get(url, timeout=15)
+        r = _http_get(url, timeout=15)
         if r.status_code != 200 or not r.text.strip():
             return {"data": [], "total": 0, "page": page}
         try:
@@ -349,7 +426,7 @@ def _get_a_stock_list_sina(page: int, page_size: int) -> dict:
 
         total_url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCount?node=hs_a&symbol="
         try:
-            tr = _sina.get(total_url, timeout=10)
+            tr = _http_get(total_url, timeout=10)
             raw = tr.text.strip().strip('"')
             total = int(raw) if raw.isdigit() else len(stocks)
         except Exception:
@@ -395,12 +472,12 @@ def _get_us_stock_list(page: int, page_size: int) -> dict:
     return _get_curated_market_list("us", US_CURATED_UNIVERSE, page, page_size)
 
 
-def search_stocks(keyword: str) -> list[dict]:
+def search_stocks(keyword: str, limit: int = 8, with_quotes: bool = True) -> list[dict]:
     if not keyword:
         return []
     try:
         url = f"https://suggest3.sinajs.cn/suggest/type=11,31,41&key={keyword}"
-        r = _sina.get(url, timeout=10)
+        r = _http_get(url, timeout=10)
         m = re.search(r'"([^"]*)"', r.text)
         if not m or not m.group(1):
             return []
@@ -409,7 +486,7 @@ def search_stocks(keyword: str) -> list[dict]:
         scored_items = []
         suggest_map = {}
         normalized_keyword = str(keyword).strip().upper()
-        for item in items[:20]:
+        for item in items[: max(8, min(int(limit or 8), 20))]:
             parts = item.split(",")
             if len(parts) >= 6:
                 market_type = parts[1]
@@ -429,6 +506,17 @@ def search_stocks(keyword: str) -> list[dict]:
                 continue
             seen_codes.add(code)
             codes_to_fetch.append(code)
+            if len(codes_to_fetch) >= max(1, min(int(limit or 8), 10)):
+                break
+
+        if not with_quotes:
+            return [
+                {
+                    "code": code,
+                    "name": suggest_map.get(code, ""),
+                }
+                for code in codes_to_fetch
+            ]
 
         if codes_to_fetch:
             quotes = get_realtime_quotes(codes_to_fetch)
@@ -490,7 +578,9 @@ def _to_sina_symbol(code: str) -> str:
     return f"gb_{raw.lower()}"
 
 
-def _parse_quote_line(sina_code: str, code: str, parts: list[str], market: str) -> Optional[dict]:
+def _parse_quote_line(
+    sina_code: str, code: str, parts: list[str], market: str
+) -> Optional[dict]:
     if market == "hk":
         if len(parts) < 13:
             return None
@@ -501,7 +591,11 @@ def _parse_quote_line(sina_code: str, code: str, parts: list[str], market: str) 
         high = _safe_float(parts[4])
         low = _safe_float(parts[5])
         change = _safe_float(parts[7]) if len(parts) > 7 else price - prev_close
-        change_percent = _safe_float(parts[8]) if len(parts) > 8 else ((change / prev_close * 100) if prev_close else 0)
+        change_percent = (
+            _safe_float(parts[8])
+            if len(parts) > 8
+            else ((change / prev_close * 100) if prev_close else 0)
+        )
         volume = _safe_float(parts[12])
         amount = _safe_float(parts[11])
         return {
@@ -552,7 +646,9 @@ def _parse_quote_line(sina_code: str, code: str, parts: list[str], market: str) 
             "preClose": prev_close,
             "volume": volume,
             "amount": amount,
-            "turnover": round((volume / shares_outstanding) * 100, 2) if shares_outstanding else 0,
+            "turnover": round((volume / shares_outstanding) * 100, 2)
+            if shares_outstanding
+            else 0,
             "timestamp": 0,
             "pe": _safe_float(parts[14]) if len(parts) > 14 else 0,
             "pb": 0,
@@ -590,7 +686,9 @@ def _parse_quote_line(sina_code: str, code: str, parts: list[str], market: str) 
     }
 
 
-def _get_curated_market_list(market: str, universe: list[str], page: int, page_size: int) -> dict:
+def _get_curated_market_list(
+    market: str, universe: list[str], page: int, page_size: int
+) -> dict:
     quotes = get_realtime_quotes(universe)
     if market == "hk":
         quotes = [{**item, "code": str(item["code"]).zfill(5)} for item in quotes]
@@ -631,7 +729,7 @@ def _get_hk_share_count(code: str) -> int:
 
     try:
         url = f"https://stock.finance.sina.com.cn/hkstock/info/{normalized}.html"
-        response = _sina.get(url, timeout=10)
+        response = _http_get(url, timeout=10)
         shares = _extract_hk_shares(response.text)
     except Exception as exc:
         print(f"[market] error fetching HK share count for {normalized}: {exc}")
@@ -660,7 +758,9 @@ def _enrich_hk_quotes(quotes: list[dict]) -> list[dict]:
 
     if need_fetch:
         with ThreadPoolExecutor(max_workers=min(8, len(need_fetch))) as executor:
-            futures = {executor.submit(_get_hk_share_count, code): code for code in need_fetch}
+            futures = {
+                executor.submit(_get_hk_share_count, code): code for code in need_fetch
+            }
             for future in as_completed(futures):
                 try:
                     future.result()
@@ -679,8 +779,12 @@ def _enrich_hk_quotes(quotes: list[dict]) -> list[dict]:
             shares = int(_hk_share_cache.get(code, {}).get("shares", 0))
             volume = _safe_float(item.get("volume", 0))
             price = _safe_float(item.get("price", 0))
-            turnover = round((volume / shares) * 100, 2) if shares else item.get("turnover", 0)
-            total_mv = round(price * shares, 2) if shares and price else item.get("totalMv", 0)
+            turnover = (
+                round((volume / shares) * 100, 2) if shares else item.get("turnover", 0)
+            )
+            total_mv = (
+                round(price * shares, 2) if shares and price else item.get("totalMv", 0)
+            )
             enriched.append(
                 {
                     **item,
@@ -726,7 +830,9 @@ def _score_suggest_item(keyword: str, market_type: str, code: str, name: str) ->
     elif keyword and keyword in normalized_name:
         score += 70
 
-    if market_type == "41" and ("ADR" in normalized_name or normalized_code.endswith("F")):
+    if market_type == "41" and (
+        "ADR" in normalized_name or normalized_code.endswith("F")
+    ):
         score -= 18
 
     return score

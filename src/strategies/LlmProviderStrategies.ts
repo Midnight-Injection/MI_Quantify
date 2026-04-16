@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { LlmProviderStrategy } from '@/types/strategy-pattern'
+import type { ProxyConfig } from '@/types'
+import { useSettingsStore } from '@/stores/settings'
 
 export class OpenAiCompatibleProvider implements LlmProviderStrategy {
   id: string
@@ -10,10 +12,12 @@ export class OpenAiCompatibleProvider implements LlmProviderStrategy {
   model: string
   maxTokens: number
   temperature: number
+  proxyId?: string
 
   constructor(opts: {
     id: string; name: string; enabled: boolean; apiUrl: string;
     apiKey: string; model: string; maxTokens: number; temperature: number;
+    proxyId?: string;
   }) {
     this.id = opts.id
     this.name = opts.name
@@ -23,6 +27,15 @@ export class OpenAiCompatibleProvider implements LlmProviderStrategy {
     this.model = opts.model
     this.maxTokens = opts.maxTokens
     this.temperature = opts.temperature
+    this.proxyId = opts.proxyId
+  }
+
+  private resolveProxy(): ProxyConfig | null {
+    if (!this.proxyId) return null
+    const store = useSettingsStore()
+    const proxy = store.getProxyById(this.proxyId)
+    if (!proxy || !proxy.enabled || !proxy.host.trim()) return null
+    return proxy
   }
 
   async chat(messages: Array<{ role: string; content: string }>): Promise<string> {
@@ -33,6 +46,7 @@ export class OpenAiCompatibleProvider implements LlmProviderStrategy {
       messages,
       temperature: this.temperature,
       maxTokens: this.maxTokens,
+      proxy: this.resolveProxy(),
     })
   }
 
@@ -51,6 +65,7 @@ export class OpenAiCompatibleProvider implements LlmProviderStrategy {
         apiUrl: this.apiUrl,
         apiKey: this.apiKey,
         model: this.model,
+        proxy: this.resolveProxy(),
       })
       return true
     } catch {
@@ -69,6 +84,7 @@ export class LlmProviderFactory {
   static create(opts: {
     id: string; name: string; enabled: boolean; apiUrl: string;
     apiKey: string; model: string; maxTokens: number; temperature: number;
+    proxyId?: string;
   }): LlmProviderStrategy {
     const ProviderClass = LlmProviderFactory.registry.get(opts.id) || OpenAiCompatibleProvider
     return new ProviderClass(opts)

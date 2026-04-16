@@ -2,8 +2,7 @@
   <div class="page-shell market-page-shell">
     <section class="market-hero">
       <div class="hero-copy">
-        <h1 class="page-title">个股行情</h1>
-        <p class="hero-note">输入框与顶部搜索共用同一套股票模糊匹配。命中关键词后，下方列表会切换到全市场匹配结果，再叠加板块条件筛选，只有列表行可进入详情。</p>
+        <h1 class="page-title">股票列表</h1>
       </div>
       <div class="market-tabs">
         <button
@@ -14,7 +13,6 @@
           @click="switchMarket(tab.value)"
         >
           <span>{{ tab.label }}</span>
-          <small>{{ tab.note }}</small>
         </button>
       </div>
     </section>
@@ -23,12 +21,11 @@
       <div class="filter-head">
         <div>
           <h3 class="section-title">筛选过滤</h3>
-          <p class="section-subtitle">股票名称和编号都走全量模糊查询，板块条件会继续叠加到匹配结果上。</p>
         </div>
         <div class="toolbar-info">
           <span class="count">{{ searchKeyword ? '匹配结果' : '已加载' }} {{ currentLoadedCount }} 只</span>
           <span class="count">筛选结果 {{ filteredStocks.length }} 只</span>
-          <span class="count">实时刷新 {{ refreshSeconds }}s</span>
+          <span v-if="dataRealtimeEnabled" class="count">实时刷新 {{ refreshSeconds }}s</span>
         </div>
       </div>
 
@@ -82,10 +79,6 @@
     </section>
 
     <div class="stock-table-shell">
-      <div class="table-caption">
-        <span>实时列表</span>
-        <span>仅支持通过表格行点击进入个股详情</span>
-      </div>
       <div class="stock-table-container" ref="tableContainer" @scroll="handleScroll">
         <table v-if="filteredStocks.length" class="stock-table">
           <thead>

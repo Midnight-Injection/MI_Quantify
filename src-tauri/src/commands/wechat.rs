@@ -562,13 +562,34 @@ pub async fn wechat_get_channel_status(
         }
     };
 
+    let mut logged_in = account.is_some();
+    if let Some(ref acc) = account {
+        if let Ok(client) = WechatClient::with_base_url(acc.base_url.clone()) {
+            match client.get_updates(&acc.bot_token, None).await {
+                Ok(_) => {}
+                Err(WechatApiError::SessionExpired | WechatApiError::InvalidToken) => {
+                    let _ = delete_account(&app, &channel_id);
+                    let _ = delete_sync_cursor(&app, &channel_id);
+                    logged_in = false;
+                }
+                Err(_) => {}
+            }
+        }
+    }
+
+    let fresh_account = if !logged_in {
+        None
+    } else {
+        account
+    };
+
     Ok(WechatChannelStatus {
         channel_id,
-        logged_in: account.is_some(),
+        logged_in,
         listening,
-        account_id: account.as_ref().map(|item| item.account_id.clone()),
-        user_id: account.as_ref().map(|item| item.user_id.clone()),
-        base_url: account.as_ref().map(|item| item.base_url.clone()),
+        account_id: fresh_account.as_ref().map(|item| item.account_id.clone()),
+        user_id: fresh_account.as_ref().map(|item| item.user_id.clone()),
+        base_url: fresh_account.as_ref().map(|item| item.base_url.clone()),
     })
 }
 
@@ -650,7 +671,7 @@ pub async fn wechat_send_message(
     let target_user_id = if to_user_id.trim().is_empty() {
         load_latest_peer_context(&app, &channel_id)?
             .map(|item| item.peer_id)
-            .ok_or_else(|| "缺少可用微信会话，请先让该通道收到一条消息".to_string())?
+            .unwrap_or_else(|| account.user_id.clone())
     } else {
         to_user_id
     };

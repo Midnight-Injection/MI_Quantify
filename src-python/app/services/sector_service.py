@@ -6,10 +6,13 @@ _CACHE_TTL_SECONDS = 60
 _industry_cache = {"data": [], "updated": 0.0}
 _concept_cache = {"data": [], "updated": 0.0}
 _member_cache: dict[str, dict] = {}
-_http = create_http_session()
 
 _INDUSTRY_URL = "https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php"
 _CONCEPT_URL = "https://money.finance.sina.com.cn/q/view/newFLJK.php?param=class"
+
+
+def _http_get(url: str, referer: str = "https://finance.sina.com.cn", **kwargs):
+    return create_http_session(referer=referer, target_url=url).get(url, **kwargs)
 
 
 def _cache_valid(cache: dict) -> bool:
@@ -62,7 +65,7 @@ def _fetch_sector_rank(url: str, cache: dict) -> list[dict]:
     if _cache_valid(cache):
         return list(cache["data"])
     try:
-        response = _http.get(url, timeout=12)
+        response = _http_get(url, timeout=12)
         response.raise_for_status()
         payload = _parse_sector_payload(response.text)
         result = [_build_sector_item(value) for value in payload.values()]
@@ -117,7 +120,7 @@ def _fetch_sector_members(code: str, page_size: int = 120) -> list[dict]:
         return list(cached.get("data", []))
 
     try:
-        response = _http.get(
+        response = _http_get(
             "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData",
             params={
                 "page": 1,

@@ -59,6 +59,7 @@ pub struct MonitorNotification {
     pub stock_code: Option<String>,
     #[serde(rename = "type")]
     pub entry_type: Option<String>,
+    pub read: Option<bool>,
 }
 
 fn with_connection<T, F>(action: F) -> Result<T, String>
@@ -113,7 +114,8 @@ fn init_schema(conn: &Connection) -> Result<(), MonitorDbError> {
             body TEXT NOT NULL,
             time INTEGER NOT NULL,
             stock_code TEXT,
-            type TEXT
+            type TEXT,
+            read INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_alerts_stock_code ON alerts(stock_code);
@@ -121,6 +123,10 @@ fn init_schema(conn: &Connection) -> Result<(), MonitorDbError> {
         CREATE INDEX IF NOT EXISTS idx_notifications_time ON notifications(time DESC);
         "#,
     )?;
+
+    conn.execute_batch(
+        "ALTER TABLE notifications ADD COLUMN read INTEGER NOT NULL DEFAULT 0",
+    ).ok();
 
     Ok(())
 }
@@ -352,7 +358,7 @@ pub async fn monitor_notification_list(
     with_connection(|conn| {
         let count = limit.unwrap_or(100).clamp(1, 500);
         let mut stmt = conn.prepare(
-            "SELECT id, title, body, time, stock_code, type
+            "SELECT id, title, body, time, stock_code, type, read
              FROM notifications
              ORDER BY time DESC
              LIMIT ?1",
@@ -365,6 +371,7 @@ pub async fn monitor_notification_list(
                 time: row.get(3)?,
                 stock_code: row.get(4)?,
                 entry_type: row.get(5)?,
+                read: Some(int_to_bool(row.get::<_, i64>(6)?)),
             })
         })?;
 
@@ -403,6 +410,14 @@ pub async fn monitor_notification_add(entry: MonitorNotification) -> Result<(), 
 pub async fn monitor_notification_clear() -> Result<(), String> {
     with_connection(|conn| {
         conn.execute("DELETE FROM notifications", [])?;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub async fn monitor_notification_mark_read() -> Result<(), String> {
+    with_connection(|conn| {
+        conn.execute("UPDATE notifications SET read = 1", [])?;
         Ok(())
     })
 }

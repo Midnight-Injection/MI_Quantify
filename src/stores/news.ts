@@ -15,7 +15,7 @@ export const useNewsStore = defineStore('news', () => {
     loading.value = true
     try {
       const { get } = useSidecar()
-      const res = await get<{ data: NewsItem[] }>('/api/news/financial?limit=80')
+      const res = await get<{ data: NewsItem[] }>('/api/news/financial?limit=240')
       newsList.value = res.data
       lastUpdated.value = Date.now()
     } catch (e) {
@@ -29,7 +29,7 @@ export const useNewsStore = defineStore('news', () => {
     loading.value = true
     try {
       const { get } = useSidecar()
-      const res = await get<{ data: NewsItem[] }>(`/api/news/stock/${code}?limit=20`)
+      const res = await get<{ data: NewsItem[] }>(`/api/news/stock/${code}?limit=60`)
       newsList.value = res.data
       lastUpdated.value = Date.now()
     } catch (e) {

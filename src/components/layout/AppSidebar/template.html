@@ -1,7 +1,7 @@
 <nav class="sidebar" :class="{ expanded: !appStore.sidebarCollapsed }">
   <div class="sidebar-brand" @click="appStore.toggleSidebar">
     <div class="brand-icon">
-      <TrendingUp :size="20" />
+      <img src="/app-icon.svg" alt="MI Quantify" />
     </div>
     <transition name="slide-fade">
       <div v-show="!appStore.sidebarCollapsed" class="brand-info">

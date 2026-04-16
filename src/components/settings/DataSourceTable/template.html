@@ -1,7 +1,7 @@
 <div class="data-source-table">
   <table>
     <thead>
-      <tr :class="{ 'is-open': isExpanded(source.id) }">
+      <tr>
         <th>数据源</th>
         <th>覆盖</th>
         <th>类型</th>
@@ -89,6 +89,13 @@
                   :placeholder="source.requiresSecret ? '必填' : '可选'"
                   @change="$emit('update', source.id, { apiSecret: $event.target.value })"
                 />
+              </label>
+              <label>
+                <span>代理</span>
+                <select class="input select-input" :value="source.proxyId || ''" @change="$emit('update', source.id, { proxyId: $event.target.value })">
+                  <option value="">不使用代理</option>
+                  <option v-for="p in enabledProxies" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
               </label>
             </div>
           </div>

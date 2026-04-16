@@ -96,9 +96,16 @@ fn find_python(script_dir: &std::path::Path) -> Result<String, String> {
 
 fn find_sidecar_script() -> Result<(String, std::path::PathBuf), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest_parent = manifest_dir
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| manifest_dir.clone());
     let candidates = [
         cwd.join("src-python/run.py"),
         cwd.join("../src-python/run.py"),
+        manifest_parent.join("src-python/run.py"),
+        manifest_dir.join("../src-python/run.py"),
     ];
 
     for path in &candidates {
@@ -108,9 +115,14 @@ fn find_sidecar_script() -> Result<(String, std::path::PathBuf), String> {
         }
     }
 
-    let fallback = cwd.join("src-python/run.py");
-    let dir = fallback.parent().unwrap().to_path_buf();
-    Ok((fallback.to_string_lossy().into(), dir))
+    Err(format!(
+        "sidecar script not found; checked: {}",
+        candidates
+            .iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
 pub fn init_state() -> SidecarState {

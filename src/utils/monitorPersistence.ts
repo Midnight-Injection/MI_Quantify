@@ -31,6 +31,7 @@ interface PersistedNotificationPayload {
   time: number
   stockCode?: string
   type?: NotificationEntry['type']
+  read?: boolean
 }
 
 function normalizeAlert(alert: PersistedAlertPayload): NotificationAlert {
@@ -68,6 +69,7 @@ function normalizeNotification(entry: PersistedNotificationPayload): Notificatio
     time: entry.time,
     stockCode: entry.stockCode,
     type: entry.type,
+    read: entry.read,
   }
 }
 
@@ -147,4 +149,8 @@ export async function addPersistedNotification(entry: NotificationEntry) {
 
 export async function clearPersistedNotifications() {
   await invoke('monitor_notification_clear')
+}
+
+export async function markPersistedNotificationsRead() {
+  await invoke('monitor_notification_mark_read')
 }

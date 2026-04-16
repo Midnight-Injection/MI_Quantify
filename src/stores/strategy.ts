@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Strategy, Signal, PromptTemplate, AiEvaluation } from '@/types'
+import type { Strategy, Signal, PromptTemplate, AiEvaluation, PromptCategory } from '@/types'
 import { BUILTIN_PROMPT_TEMPLATES, BUILTIN_STRATEGIES } from '@/utils/constants'
 
 const STRATEGY_STORAGE_KEY = 'mi_quantify_strategy_state'
@@ -190,6 +190,14 @@ export const useStrategyStore = defineStore('strategy', () => {
     }
   }
 
+  function getPromptTemplateByCategory(category: PromptCategory) {
+    return promptTemplates.value.find((item) => item.category === category) || null
+  }
+
+  function getPromptTemplateById(id: string) {
+    return promptTemplates.value.find((item) => item.id === id) || null
+  }
+
   function appendEvaluation(evaluation: AiEvaluation) {
     evaluations.value.unshift(evaluation)
     evaluations.value = evaluations.value.slice(0, 30)
@@ -244,5 +252,7 @@ export const useStrategyStore = defineStore('strategy', () => {
     prependSignal,
     upsertCustomStrategy,
     removeStrategy,
+    getPromptTemplateByCategory,
+    getPromptTemplateById,
   }
 })

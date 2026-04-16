@@ -1,6 +1,17 @@
 import type { AiProvider } from './ai'
 import type { WatchListStock } from './stock'
 
+export interface ProxyConfig {
+  id: string
+  name: string
+  host: string
+  port: number
+  protocol: 'http' | 'socks5'
+  username: string
+  password: string
+  enabled: boolean
+}
+
 export interface DataSource {
   id: string
   name: string
@@ -15,15 +26,27 @@ export interface DataSource {
   description?: string
   requiresKey?: boolean
   requiresSecret?: boolean
+  proxyId?: string
+}
+
+export interface ProxySettings {
+  proxies: ProxyConfig[]
 }
 
 export interface AppSettings {
   ai: AiSettings
+  appUpdate: AppUpdateSettings
   dataSource: DataSourceSettings
   watchList: WatchListSettings
   notifications: NotificationSettings
   integrations: IntegrationSettings
   appearance: AppearanceSettings
+  proxy: ProxySettings
+}
+
+export interface AppUpdateSettings {
+  autoCheck: boolean
+  lastCheckedAt: string
 }
 
 export interface AiSettings {
@@ -31,6 +54,7 @@ export interface AiSettings {
   activeProviderId: string
   diagnosis: DiagnosisAgentSettings
   autoRun: AiAutoRunSettings
+  autoRunInterval: number
 }
 
 export interface AiAutoRunSettings {
@@ -46,13 +70,13 @@ export interface SearchProvider {
   enabled: boolean
   apiUrl: string
   apiKey: string
-  provider: 'zhipu' | 'searxng' | 'yacy' | 'custom'
+  provider: 'zhipu' | 'searxng' | 'yacy' | 'brave' | 'tavily' | 'serpapi' | 'serper' | 'exa' | 'custom'
+  proxyId?: string
 }
 
 export interface DiagnosisAgentSettings {
   maxSteps: number
   traceVerbose: boolean
-  autoImportLocalProvider: boolean
   activeSearchProviderId: string
   searchProviders: SearchProvider[]
 }
@@ -89,19 +113,15 @@ export interface OpenClawChannelSettings {
   id: string
   name: string
   channelType: OpenClawChannelType
-  enabled: boolean
-  autoStart: boolean
   baseUrl: string
   pushUrl?: string
   secret?: string
   autoReplyEnabled?: boolean
-  pushEnabled?: boolean
   defaultPeerId?: string
 }
 
 export interface OpenClawSettings {
   enabled: boolean
-  pushEnabled: boolean
   pushUrl: string
   pushToken: string
   inboundSecret: string
@@ -119,19 +139,23 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
     providers: [],
     activeProviderId: '',
+    autoRunInterval: 45,
     diagnosis: {
-      maxSteps: 6,
+      maxSteps: 20,
       traceVerbose: true,
-      autoImportLocalProvider: true,
       activeSearchProviderId: '',
       searchProviders: [],
     },
     autoRun: {
-      homeDigest: true,
-      marketDigest: true,
-      analysisDigest: true,
+      homeDigest: false,
+      marketDigest: false,
+      analysisDigest: false,
       stockDetailDiagnosis: false,
     },
+  },
+  appUpdate: {
+    autoCheck: true,
+    lastCheckedAt: '',
   },
   dataSource: {
     sources: [],
@@ -155,7 +179,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   integrations: {
     openClaw: {
       enabled: false,
-      pushEnabled: false,
       pushUrl: '',
       pushToken: '',
       inboundSecret: '',
@@ -167,5 +190,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearance: {
     theme: 'dark',
     fontSize: 14,
+  },
+  proxy: {
+    proxies: [],
   },
 }

@@ -28,13 +28,49 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis", "dmg", "app", "deb", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Midnight Injection",
+    "shortDescription": "MI Quantify - AI stock research workstation",
+    "longDescription": "MI Quantify is an AI-driven stock research workstation for market scanning, single-stock diagnosis, strategy evaluation and live monitoring.",
+    "category": "Finance",
+    "macOS": {
+      "minimumSystemVersion": "10.13",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "tsp": false,
+      "nsis": {
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": true
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwOTRENTJFN0EyNDc5QzcKUldUSGVTUjZMdFdVVUVwNGdDTkhwWFdpbHF5V0xQNi9QYzFiYVRaRUJqVTFxanFPaUd4b2N1OTUK",
+      "endpoints": [
+        "https://github.com/Midnight-Injection/MI_Quantify/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

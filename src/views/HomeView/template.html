@@ -1,7 +1,6 @@
 <div class="page home-page">
   <section class="hero-panel" :class="marketMood">
     <div class="hero-copy">
-      <div class="hero-kicker">Market Cockpit</div>
       <div class="hero-heading-row">
         <h1 class="hero-title">首页总览</h1>
         <div class="market-tabs">
@@ -13,17 +12,33 @@
             @click="switchMarket(tab.value)"
           >
             <span>{{ tab.label }}</span>
-            <small>{{ tab.hint }}</small>
           </button>
         </div>
       </div>
-      <p class="hero-text">{{ marketNarrative }}</p>
+      <div v-if="aiDigest?.futureOutlook" class="hero-ai-eval">
+        <div class="eval-header">
+          <span class="eval-confidence">{{ aiDigest.confidenceLabel }}</span>
+        </div>
+        <p class="eval-text">{{ aiDigest.futureOutlook }}</p>
+        <div v-if="aiDigest.keyRisks?.length" class="eval-risks">
+          <span v-for="risk in aiDigest.keyRisks" :key="risk" class="eval-risk-tag">{{ risk }}</span>
+        </div>
+      </div>
+      <div v-else-if="!aiDigestLoading && marketNarrative" class="hero-ai-eval hero-local-eval">
+        <div class="eval-header">
+          <span class="eval-confidence eval-confidence-local">{{ marketMoodMeta.label }}</span>
+        </div>
+        <p class="eval-text">{{ marketNarrative }}</p>
+        <div class="eval-risks">
+          <span class="eval-risk-tag eval-risk-tag-local">{{ localEvalSummary }}</span>
+        </div>
+      </div>
     </div>
 
     <div class="hero-status">
-      <div class="live-badge" :class="{ active: heroPolling.isRunning }">
+      <div class="live-badge" :class="{ active: heroRealtimeActive }">
         <span class="live-dot"></span>
-        <span>{{ heroPolling.isRunning ? '实时同步中' : '等待同步' }}</span>
+        <span>{{ heroRealtimeActive ? '实时同步中' : '等待同步' }}</span>
       </div>
       <div class="hero-stat-grid">
         <article v-for="card in pulseCards" :key="card.label" class="pulse-card" :class="card.tone">
@@ -46,7 +61,6 @@
     <div class="panel-head">
       <div>
         <h3 class="section-title">大盘指数</h3>
-        <p class="section-subtitle">先看核心指数、量能和成交额，更多指数可继续展开。</p>
       </div>
       <button v-if="indices.length > 8" class="panel-link more-link" @click="indexExpanded = !indexExpanded">
         {{ indexExpanded ? '收起' : '更多' }}
@@ -86,7 +100,6 @@
     <div class="breadth-header">
       <div>
         <h3 class="section-title">市场广度</h3>
-        <p class="section-subtitle">追踪涨跌分布、热点股和板块热度。</p>
       </div>
       <div class="breadth-totals">
         <span>上涨 {{ adv.advance }}</span>
@@ -106,12 +119,18 @@
       <div class="panel-head">
         <div>
           <h3 class="section-title">AI 市场点评</h3>
-          <p class="section-subtitle">把指数、板块、消息和未来节奏翻译成更容易理解的话。</p>
         </div>
-        <div class="panel-actions">
-          <span class="news-count">{{ homeDigestAutoEnabled ? '自动诊断' : '手动触发' }}</span>
-          <button class="btn-ghost panel-action-btn" :disabled="aiDigestLoading" @click="requestDigest(true)">
-            {{ aiDigestLoading ? 'AI整理中...' : homeDigestAutoEnabled ? '立即刷新点评' : '手动生成点评' }}
+        <div v-if="!homeDigestAutoEnabled" class="panel-actions">
+          <button v-if="!aiDigestLoading" class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost" @click="requestDigest(true)">
+            AI评估
+          </button>
+          <button v-else class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost ai-cancel-btn" @click="cancelHomeAiDigest">
+            立即停止
+          </button>
+        </div>
+        <div v-else-if="aiDigestLoading" class="panel-actions">
+          <button class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost ai-cancel-btn" @click="cancelHomeAiDigest">
+            立即停止
           </button>
         </div>
       </div>
@@ -154,8 +173,39 @@
           </div>
         </div>
       </div>
-      <div v-else class="panel-empty">
-        {{ aiDigestLoading ? 'AI 点评整理中...' : `当前处于${homeDigestAutoEnabled ? '自动' : '手动'}模式，点击右上角按钮后会生成首页 AI 点评。` }}
+      <div v-else-if="aiDigestLoading" class="panel-empty">
+        AI评估中，正在整理当前盘面、消息和板块方向...
+      </div>
+      <div v-else class="ai-digest ai-digest-fallback">
+        <div class="digest-headline">{{ defaultDigestHeadline }}</div>
+        <p class="digest-summary">{{ marketNarrative }}</p>
+        <div class="digest-sentiment">
+          <span class="sentiment-pill" :class="marketMood">{{ marketMoodMeta.label }}</span>
+          <span class="sentiment-pill" :class="newsSentiment.tone">消息情绪 {{ newsSentiment.label }}</span>
+          <span class="sentiment-note">{{ homeDigestAutoEnabled ? 'AI评估尚未返回，先看实时盘面总览。' : '未触发AI评估时，先看实时盘面总览。' }}</span>
+        </div>
+        <div class="digest-grid">
+          <div v-for="item in defaultDigestCards" :key="item.label" class="digest-card">
+            <span>{{ item.label }}</span>
+            <p>
+              <strong>{{ item.value }}</strong>
+              {{ item.detail }}
+            </p>
+          </div>
+        </div>
+        <div class="deep-dive-grid">
+          <div v-for="item in sessionInsights" :key="item.label" class="deep-dive-card">
+            <div class="label-row">
+              <span>{{ item.label }}</span>
+              <info-tooltip
+                :title="item.label"
+                :description="item.description"
+                :range="item.range"
+              />
+            </div>
+            <p>{{ item.summary }}</p>
+          </div>
+        </div>
       </div>
     </article>
 
@@ -163,16 +213,16 @@
       <div class="panel-head">
         <div>
           <h3 class="section-title">盘面总览</h3>
-          <p class="section-subtitle">把普涨程度、热点换手、资金偏好和关注池表现放在一屏里快速判断。</p>
         </div>
       </div>
-      <div class="overview-grid">
+      <div v-if="dashboardLoading" class="panel-empty panel-loading-state"><span class="spinner"></span><span>加载中...</span></div>
+      <div v-else class="overview-grid">
         <div v-for="item in overviewCards" :key="item.label" class="overview-card">
           <div class="overview-top">
             <span>{{ item.label }}</span>
             <info-tooltip :title="item.label" :description="item.hint" :range="item.range" />
           </div>
-          <strong class="overview-value">{{ item.value }}</strong>
+          <strong class="overview-value" :class="item.tone">{{ item.value }}</strong>
           <p class="overview-detail">{{ item.detail }}</p>
         </div>
       </div>
@@ -182,10 +232,10 @@
       <div class="panel-head">
         <div>
           <h3 class="section-title">主力资金方向</h3>
-          <p class="section-subtitle">按 TOP10 展示主力净流入或活跃成交焦点，便于直接看今天资金最集中在哪些标的。</p>
         </div>
       </div>
-      <div v-if="flowRows.length" class="flow-list scroll-stack flow-scroll">
+      <div v-if="dashboardLoading && !flowRows.length" class="panel-empty panel-loading-state"><span class="spinner"></span><span>加载中...</span></div>
+      <div v-else-if="flowRows.length" class="flow-list scroll-stack flow-scroll">
         <button
           v-for="item in flowRows"
           :key="item.code"
@@ -213,7 +263,6 @@
       <div class="panel-head">
         <div>
           <h3 class="section-title">{{ policySectionTitle }}</h3>
-          <p class="section-subtitle">{{ policySectionSubtitle }}</p>
         </div>
       </div>
       <div class="policy-grid policy-scroll">
@@ -236,7 +285,6 @@
       <div class="panel-head">
         <div>
           <h3 class="section-title">未来市场预期</h3>
-          <p class="section-subtitle">把指数、政策、社会面、主线板块和推荐股票合并成下一步观察框架，直接告诉你先盯什么。</p>
         </div>
       </div>
       <div class="outlook-grid outlook-scroll">
@@ -252,10 +300,10 @@
       <div class="panel-head">
         <div>
           <h3 class="section-title">热点个股</h3>
-          <p class="section-subtitle">改成滚动方式直接展示更多活跃个股，优先看涨跌幅、成交额和换手共振。</p>
         </div>
       </div>
-      <div class="stock-list stock-scroll">
+      <div v-if="dashboardLoading && !hotStocks.length" class="panel-empty panel-loading-state"><span class="spinner"></span><span>加载中...</span></div>
+      <div v-else class="stock-list stock-scroll">
         <button
           v-for="stock in hotStocks"
           :key="stock.code"
@@ -284,15 +332,13 @@
       <div class="panel-head">
         <div>
           <h3 class="section-title">{{ currentMarket === 'a' ? '板块热度' : '观察主题' }}</h3>
-          <p class="section-subtitle">
-            {{ currentMarket === 'a' ? '按热度排序显示行业方向，优先观察涨幅、成交额和领涨股同步走强的板块。' : '按港股 / 美股主线菜单显示观察主题，优先看龙头和次强是否一起扩散。' }}
-          </p>
         </div>
         <button v-if="sectorMoreAvailable && currentMarket === 'a'" class="panel-link more-link" @click="sectorExpanded = !sectorExpanded">
           {{ sectorExpanded ? '收起' : '更多' }}
         </button>
       </div>
-      <div v-if="displaySectorLeaders.length" class="sector-list">
+      <div v-if="secondaryLoading && !displaySectorLeaders.length" class="panel-empty panel-loading-state"><span class="spinner"></span><span>加载中...</span></div>
+      <div v-else-if="displaySectorLeaders.length" class="sector-list">
         <button
           v-for="sector in displaySectorLeaders"
           :key="sector.code"
@@ -325,10 +371,10 @@
       <div class="panel-head">
         <div>
           <h3 class="section-title">新闻脉冲</h3>
-          <p class="section-subtitle">只显示当天消息，并把政策、社会面、重要会议和国际局势一起汇总到这里。</p>
         </div>
       </div>
-      <div v-if="todayNewsItems.length" class="news-list news-scroll">
+      <div v-if="newsStore.loading && !todayNewsItems.length" class="panel-empty panel-loading-state"><span class="spinner"></span><span>加载中...</span></div>
+      <div v-else-if="todayNewsItems.length" class="news-list news-scroll">
         <a
           v-for="item in todayNewsItems"
           :key="item.id"

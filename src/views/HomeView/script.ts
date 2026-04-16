@@ -6,8 +6,10 @@ import { useNewsStore } from '@/stores/news'
 import { useSettingsStore } from '@/stores/settings'
 import { useRealtimeTask } from '@/composables/useRealtimeTask'
 import { useAiInsights } from '@/composables/useAiInsights'
+import { useAiTaskLogger } from '@/composables/useAiTaskLogger'
 import type { AiInsightDigest, FundFlow, NewsItem } from '@/types'
 import { formatAmount, formatPercent, formatPrice, formatVolume } from '@/utils/format'
+import { getMarketSessionContext } from '@/utils/marketSession'
 import InfoTooltip from '@/components/common/InfoTooltip/index.vue'
 
 type MarketType = 'a' | 'hk' | 'us'
@@ -206,20 +208,27 @@ export default defineComponent({
     const newsStore = useNewsStore()
     const settingsStore = useSettingsStore()
     const { generateDigest } = useAiInsights()
+    const aiTaskLogger = useAiTaskLogger()
     const currentMarket = ref<MarketType>('a')
     const indexExpanded = ref(false)
     const sectorExpanded = ref(false)
     const aiDigest = ref<AiInsightDigest | null>(null)
     const aiDigestLoading = ref(false)
+    const dashboardLoading = ref(true)
+    const secondaryLoading = ref(true)
     const fundflowLeaders = ref<FundFlow[]>([])
     const fundflowUpdatedAt = ref(0)
     const lastDigestAt = ref(0)
+    const homeLoadSeq = ref(0)
 
     const marketTabs = [
-      { value: 'a' as MarketType, label: 'A股', hint: '主交易视图' },
-      { value: 'hk' as MarketType, label: '港股', hint: '指数与轮动' },
-      { value: 'us' as MarketType, label: '美股', hint: '海外情绪' },
+      { value: 'a' as MarketType, label: 'A股' },
+      { value: 'hk' as MarketType, label: '港股' },
+      { value: 'us' as MarketType, label: '美股' },
     ]
+    const realtimeMarket = computed(() => currentMarket.value)
+    const isTradingSession = computed(() => getMarketSessionContext(realtimeMarket.value).phase === 'trading')
+    const heroRealtimeActive = computed(() => heroPolling.isRunning.value && isTradingSession.value)
 
     const indices = computed(() => marketStore.indices)
     const visibleIndices = computed(() => (indexExpanded.value ? indices.value : indices.value.slice(0, 8)))
@@ -263,7 +272,6 @@ export default defineComponent({
     )
     const visibleFundflow = computed(() => fundflowLeaders.value.slice(0, 10))
     const homeDigestAutoEnabled = computed(() => settingsStore.settings.ai.autoRun.homeDigest)
-    const homeDigestModeLabel = computed(() => (homeDigestAutoEnabled.value ? '自动诊断' : '手动触发'))
     const flowRows = computed(() => {
       if (visibleFundflow.value.length) {
         return visibleFundflow.value.map((item, index) => ({
@@ -392,6 +400,104 @@ export default defineComponent({
         return `${leadIndex.value.name} 承压，上涨 ${adv.value.advance} 家 / 下跌 ${adv.value.decline} 家，扩散主要集中在 ${sectorLeaders.value[0]?.name || '局部方向'}，更适合先收缩仓位，盯龙头承接和弱势板块回撤。`
       }
       return `${leadIndex.value.name} 维持震荡，上涨 ${adv.value.advance} 家 / 下跌 ${adv.value.decline} 家，${sectorLeaders.value[0]?.name || '主线板块'} 与 ${sectorLeaders.value[1]?.name || '第二梯队'} 轮动延续，优先跟踪核心股是否继续放量。`
+    })
+
+    const marketMoodMeta = computed(() => {
+      if (marketMood.value === 'risk-on') {
+        return {
+          label: '盘面偏强',
+          hint: currentMarket.value === 'a'
+            ? '上涨家数、主线扩散和热点承接暂时占优。'
+            : '活跃样本上涨覆盖更高，指数与龙头承接相对更稳。',
+        }
+      }
+
+      if (marketMood.value === 'risk-off') {
+        return {
+          label: '盘面偏弱',
+          hint: currentMarket.value === 'a'
+            ? '下跌家数占优，先看指数止跌与主线修复。'
+            : '活跃样本回撤更多，先观察主指数与龙头能否稳住。',
+        }
+      }
+
+      return {
+        label: '盘面震荡',
+        hint: currentMarket.value === 'a'
+          ? '多空还在拉锯，重点看量能和主线扩散。'
+          : '指数与活跃样本分歧较大，更适合先跟踪强弱切换。',
+      }
+    })
+
+    const defaultDigestHeadline = computed(() =>
+      currentMarket.value === 'a'
+        ? '未触发AI评估时，先看实时盘面'
+        : '未触发AI评估时，先看指数、主题与活跃样本',
+    )
+
+    const localEvalSummary = computed(() => {
+      if (currentMarket.value !== 'a') {
+        const pos = samplePositiveRatio.value.toFixed(0)
+        const avg = sampleAvgChange.value >= 0 ? '+' : ''
+        return `活跃样本上涨 ${pos}%，均值 ${avg}${sampleAvgChange.value.toFixed(2)}%，成交 ${sampleAvgAmount.value ? formatAmount(sampleAvgAmount.value) : '待同步'}`
+      }
+      return `上涨 ${adv.value.advance} / 下跌 ${adv.value.decline}，成交额 ${formatAmount(adv.value.totalAmount)}，${leadIndex.value ? leadIndex.value.name + ' ' + formatPercent(leadIndex.value.changePercent) + '%' : '指数待同步'}`
+    })
+
+    const defaultDigestCards = computed(() => {
+      if (currentMarket.value === 'a') {
+        return [
+          {
+            label: '上涨 / 下跌',
+            value: `${adv.value.advance} / ${adv.value.decline}`,
+            detail: `平盘 ${adv.value.flat} 家，涨跌温度 ${breadthScore.value >= 0 ? '+' : ''}${breadthScore.value.toFixed(1)}。`,
+          },
+          {
+            label: '领涨指数',
+            value: leadIndex.value ? `${leadIndex.value.name} ${formatPercent(leadIndex.value.changePercent)}%` : '--',
+            detail: leadIndex.value ? `成交额 ${formatAmount(leadIndex.value.amount)}，先看指数是否继续带量。`
+              : '等待核心指数同步。',
+          },
+          {
+            label: '主线板块',
+            value: sectorLeaders.value[0]?.name || '--',
+            detail: sectorLeaders.value[0]
+              ? `当前代表股 ${sectorLeaders.value[0].leadingStock || '待同步'}，先看扩散还是只剩龙头。`
+              : '等待板块热度同步。',
+          },
+          {
+            label: '消息温度',
+            value: newsSentiment.value.label,
+            detail: `${newsSentiment.value.hint}${policyGuides.value[0]?.label ? ` 当前更贴近 ${policyGuides.value[0].label}。` : ''}`,
+          },
+        ]
+      }
+
+      return [
+        {
+          label: '上涨覆盖',
+          value: `${samplePositiveRatio.value.toFixed(0)}%`,
+          detail: `下跌覆盖 ${sampleNegativeRatio.value.toFixed(0)}%，样本均值 ${sampleAvgChange.value >= 0 ? '+' : ''}${sampleAvgChange.value.toFixed(2)}%。`,
+        },
+        {
+          label: '领涨指数',
+          value: leadIndex.value ? `${leadIndex.value.name} ${formatPercent(leadIndex.value.changePercent)}%` : '--',
+          detail: leadIndex.value ? `成交额 ${formatAmount(leadIndex.value.amount)}，先看主指数是否稳住。`
+            : '等待核心指数同步。',
+        },
+        {
+          label: '活跃主题',
+          value: leadDisplaySector.value?.name || '--',
+          detail: leadDisplaySector.value
+            ? `代表股 ${leadDisplaySector.value.leadingStock || '待同步'}，观察是否从龙头扩散到第二梯队。`
+            : '等待主题热度同步。',
+        },
+        {
+          label: '消息温度',
+          value: newsSentiment.value.label,
+          detail: `${newsSentiment.value.hint}${policyGuides.value[0]?.label ? ` 当前更贴近 ${policyGuides.value[0].label}。` : ''}`,
+        },
+      ]
     })
 
     const overviewCards = computed(() => {
@@ -532,9 +638,12 @@ export default defineComponent({
         : 0
       const topSector = sectorLeaders.value[0]
       const hotLeader = hotStocks.value[0]
+      const hotPositiveRatio = hotStocks.value.length
+        ? (hotStocks.value.filter((item) => item.changePercent > 0).length / hotStocks.value.length) * 100
+        : 0
       const positiveFlowRatio = visibleFundflow.value.length
         ? (visibleFundflow.value.filter((item) => item.mainNetInflow > 0).length / visibleFundflow.value.length) * 100
-        : 0
+        : hotPositiveRatio
       const watchAvgChange = watchlistQuotes.value.length
         ? watchlistQuotes.value.reduce((sum, item) => sum + item.quote.changePercent, 0) / watchlistQuotes.value.length
         : 0
@@ -544,6 +653,7 @@ export default defineComponent({
         {
           label: '上涨占比',
           value: `${upRatio.toFixed(1)}%`,
+          tone: upRatio >= 60 ? 'up' : upRatio >= 50 ? 'flat' : 'down',
           detail: `上涨 ${adv.value.advance} 家 / 下跌 ${adv.value.decline} 家`,
           hint: '看市场是否普涨。',
           range: '50% 以上偏稳，60% 以上偏强，45% 以下要谨慎。',
@@ -551,6 +661,7 @@ export default defineComponent({
         {
           label: '涨跌家数比',
           value: riseFallRatio ? riseFallRatio.toFixed(2) : '--',
+          tone: riseFallRatio >= 1.3 ? 'up' : riseFallRatio >= 0.8 ? 'flat' : 'down',
           detail: '上涨家数 ÷ 下跌家数',
           hint: '看赚钱效应是否扩散。',
           range: '1 附近均衡，1.3 以上更强，0.8 以下偏弱。',
@@ -558,6 +669,7 @@ export default defineComponent({
         {
           label: '热点换手',
           value: avgTurnover ? `${avgTurnover.toFixed(2)}%` : '--',
+          tone: avgTurnover >= 3 && avgTurnover <= 8 ? 'flat' : avgTurnover > 8 ? 'hot' : 'down',
           detail: '首页活跃股平均换手',
           hint: '看热点资金是否愿意反复博弈。',
           range: '3%-8% 偏健康，过低说明关注度弱，过高要防冲高回落。',
@@ -565,6 +677,7 @@ export default defineComponent({
         {
           label: '主线板块',
           value: topSector ? topSector.name : '--',
+          tone: topSector && topSector.changePercent >= 0 ? 'up' : 'down',
           detail: topSector ? `${formatPercent(topSector.changePercent)}% / 领涨 ${topSector.leadingStock || '待同步'}` : '等待板块热度同步',
           hint: '看资金抱团的主方向。',
           range: '涨幅和成交额同时靠前，持续性更好。',
@@ -572,6 +685,7 @@ export default defineComponent({
         {
           label: '焦点龙头',
           value: hotLeader ? hotLeader.name : '--',
+          tone: hotLeader && hotLeader.changePercent >= 0 ? 'up' : 'down',
           detail: hotLeader ? `${formatPercent(hotLeader.changePercent)}% / 成交额 ${formatAmount(hotLeader.amount)}` : '等待活跃股同步',
           hint: '看市场是否愿意围绕龙头扩散。',
           range: '放量领涨更强，缩量冲高更容易反复。',
@@ -579,6 +693,7 @@ export default defineComponent({
         {
           label: '指数协同',
           value: leadIndex.value && secondIndex.value ? `${formatPercent(leadIndex.value.changePercent)} / ${formatPercent(secondIndex.value.changePercent)}%` : '--',
+          tone: indexSpread <= 1 ? 'up' : 'flat',
           detail: leadIndex.value && secondIndex.value ? `${leadIndex.value.name} 与 ${secondIndex.value.name} 的强弱差 ${indexSpread.toFixed(2)} 个点` : '等待指数补齐后再看协同',
           hint: '看指数之间是共振，还是只有单一指数独强。',
           range: '多个核心指数同步上行更稳，强弱差过大通常说明结构分化依旧明显。',
@@ -586,20 +701,23 @@ export default defineComponent({
         {
           label: '消息温度',
           value: newsSentiment.value.label,
+          tone: newsSentiment.value.tone === 'positive' ? 'up' : newsSentiment.value.tone === 'negative' ? 'down' : 'flat',
           detail: newsSentiment.value.hint,
           hint: '看新闻和社会面更偏利多还是利空。',
           range: '偏暖利于主线延续，中性看轮动，偏谨慎要先控回撤。',
         },
         {
           label: '资金偏暖率',
-          value: visibleFundflow.value.length ? `${positiveFlowRatio.toFixed(0)}%` : '--',
-          detail: visibleFundflow.value.length ? `${fundflowSummary.value.positiveCount} / ${visibleFundflow.value.length} 主力净流入` : '等待主力资金榜同步',
+          value: (visibleFundflow.value.length || hotStocks.value.length) ? `${positiveFlowRatio.toFixed(0)}%` : '--',
+          tone: positiveFlowRatio >= 60 ? 'up' : positiveFlowRatio >= 40 ? 'flat' : 'down',
+          detail: visibleFundflow.value.length ? `${fundflowSummary.value.positiveCount} / ${visibleFundflow.value.length} 主力净流入` : hotStocks.value.length ? `活跃股上涨占比（主力数据暂缺）` : '等待主力资金榜同步',
           hint: '看主力资金是在做多还是撤退。',
           range: '60% 以上偏强，50% 附近分歧大，40% 以下偏弱。',
         },
         {
           label: '关注池表现',
           value: watchlistQuotes.value.length ? `${watchAvgChange >= 0 ? '+' : ''}${watchAvgChange.toFixed(2)}%` : '--',
+          tone: watchAvgChange >= 0.5 ? 'up' : watchAvgChange <= -0.5 ? 'down' : 'flat',
           detail: watchlistQuotes.value.length ? `${watchlistQuotes.value.length} 只关注股实时均值` : '还没有关注标的',
           hint: '看自己盯盘的股票整体状态。',
           range: '强于大盘说明选股还在主线，弱于大盘要及时复盘。',
@@ -1040,8 +1158,13 @@ export default defineComponent({
       }
       try {
         const res = await get<{ data: FundFlow[] }>('/api/fundflow/rank?limit=18')
-        fundflowLeaders.value = res.data ?? []
-        fundflowUpdatedAt.value = Date.now()
+        const nextData = res.data ?? []
+        if (nextData.length || !fundflowLeaders.value.length) {
+          fundflowLeaders.value = nextData
+        }
+        if (nextData.length) {
+          fundflowUpdatedAt.value = Date.now()
+        }
       } catch (error) {
         console.error('Failed to load fund flow:', error)
       }
@@ -1051,36 +1174,79 @@ export default defineComponent({
       if (!force && !homeDigestAutoEnabled.value) return
       if (aiDigestLoading.value) return
       const now = Date.now()
-      if (!force && now - lastDigestAt.value < 45000) return
+      if (!force && now - lastDigestAt.value < settingsStore.settings.ai.autoRunInterval * 1000) return
       lastDigestAt.value = now
+      if (force) {
+        digestPolling.stop()
+      }
       await refreshDigest()
     }
 
+    let homeAiTaskId: string | null = null
+
+    function cancelHomeAiDigest() {
+      if (homeAiTaskId) {
+        aiTaskLogger.cancelTask(homeAiTaskId)
+        aiDigestLoading.value = false
+        homeAiTaskId = null
+      }
+    }
+
+    function isStaleHomeLoad(seq: number, market: MarketType) {
+      return seq !== homeLoadSeq.value || market !== currentMarket.value
+    }
+
+    async function loadDashboardDeferred(seq: number, market: MarketType) {
+      const tasks: Promise<unknown>[] = []
+      const trackedCodes = marketStore.watchList.map((item) => item.code)
+      secondaryLoading.value = true
+
+      if (trackedCodes.length) {
+        tasks.push(marketStore.fetchQuotes(trackedCodes))
+      }
+      if (market === 'a') {
+        tasks.push(
+          marketStore.fetchAdvanceDecline(),
+          marketStore.fetchSectors('industry'),
+          loadFundflow(),
+        )
+      } else {
+        fundflowLeaders.value = []
+      }
+
+      await Promise.allSettled(tasks)
+      if (isStaleHomeLoad(seq, market)) return
+      secondaryLoading.value = false
+      if (homeDigestAutoEnabled.value && isTradingSession.value) {
+        void requestDigest()
+      }
+    }
+
     async function loadDashboard(forceStocks = false) {
-      await Promise.all([
-        marketStore.fetchIndices(currentMarket.value),
+      const seq = homeLoadSeq.value + 1
+      homeLoadSeq.value = seq
+      const market = currentMarket.value
+      const shouldFetchStocks = forceStocks || !marketStore.stockList.length || market !== marketStore.currentMarket
+      dashboardLoading.value = true
+
+      await Promise.allSettled([
+        marketStore.fetchIndices(market),
         newsStore.fetchNews(),
-        loadFundflow(),
-        currentMarket.value === 'a' ? marketStore.fetchAdvanceDecline() : Promise.resolve(),
-        currentMarket.value === 'a' ? marketStore.fetchSectors('industry') : Promise.resolve(),
-        forceStocks || !marketStore.stockList.length
-          ? marketStore.fetchStockList(currentMarket.value, 1, currentMarket.value === 'a' ? 40 : 24)
+        shouldFetchStocks
+          ? marketStore.fetchStockList(market, 1, market === 'a' ? 40 : 24)
           : Promise.resolve(),
       ])
 
-      const trackedCodes = marketStore.watchList.map((item) => item.code)
-      if (trackedCodes.length) {
-        await marketStore.fetchQuotes(trackedCodes)
-      }
-
-      await requestDigest()
+      if (isStaleHomeLoad(seq, market)) return
+      dashboardLoading.value = false
+      void loadDashboardDeferred(seq, market)
     }
 
     function switchMarket(market: MarketType) {
       currentMarket.value = market
       aiDigest.value = null
       lastDigestAt.value = 0
-      void loadDashboard(true).then(() => requestDigest(true))
+      void loadDashboard(true)
     }
 
     function navigateToStock(code: string) {
@@ -1093,11 +1259,19 @@ export default defineComponent({
     }
 
     async function refreshDigest() {
+      const task = aiTaskLogger.createTask('AI市场点评', 'home')
+      homeAiTaskId = task.id
       aiDigestLoading.value = true
+      aiTaskLogger.addLog(task.id, '开始收集盘面数据...')
+
       try {
+        aiTaskLogger.addLog(task.id, `当前市场：${currentMarket.value === 'a' ? 'A股' : currentMarket.value === 'hk' ? '港股' : '美股'}，正在构建分析输入...`)
+
+        aiTaskLogger.addLog(task.id, '正在调用AI模型生成点评...')
         aiDigest.value = await generateDigest(settingsStore.activeProvider, {
           title: '首页市场概览',
-          market: currentMarket.value.toUpperCase(),
+          market: currentMarket.value,
+          currentTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }),
           facts: [
             marketNarrative.value,
             currentMarket.value === 'a'
@@ -1127,11 +1301,11 @@ export default defineComponent({
               : '催化对应股票等待同步',
             latestDigestNews.value ? `最新快讯来自 ${latestDigestNews.value.source || '快讯'}：${latestDigestNews.value.title}` : '最新快讯等待同步',
           ],
-          news: digestNewsItems.value.slice(0, 10).map((item) => `${item.source || '快讯'} ${item.publishTime.slice(11, 16)}：${item.title}`),
+          news: digestNewsItems.value.slice(0, 20).map((item) => `${item.source || '快讯'} ${item.publishTime.slice(11, 16)}：${item.title}`),
           social:
             currentMarket.value === 'a'
-              ? policyGuides.value.slice(0, 6).map((item) => `${item.label}：利好 ${item.beneficiary}，推荐 ${item.recommendedStocks.join('、') || '待同步'}，${item.headline || item.summary}`)
-              : policyGuides.value.slice(0, 5).map((item) => `${item.label}：利好 ${item.beneficiary}，推荐 ${item.recommendedStocks.join('、') || '待同步'}，${item.headline || item.summary}`),
+              ? policyGuides.value.slice(0, 8).map((item) => `${item.label}：利好 ${item.beneficiary}，推荐 ${item.recommendedStocks.join('、') || '待同步'}，${item.headline || item.summary}`)
+              : policyGuides.value.slice(0, 8).map((item) => `${item.label}：利好 ${item.beneficiary}，推荐 ${item.recommendedStocks.join('、') || '待同步'}，${item.headline || item.summary}`),
           trendHints: [
             marketMood.value === 'risk-on' ? '短线情绪偏强，但仍要先确认成交额和主线扩散，不适合无差别追高。' : '情绪未全面转强，优先等分歧后的确认点，并用成交额确认反弹质量。',
             leadHotStock.value ? `重点盯 ${leadHotStock.value.name}${secondHotStock.value ? `、${secondHotStock.value.name}` : ''} 的承接、回落后的放量修复以及是否带动更多跟风。` : '龙头样本待同步',
@@ -1139,27 +1313,58 @@ export default defineComponent({
             marketOutlookCards.value[1] ? `${marketOutlookCards.value[1].label}：${marketOutlookCards.value[1].detail}` : '观察框架等待同步',
             policyGuides.value[0] ? `${policyGuides.value[0].label}：${policyGuides.value[0].summary}` : '政策与社会面等待同步',
           ],
+        }, {
+          abortSignal: task.abortController?.signal,
+          onProgress: (step) => {
+            aiTaskLogger.addProgressLog(task.id, step)
+          },
         })
+
+        if (aiTaskLogger.isTaskCancelled(task.id)) {
+          aiTaskLogger.addLog(task.id, '评估已被取消', 'warn')
+          aiDigestLoading.value = false
+          homeAiTaskId = null
+          return
+        }
+
+        aiTaskLogger.addLog(task.id, `AI点评生成完成（${aiDigest.value.source === 'ai' ? 'AI模型' : '本地规则'}）`, 'success')
+        aiTaskLogger.completeTask(task.id, true)
+      } catch (error) {
+        if (aiTaskLogger.isTaskCancelled(task.id)) {
+          aiTaskLogger.addLog(task.id, '评估已被取消', 'warn')
+        } else {
+          const msg = error instanceof Error ? error.message : String(error)
+          aiTaskLogger.addLog(task.id, `评估失败：${msg}`, 'error')
+          aiTaskLogger.completeTask(task.id, false, msg)
+        }
       } finally {
         aiDigestLoading.value = false
+        homeAiTaskId = null
       }
     }
 
     const heroPolling = useRealtimeTask(async () => {
+      if (!isTradingSession.value) return
       await marketStore.fetchIndices(currentMarket.value)
       const trackedCodes = marketStore.watchList.map((item) => item.code)
       if (trackedCodes.length) {
         await marketStore.fetchQuotes(trackedCodes)
       }
-      await requestDigest()
-    }, { intervalMultiplier: 1, immediate: false, minimumMs: 5000, pauseWhenHidden: true })
+    }, {
+      intervalMultiplier: 1,
+      immediate: false,
+      minimumMs: 5000,
+      pauseWhenHidden: true,
+      market: () => realtimeMarket.value,
+      skipWhenMarketClosed: true,
+    })
 
     const newsPolling = useRealtimeTask(async () => {
       await newsStore.fetchNews()
-      await requestDigest()
-    }, { intervalMultiplier: 4, immediate: false, minimumMs: 20000, pauseWhenHidden: true })
+    }, { intervalMultiplier: 2, immediate: false, minimumMs: 15000, pauseWhenHidden: true })
 
     const secondaryPolling = useRealtimeTask(async () => {
+      if (!isTradingSession.value) return
       await marketStore.fetchStockList(currentMarket.value, 1, currentMarket.value === 'a' ? 40 : 24)
       if (currentMarket.value === 'a') {
         await Promise.all([
@@ -1168,26 +1373,50 @@ export default defineComponent({
           loadFundflow(),
         ])
       }
+    }, {
+      intervalMultiplier: 1,
+      immediate: false,
+      minimumMs: 10000,
+      pauseWhenHidden: true,
+      market: () => realtimeMarket.value,
+      skipWhenMarketClosed: true,
+    })
+
+    const digestPolling = useRealtimeTask(async () => {
+      if (!isTradingSession.value) return
       await requestDigest()
-    }, { intervalMultiplier: 3, immediate: false, minimumMs: 12000, pauseWhenHidden: true })
+    }, {
+      enabled: () => homeDigestAutoEnabled.value,
+      immediate: false,
+      intervalSource: 'ai',
+      intervalMultiplier: 1,
+      minimumMs: 10000,
+      pauseWhenHidden: true,
+      market: () => realtimeMarket.value,
+      skipWhenMarketClosed: true,
+    })
 
     onMounted(async () => {
       await loadDashboard(true)
       heroPolling.start()
       newsPolling.start(false)
       secondaryPolling.start()
+      digestPolling.start(false)
     })
 
     onActivated(() => {
+      void loadDashboard()
       heroPolling.start()
       newsPolling.start(false)
       secondaryPolling.start()
+      digestPolling.start(false)
     })
 
     onDeactivated(() => {
       heroPolling.stop()
       newsPolling.stop()
       secondaryPolling.stop()
+      digestPolling.stop()
     })
 
     return {
@@ -1196,6 +1425,8 @@ export default defineComponent({
       sectorExpanded,
       aiDigest,
       aiDigestLoading,
+      dashboardLoading,
+      secondaryLoading,
       marketTabs,
       indices,
       visibleIndices,
@@ -1211,6 +1442,8 @@ export default defineComponent({
       todayNewsItems,
       pulseCards,
       overviewCards,
+      defaultDigestHeadline,
+      defaultDigestCards,
       sessionInsights,
       policySectionTitle,
       policySectionSubtitle,
@@ -1218,11 +1451,13 @@ export default defineComponent({
       marketOutlookCards,
       newsSentiment,
       marketMood,
+      marketMoodMeta,
       marketNarrative,
+      localEvalSummary,
       fundflowSummary,
       homeDigestAutoEnabled,
-      homeDigestModeLabel,
       heroPolling,
+      heroRealtimeActive,
       formatPrice,
       formatPercent,
       formatVolume,
@@ -1231,6 +1466,7 @@ export default defineComponent({
       switchMarket,
       navigateToStock,
       requestDigest,
+      cancelHomeAiDigest,
       newsStore,
     }
   },

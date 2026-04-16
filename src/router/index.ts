@@ -13,7 +13,7 @@ const router = createRouter({
       path: '/market',
       name: 'market',
       component: () => import('@/views/MarketView/index.vue'),
-      meta: { title: '个股行情' },
+      meta: { title: '股票列表' },
     },
     {
       path: '/monitor',

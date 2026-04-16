@@ -26,17 +26,70 @@
     </router-link>
   </div>
   <transition name="notif">
-    <div v-if="showNotifPanel" class="notif-panel">
+    <div v-if="showNotifPanel" ref="notifPanelRef" class="notif-panel">
       <div class="notif-header">
-        <span class="notif-title">通知中心</span>
-        <button class="notif-close" @click="showNotifPanel = false"><X :size="14" /></button>
+        <div class="notif-tabs">
+          <button class="notif-tab" :class="{ active: notifTab === 'notifications' }" @click="notifTab = 'notifications'">
+            通知
+            <span v-if="notifications.length" class="tab-badge">{{ notifications.length > 99 ? '99+' : notifications.length }}</span>
+          </button>
+          <button class="notif-tab" :class="{ active: notifTab === 'aiLogs' }" @click="notifTab = 'aiLogs'">
+            AI 日志
+            <span v-if="aiTaskLogger.activeTasks.value.length" class="tab-badge tab-badge-active">{{ aiTaskLogger.activeTasks.value.length }}</span>
+          </button>
+        </div>
+        <div class="notif-header-actions">
+          <button v-if="notifTab === 'notifications' && notifications.length" class="notif-action-btn" title="清空通知" @click="clearNotifications">
+            <Trash2 :size="13" />
+          </button>
+          <button v-if="notifTab === 'aiLogs' && aiTaskLogger.recentTasks.value.some(t => t.status !== 'running')" class="notif-action-btn" title="清除已完成的日志" @click="clearFinishedAiTasks">
+            <Trash2 :size="13" />
+          </button>
+          <button class="notif-close" @click="showNotifPanel = false"><X :size="14" /></button>
+        </div>
       </div>
-      <div v-if="!notifications.length" class="notif-empty">暂无通知</div>
-      <div v-else class="notif-list">
-        <div v-for="(n, i) in notifications.slice(0, 20)" :key="i" class="notif-item">
-          <div class="notif-item-title">{{ n.title }}</div>
-          <div class="notif-item-body">{{ n.body }}</div>
-          <div class="notif-item-time">{{ new Date(n.time).toLocaleTimeString() }}</div>
+
+      <div v-if="notifTab === 'notifications'" class="notif-tab-content">
+        <div v-if="!notifications.length" class="notif-empty">暂无通知</div>
+        <div v-else class="notif-list">
+          <div v-for="(n, i) in notifications.slice(0, 20)" :key="i" class="notif-item">
+            <div class="notif-item-title">{{ n.title }}</div>
+            <div class="notif-item-body">{{ n.body }}</div>
+            <div class="notif-item-time">{{ new Date(n.time).toLocaleTimeString() }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="notif-tab-content">
+        <div v-if="!aiTaskLogger.recentTasks.value.length" class="notif-empty">暂无AI评估日志</div>
+        <div v-else class="ai-log-list">
+          <div v-for="task in aiTaskLogger.recentTasks.value" :key="task.id" class="ai-log-task">
+            <div class="ai-log-task-header">
+              <div class="ai-log-task-info">
+                <span class="ai-log-status-dot" :class="task.status"></span>
+                <span class="ai-log-task-title">{{ task.title }}</span>
+                <span class="ai-log-task-source">{{ sourceLabel[task.source] || task.source }}</span>
+              </div>
+              <div class="ai-log-task-meta">
+                <span class="ai-log-task-time">{{ formatLogTime(task.startedAt) }}</span>
+                <span v-if="task.finishedAt && task.status !== 'running'" class="ai-log-task-duration">{{ formatDuration(task.finishedAt - task.startedAt) }}</span>
+                <button v-if="task.status === 'running'" class="ai-log-cancel-btn" @click="cancelAiTask(task.id)">停止</button>
+              </div>
+            </div>
+            <div class="ai-log-entries">
+              <div v-for="log in task.logs.slice(-8)" :key="log.id" class="ai-log-entry" :class="log.level">
+                <span class="ai-log-entry-time">{{ formatLogTime(log.timestamp) }}</span>
+                <span class="ai-log-entry-level">
+                  <CheckCircle2 v-if="log.level === 'success'" :size="11" />
+                  <XCircle v-else-if="log.level === 'error'" :size="11" />
+                  <AlertTriangle v-else-if="log.level === 'warn'" :size="11" />
+                  <Loader2 v-else-if="task.status === 'running'" :size="11" class="spin-icon" />
+                  <span v-else class="log-dot"></span>
+                </span>
+                <span class="ai-log-entry-msg">{{ log.message }}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

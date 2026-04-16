@@ -33,6 +33,13 @@
         <input type="range" class="range-input" :value="provider.temperature" min="0" max="2" step="0.1" @input="$emit('update', provider.id, { temperature: parseFloat($event.target.value) })" />
       </div>
     </div>
+    <div class="form-group">
+      <label>代理</label>
+      <select class="input select-input" :value="provider.proxyId || ''" @change="$emit('update', provider.id, { proxyId: $event.target.value })">
+        <option value="">不使用代理</option>
+        <option v-for="p in enabledProxies" :key="p.id" :value="p.id">{{ p.name }}</option>
+      </select>
+    </div>
     <div class="provider-actions">
       <button class="btn-primary" :disabled="testing" @click="$emit('test', provider)">
         {{ testing ? '测试中...' : '测试连接' }}

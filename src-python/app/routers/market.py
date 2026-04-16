@@ -44,8 +44,12 @@ async def stock_list(
 
 
 @router.get("/search")
-async def search(keyword: str = Query(default="")):
-    data = search_stocks(keyword)
+async def search(
+    keyword: str = Query(default=""),
+    limit: int = Query(default=8),
+    lite: bool = Query(default=False),
+):
+    data = search_stocks(keyword, limit=limit, with_quotes=not lite)
     return {"data": data}
 
 

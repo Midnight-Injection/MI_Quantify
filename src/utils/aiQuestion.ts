@@ -2,6 +2,8 @@ import type { DiagnosisAgentResult } from '@/agents/diagnosisAgent'
 import type { StockQuote, StockSearchFn } from '@/types'
 import { formatPrice } from '@/utils/format'
 import { normalizeSecurityCode } from '@/utils/security'
+import { useAiChat } from '@/composables/useAiChat'
+import type { AiProvider } from '@/types'
 
 interface LocalStockLike {
   code: string
@@ -126,17 +128,27 @@ function buildQuestionKeywords(question: string) {
     .replace(/请按[\u4e00-\u9fa5A-Za-z0-9_-]{2,20}策略(评估|分析|研究|诊断)?/g, '')
     .replace(/按[\u4e00-\u9fa5A-Za-z0-9_-]{2,20}策略(评估|分析|研究|诊断)?/g, '')
     .replace(/^(请问|想问|帮我|请帮我|麻烦|看看|再看下|分析一下|分析|诊断一下|诊断|研究一下|研究|评估一下|评估)/g, '')
-    .replace(/(股票|个股|问股|行情|走势|情况|表现|估值|基本面|技术面|题材|逻辑|可不可以|值不值得|怎么了|怎么样|怎么看|如何|适合|要不要|参与|介入|上车|下车|布局|持有|继续|追吗|追高|低吸|能买吗|买入吗|卖出吗|买入|卖出|现在|目前|今日|最近|吗|呢|呀|吧)+$/g, '')
+    .replace(/(个股|问股|行情|走势|情况|表现|估值|基本面|技术面|题材|逻辑|可不可以|值不值得|怎么了|怎么样|怎么看|如何|适合|要不要|参与|介入|上车|下车|布局|持有|继续|追吗|追高|低吸|能买吗|买入吗|卖出吗|买入|卖出|现在|目前|今日|最近|吗|呢|呀|吧)+$/g, '')
 
+  const allSegments: string[] = []
   const chineseSegments = stripped.match(/[\u4e00-\u9fa5]{2,12}/g) || []
   const alphaSegments = question.match(/[A-Za-z]{2,6}/g) || []
   const digitSegments = question.match(/\d{5,6}/g) || []
 
-  return [stripped, compact, ...chineseSegments, ...alphaSegments, ...digitSegments]
+  const stockSuffixPattern = /(股票|股份|集团|科技|电子|医药|银行|保险|证券|能源|材料|工业|控股|发展|投资|通信|网络|装备|智能|信息|半导体|新能源)$/i
+  for (const seg of chineseSegments) {
+    allSegments.push(seg)
+    const suffix = seg.match(stockSuffixPattern)?.[1]
+    if (suffix && seg.length > suffix.length + 1) {
+      allSegments.push(seg.slice(0, -suffix.length))
+    }
+  }
+
+  return [stripped, compact, ...allSegments, ...alphaSegments, ...digitSegments]
     .map((item) => item.trim())
     .filter(Boolean)
     .filter((item, index, list) => list.indexOf(item) === index)
-    .slice(0, 6)
+    .slice(0, 8)
 }
 
 async function resolveByKeyword(
@@ -236,6 +248,49 @@ export async function resolveStockCodeFromQuestion(
   return resolved?.code || ''
 }
 
+export async function resolveStockRobust(
+  question: string,
+  searchStock: StockSearchFn,
+  _localStocks: LocalStockLike[] = [],
+  provider: AiProvider | null = null,
+): Promise<ResolvedStockMatch | null> {
+  if (provider) {
+    try {
+      const { chat } = useAiChat()
+      const llmResult = await chat(
+        provider,
+        [
+          {
+            role: 'system',
+            content: '你是股票名称解析器。用户会问关于某只股票的问题，你需要提取股票名称，返回代码。只返回 JSON：{"code":"600038","name":"中直股份"}。如果无法确定，返回 null。支持 A 股（6位数字代码）、港股（5位数字）、美股（字母代码）。',
+          },
+          { role: 'user', content: question },
+        ],
+        { temperature: 0.1, maxTokens: 100 },
+      )
+      const match = llmResult.match(/\{[^}]+\}/)
+      if (match) {
+        const parsed = JSON.parse(match[0])
+        if (parsed.code) {
+          const code = normalizeSecurityCode(String(parsed.code))
+          const name = String(parsed.name || code)
+          const remote = await searchStock(code)
+          return {
+            code,
+            name: remote[0]?.name || name,
+            keyword: question,
+            confidence: 80,
+            matchMode: 'fuzzy' as const,
+            candidates: [{ code, name }],
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return null
+}
+
 export function buildDiagnosisReply(result: DiagnosisAgentResult, resolved?: Pick<ResolvedStockMatch, 'keyword' | 'name'> | null) {
   const analysis = result.diagnosis
   const buyRange = typeof analysis.buyLower === 'number' && typeof analysis.buyUpper === 'number'
@@ -244,17 +299,7 @@ export function buildDiagnosisReply(result: DiagnosisAgentResult, resolved?: Pic
   const sellRange = typeof analysis.sellLower === 'number' && typeof analysis.sellUpper === 'number'
     ? `${formatPrice(analysis.sellLower)} - ${formatPrice(analysis.sellUpper)}`
     : '等待趋势延续后再评估'
-  const matchedLabel = resolved?.keyword?.trim()
-  const matchLine = matchedLabel
-    ? `已按“${matchedLabel}”自动匹配到 ${result.stockInfo.name}（${result.stockInfo.code}），并调用内置行情、K线、资讯、资金和板块工具完成研究。`
-    : `已锁定 ${result.stockInfo.name}（${result.stockInfo.code}），并调用内置行情、K线、资讯、资金和板块工具完成研究。`
-  const modelLine = result.llmSummary.fallback
-    ? `模型状态：${result.llmSummary.notice}`
-    : `模型状态：${result.llmSummary.notice}`
-
   return [
-    matchLine,
-    modelLine,
     `${result.stockInfo.name}（${result.stockInfo.code}）当前研究结论：${analysis.recommendation}。`,
     analysis.summary,
     `评估方式：${result.selectedStrategy?.name || '默认综合框架'}`,

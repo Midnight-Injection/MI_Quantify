@@ -151,6 +151,8 @@ export interface DiagnosisAgentStep {
   query?: string
   inputSummary?: string
   resultSummary?: string
+  toolInputText?: string
+  toolOutputText?: string
   startedAt: number
   finishedAt: number
   durationMs?: number
@@ -162,6 +164,16 @@ export interface AiDiagnosis {
   confidence: number
   riskLevel: string
   summary: string
+  klineAnalysis?: {
+    currentPhase?: string
+    trendDirection?: string
+    shortTermForecast?: string
+    mediumTermForecast?: string
+    keySupportLevels?: number[]
+    keyResistanceLevels?: number[]
+    volumeSignal?: string
+    maAlignment?: string
+  }
   supportPrice?: number
   resistancePrice?: number
   buyLower?: number
@@ -178,7 +190,9 @@ export interface AiDiagnosis {
   catalysts: string[]
   risks: string[]
   socialSignals: string[]
-  scenarios: AiDiagnosisScenario[]
+  policyImpact?: string
+  internationalFactors?: string
+  scenarios?: AiDiagnosisScenario[]
   strategyFocus?: string[]
   evidence?: DiagnosisEvidence[]
   toolCalls?: DiagnosisAgentStep[]

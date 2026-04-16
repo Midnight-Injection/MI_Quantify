@@ -4,6 +4,18 @@ export { type NewsItem, type SentimentType, type NewsSource } from './news'
 export { type Strategy, type StrategyCategory, type Signal, type SignalType, type SignalStrength, type PromptTemplate, type PromptCategory, type BacktestResult, type AiEvaluation } from './strategy'
 export { type AiProvider, type AiMessage, type AiChatResponse } from './ai'
 export { type AiInsightDigest } from './insight'
-export { type DataSource, type AppSettings, type AiSettings, type AiAutoRunSettings, type DataSourceSettings, type WatchListSettings, type NotificationSettings, type AppearanceSettings, type SearchProvider, type DiagnosisAgentSettings, type IntegrationSettings, type OpenClawSettings, type OpenClawChannelSettings, type OpenClawChannelType, DEFAULT_SETTINGS } from './settings'
+export {
+  type RecommendationMarket,
+  type RecommendationHorizon,
+  type RecommendationRisk,
+  type RecommendationEntryStyle,
+  type RecommendationClarifyField,
+  type RecommendationPreferences,
+  type RecommendationClarifyQuestion,
+  type RecommendationLaunchWindow,
+  type RecommendationCandidate,
+  type RecommendationResult,
+} from './recommendation'
+export { type DataSource, type AppSettings, type AiSettings, type AiAutoRunSettings, type DataSourceSettings, type WatchListSettings, type NotificationSettings, type AppearanceSettings, type SearchProvider, type DiagnosisAgentSettings, type IntegrationSettings, type OpenClawSettings, type OpenClawChannelSettings, type OpenClawChannelType, type ProxyConfig, type ProxySettings, DEFAULT_SETTINGS } from './settings'
 export { type NotificationAlert, type NotificationAlertType, type NotificationEntry } from './notification'
 export type StockSearchFn = (keyword: string) => Promise<import('./stock').StockQuote[]>

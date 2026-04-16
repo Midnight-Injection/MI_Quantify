@@ -1,14 +1,17 @@
-import { defineComponent, ref, type PropType } from 'vue'
-import type { DataSource } from '@/types'
+import { computed, defineComponent, ref, type PropType } from 'vue'
+import type { DataSource, ProxyConfig } from '@/types'
 
 export default defineComponent({
   name: 'DataSourceTable',
   props: {
     sources: { type: Array as PropType<DataSource[]>, required: true },
+    proxies: { type: Array as PropType<ProxyConfig[]>, default: () => [] },
   },
   emits: ['toggle', 'update'],
-  setup() {
+  setup(props) {
     const expandedSourceIds = ref<string[]>([])
+
+    const enabledProxies = computed(() => props.proxies.filter((p) => p.enabled))
 
     function isExpanded(id: string) {
       return expandedSourceIds.value.includes(id)
@@ -37,6 +40,7 @@ export default defineComponent({
       isExpanded,
       toggleExpanded,
       getConfigHint,
+      enabledProxies,
     }
   },
 })

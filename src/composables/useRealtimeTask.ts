@@ -1,11 +1,17 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { getMarketSessionContext, type MarketCode } from '@/utils/marketSession'
 
 interface RealtimeTaskOptions {
+  enabled?: () => boolean
   immediate?: boolean
   intervalMultiplier?: number
+  intervalSource?: 'data' | 'ai'
   minimumMs?: number
   pauseWhenHidden?: boolean
+  market?: () => MarketCode | MarketCode[] | ''
+  skipWhenMarketClosed?: boolean
+  closedIntervalMultiplier?: number
 }
 
 export function useRealtimeTask(
@@ -16,15 +22,35 @@ export function useRealtimeTask(
   const timer = ref<ReturnType<typeof setInterval> | null>(null)
   const isRunning = ref(false)
   const isExecuting = ref(false)
+  const isEnabled = computed(() => options.enabled?.() ?? settingsStore.settings.dataSource.realTimeEnabled)
+
+  function resolveMarkets(): MarketCode[] {
+    const raw = options.market?.()
+    if (!raw) return []
+    const values = Array.isArray(raw) ? raw : [raw]
+    return Array.from(new Set(values.filter((item): item is MarketCode => item === 'a' || item === 'hk' || item === 'us')))
+  }
+
+  function isMarketClosed(): boolean {
+    const markets = resolveMarkets()
+    if (!markets.length || !options.skipWhenMarketClosed) return false
+    return markets.every((market) => getMarketSessionContext(market).phase !== 'trading')
+  }
 
   const resolvedInterval = computed(() => {
-    const baseSeconds = Math.max(3, settingsStore.settings.dataSource.refreshInterval || 5)
+    const baseSeconds = options.intervalSource === 'ai'
+      ? Math.max(10, settingsStore.settings.ai.autoRunInterval || 45)
+      : Math.max(3, settingsStore.settings.dataSource.refreshInterval || 5)
     const multiplier = options.intervalMultiplier ?? 1
-    return Math.max(options.minimumMs ?? 3000, baseSeconds * 1000 * multiplier)
+    const closedMultiplier = isMarketClosed() ? (options.closedIntervalMultiplier ?? 20) : 1
+    return Math.max(options.minimumMs ?? 3000, baseSeconds * 1000 * multiplier * closedMultiplier)
   })
 
   async function execute() {
     if (isExecuting.value) return
+    if (isMarketClosed() && options.skipWhenMarketClosed) {
+      return
+    }
     isExecuting.value = true
     try {
       await callback()
@@ -45,9 +71,9 @@ export function useRealtimeTask(
 
   function start(forceImmediate = options.immediate ?? true) {
     stop()
-    if (!settingsStore.settings.dataSource.realTimeEnabled) return
+    if (!isEnabled.value) return
     isRunning.value = true
-    if (forceImmediate) {
+    if (forceImmediate && !(options.skipWhenMarketClosed && isMarketClosed())) {
       void execute()
     }
     timer.value = setInterval(() => {
@@ -65,16 +91,16 @@ export function useRealtimeTask(
       stop()
       return
     }
-    if (settingsStore.settings.dataSource.realTimeEnabled) {
+    if (isEnabled.value) {
       start(false)
     }
   }
 
   watch(
-    () => [settingsStore.settings.dataSource.realTimeEnabled, settingsStore.settings.dataSource.refreshInterval],
+    [isEnabled, resolvedInterval],
     () => {
       if (!settingsStore.initialized) return
-      if (!settingsStore.settings.dataSource.realTimeEnabled) {
+      if (!isEnabled.value) {
         stop()
         return
       }

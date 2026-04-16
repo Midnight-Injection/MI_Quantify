@@ -7,6 +7,7 @@ export interface AiProvider {
   model: string
   maxTokens: number
   temperature: number
+  proxyId?: string
 }
 
 export interface AiMessage {
