@@ -90,19 +90,43 @@ jobs:
       - name: build python sidecar
         shell: bash
         run: |
+          set -euo pipefail
+          echo "=== Python info ==="
+          python --version
+          python -c "import platform; print(f'arch={platform.machine()} os={platform.system()}')"
+          
+          echo "=== Installing dependencies ==="
           python -m pip install --upgrade pip pyinstaller
           pip install -e ./src-python
+          
+          echo "=== Building sidecar ==="
           cd src-python
           pyinstaller mi-quantify-sidecar.spec --clean --noconfirm
           cd ..
+          
+          echo "=== Copying binary ==="
           mkdir -p src-tauri/binaries
           TARGET="${{ matrix.rust_target }}"
           if [ "${{ matrix.platform }}" = "windows-latest" ]; then
-            cp src-python/dist/mi-quantify-sidecar.exe "src-tauri/binaries/mi-quantify-sidecar-${TARGET}.exe"
+            BINARY="src-python/dist/mi-quantify-sidecar.exe"
+            DEST="src-tauri/binaries/mi-quantify-sidecar-${TARGET}.exe"
           else
-            cp src-python/dist/mi-quantify-sidecar "src-tauri/binaries/mi-quantify-sidecar-${TARGET}"
-            chmod +x "src-tauri/binaries/mi-quantify-sidecar-${TARGET}"
+            BINARY="src-python/dist/mi-quantify-sidecar"
+            DEST="src-tauri/binaries/mi-quantify-sidecar-${TARGET}"
           fi
+          
+          if [ ! -f "$BINARY" ]; then
+            echo "ERROR: sidecar binary not found at $BINARY"
+            ls -la src-python/dist/ || true
+            exit 1
+          fi
+          
+          cp "$BINARY" "$DEST"
+          chmod +x "$DEST"
+          
+          echo "=== Verify ==="
+          ls -la "$DEST"
+          file "$DEST" || true
 
       - name: install pnpm
         uses: pnpm/action-setup@v4
