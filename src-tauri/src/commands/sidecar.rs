@@ -7,25 +7,21 @@ pub struct SidecarState {
 }
 
 #[tauri::command]
-pub async fn sidecar_start(state: State<'_, SidecarState>) -> Result<String, String> {
+pub async fn sidecar_start(app: tauri::AppHandle, state: State<'_, SidecarState>) -> Result<String, String> {
     let mut guard = state.process.lock().map_err(|e| e.to_string())?;
     if guard.is_some() {
         return Ok("already running".into());
     }
 
-    let (script_path, script_dir) = find_sidecar_script()?;
-    let python_path = find_python(&script_dir)?;
+    let sidecar_path = resolve_sidecar_path(&app)?;
 
-    let child = StdCommand::new(&python_path)
-        .arg(&script_path)
-        .current_dir(&script_dir)
+    let child = StdCommand::new(&sidecar_path)
+        .current_dir(sidecar_path.parent().unwrap_or(std::path::Path::new(".")))
         .spawn()
-        .map_err(|e| format!("failed to start sidecar: {}", e))?;
+        .map_err(|e| format!("failed to start sidecar at {:?}: {}", sidecar_path, e))?;
 
     let pid = child.id();
     *guard = Some(pid);
-
-    // Detach so it keeps running
     std::mem::forget(child);
 
     Ok(format!("sidecar started (pid {})", pid))
@@ -79,47 +75,52 @@ pub async fn sidecar_status(state: State<'_, SidecarState>) -> Result<bool, Stri
     }
 }
 
-fn find_python(script_dir: &std::path::Path) -> Result<String, String> {
-    let venv_python = script_dir.join(".venv/bin/python3");
-    if venv_python.exists() {
-        return Ok(venv_python.to_string_lossy().into());
-    }
+fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let binary_name = format!(
+        "mi-quantify-sidecar{}",
+        if cfg!(windows) { ".exe" } else { "" }
+    );
 
-    let candidates = ["python3", "python"];
-    for cmd in &candidates {
-        if StdCommand::new(cmd).arg("--version").output().is_ok() {
-            return Ok(cmd.to_string());
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled = resource_dir.join("binaries").join(&binary_name);
+        if bundled.exists() {
+            return Ok(bundled);
         }
     }
-    Err("no python interpreter found".into())
-}
 
-fn find_sidecar_script() -> Result<(String, std::path::PathBuf), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let manifest_parent = manifest_dir
         .parent()
         .map(std::path::Path::to_path_buf)
         .unwrap_or_else(|| manifest_dir.clone());
+
+    let src_binary_name = format!(
+        "mi-quantify-sidecar-{}-{}{}",
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        if cfg!(windows) { ".exe" } else { "" }
+    );
+
     let candidates = [
-        cwd.join("src-python/run.py"),
-        cwd.join("../src-python/run.py"),
-        manifest_parent.join("src-python/run.py"),
-        manifest_dir.join("../src-python/run.py"),
+        cwd.join("src-tauri/binaries").join(&src_binary_name),
+        cwd.join("src-tauri/binaries").join(&binary_name),
+        cwd.join("../src-tauri/binaries").join(&src_binary_name),
+        manifest_dir.join("binaries").join(&src_binary_name),
+        manifest_parent.join("src-tauri/binaries").join(&src_binary_name),
     ];
 
     for path in &candidates {
         if path.exists() {
-            let dir = path.parent().unwrap().to_path_buf();
-            return Ok((path.to_string_lossy().into(), dir));
+            return Ok(path.clone());
         }
     }
 
     Err(format!(
-        "sidecar script not found; checked: {}",
+        "sidecar binary not found; checked: {}",
         candidates
             .iter()
-            .map(|path| path.to_string_lossy().to_string())
+            .map(|p| p.to_string_lossy().to_string())
             .collect::<Vec<_>>()
             .join(", ")
     ))

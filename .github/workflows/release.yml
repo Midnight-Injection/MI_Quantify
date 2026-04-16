@@ -17,15 +17,19 @@ jobs:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
             rust_target: aarch64-apple-darwin
+            sidecar_suffix: macos-aarch64
           - platform: macos-15-intel
             args: --target x86_64-apple-darwin
             rust_target: x86_64-apple-darwin
+            sidecar_suffix: macos-x86_64
           - platform: ubuntu-22.04
             args: ""
             rust_target: ""
+            sidecar_suffix: linux-x86_64
           - platform: windows-latest
             args: ""
             rust_target: ""
+            sidecar_suffix: windows-x86_64
 
     runs-on: ${{ matrix.platform }}
     concurrency:
@@ -45,6 +49,29 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         run: |
           echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: build python sidecar
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip pyinstaller
+          pip install -e ./src-python
+          cd src-python
+          pyinstaller mi-quantify-sidecar.spec --clean --noconfirm
+          cd ..
+          mkdir -p src-tauri/binaries
+          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
+            cp src-python/dist/mi-quantify-sidecar/mi-quantify-sidecar.exe "src-tauri/binaries/mi-quantify-sidecar-${{ matrix.sidecar_suffix }}.exe"
+          else
+            cp src-python/dist/mi-quantify-sidecar/mi-quantify-sidecar "src-tauri/binaries/mi-quantify-sidecar-${{ matrix.sidecar_suffix }}"
+            chmod +x "src-tauri/binaries/mi-quantify-sidecar-${{ matrix.sidecar_suffix }}"
+          fi
+          echo "Built sidecar binary:"
+          ls -la src-tauri/binaries/
 
       - name: install pnpm
         uses: pnpm/action-setup@v4
