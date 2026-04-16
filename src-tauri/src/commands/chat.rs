@@ -4,8 +4,9 @@ use dirs::home_dir;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-const DB_DIR_NAME: &str = "mi_quantify";
+const DB_DIR_NAME: &str = ".mi_quantify";
 const DB_FILE_NAME: &str = "mi_quantify.db";
+const LEGACY_DIR_NAME: &str = "mi_quantify";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,7 +36,14 @@ where
     F: FnOnce(&Connection) -> Result<T, String>,
 {
     let home = home_dir().ok_or("无法定位用户目录".to_string())?;
-    let path = home.join(DB_DIR_NAME).join(DB_FILE_NAME);
+    let new_dir = home.join(DB_DIR_NAME);
+    let legacy_dir = home.join(LEGACY_DIR_NAME);
+
+    if !new_dir.exists() && legacy_dir.exists() {
+        let _ = fs::rename(&legacy_dir, &new_dir);
+    }
+
+    let path = new_dir.join(DB_FILE_NAME);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }

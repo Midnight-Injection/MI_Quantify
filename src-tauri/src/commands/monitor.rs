@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-const DB_DIR_NAME: &str = "mi_quantify";
+const DB_DIR_NAME: &str = ".mi_quantify";
 const DB_FILE_NAME: &str = "mi_quantify.db";
+const LEGACY_DIR_NAME: &str = "mi_quantify";
 
 #[derive(Debug, Error)]
 enum MonitorDbError {
@@ -78,7 +79,14 @@ where
 
 fn monitor_db_path_inner() -> Result<PathBuf, MonitorDbError> {
     let home = home_dir().ok_or(MonitorDbError::HomeDirMissing)?;
-    Ok(home.join(DB_DIR_NAME).join(DB_FILE_NAME))
+    let new_dir = home.join(DB_DIR_NAME);
+    let legacy_dir = home.join(LEGACY_DIR_NAME);
+
+    if !new_dir.exists() && legacy_dir.exists() {
+        let _ = std::fs::rename(&legacy_dir, &new_dir);
+    }
+
+    Ok(new_dir.join(DB_FILE_NAME))
 }
 
 fn init_schema(conn: &Connection) -> Result<(), MonitorDbError> {

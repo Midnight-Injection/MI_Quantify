@@ -81,6 +81,7 @@ fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, St
         if cfg!(windows) { ".exe" } else { "" }
     );
 
+    // 1. bundled app: resource_dir/binaries/mi-quantify-sidecar
     if let Ok(resource_dir) = app.path().resource_dir() {
         let bundled: std::path::PathBuf = resource_dir.join("binaries").join(&binary_name);
         if bundled.exists() {
@@ -88,6 +89,7 @@ fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, St
         }
     }
 
+    // 2. dev mode: src-tauri/binaries/mi-quantify-sidecar-<rust-target-triple>
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let manifest_parent = manifest_dir
@@ -95,19 +97,28 @@ fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, St
         .map(std::path::Path::to_path_buf)
         .unwrap_or_else(|| manifest_dir.clone());
 
-    let src_binary_name = format!(
-        "mi-quantify-sidecar-{}-{}{}",
-        std::env::consts::OS,
-        std::env::consts::ARCH,
-        if cfg!(windows) { ".exe" } else { "" }
+    let target_triple = std::env::var("TAURI_ENV_TARGET")
+        .unwrap_or_else(|_| {
+            let arch = std::env::consts::ARCH;
+            let os = std::env::consts::OS;
+            match os {
+                "macos" => format!("{}-apple-darwin", arch),
+                "linux" => format!("{}-unknown-linux-gnu", arch),
+                "windows" => format!("{}-pc-windows-msvc", arch),
+                _ => format!("{}-{}-unknown", arch, os),
+            }
+        });
+    let triple_name = format!(
+        "mi-quantify-sidecar-{}{}",
+        target_triple,
+        if cfg!(windows) { "" } else { "" }
     );
 
     let candidates = [
-        cwd.join("src-tauri/binaries").join(&src_binary_name),
-        cwd.join("src-tauri/binaries").join(&binary_name),
-        cwd.join("../src-tauri/binaries").join(&src_binary_name),
-        manifest_dir.join("binaries").join(&src_binary_name),
-        manifest_parent.join("src-tauri/binaries").join(&src_binary_name),
+        manifest_dir.join("binaries").join(&triple_name),
+        cwd.join("src-tauri/binaries").join(&triple_name),
+        cwd.join("../src-tauri/binaries").join(&triple_name),
+        manifest_parent.join("src-tauri/binaries").join(&triple_name),
     ];
 
     for path in &candidates {
@@ -117,7 +128,7 @@ fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, St
     }
 
     Err(format!(
-        "sidecar binary not found; checked: {}",
+        "sidecar binary not found; checked resource_dir + [{}]",
         candidates
             .iter()
             .map(|p| p.to_string_lossy().to_string())

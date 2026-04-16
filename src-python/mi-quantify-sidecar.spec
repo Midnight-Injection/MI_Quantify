@@ -26,20 +26,14 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='mi-quantify-sidecar',
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,
     upx=True,
     console=True,
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=True,
-    upx=True,
-    name='mi-quantify-sidecar',
+    disable_windowed_traceback=False,
 )

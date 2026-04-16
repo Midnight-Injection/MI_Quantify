@@ -18,7 +18,8 @@ use tokio::{sync::Mutex, time::sleep};
 use uuid::Uuid;
 
 const DEFAULT_WECHAT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
-const WECHAT_DATA_DIR_NAME: &str = "mi_quantify";
+const WECHAT_DATA_DIR_NAME: &str = ".mi_quantify";
+const WECHAT_LEGACY_DIR_NAME: &str = "mi_quantify";
 const LOGIN_FILE_NAME: &str = "wechat_accounts.json";
 const CONTEXT_FILE_NAME: &str = "wechat_contexts.json";
 const MAX_CONSECUTIVE_FAILURES: u32 = 3;
@@ -733,9 +734,15 @@ fn emit_error(app: &AppHandle, channel_id: &str, error: &str) {
 
 fn data_file(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     let home = home_dir().ok_or_else(|| "无法读取用户目录".to_string())?;
-    let dir = home.join(WECHAT_DATA_DIR_NAME);
-    fs::create_dir_all(&dir).map_err(|error| format!("无法创建应用数据目录: {error}"))?;
-    let target = dir.join(name);
+    let new_dir = home.join(WECHAT_DATA_DIR_NAME);
+    let legacy_home_dir = home.join(WECHAT_LEGACY_DIR_NAME);
+
+    if !new_dir.exists() && legacy_home_dir.exists() {
+        let _ = fs::rename(&legacy_home_dir, &new_dir);
+    }
+
+    fs::create_dir_all(&new_dir).map_err(|error| format!("无法创建应用数据目录: {error}"))?;
+    let target = new_dir.join(name);
 
     if !target.exists() {
         let legacy_dir = app
