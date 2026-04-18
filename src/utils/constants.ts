@@ -31,8 +31,8 @@ export const AI_PROVIDER_PRESETS: Omit<AiProvider, 'apiKey'>[] = [
     id: 'zhipu',
     name: '智谱 GLM',
     enabled: false,
-    apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    model: 'glm-4',
+    apiUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    model: 'zhipuai-coding-plan/glm-5.1',
     maxTokens: 4096,
     temperature: 0.7,
   },
@@ -88,7 +88,7 @@ export const SEARCH_PROVIDER_PRESETS: Omit<SearchProvider, 'apiKey'>[] = [
     id: 'zhipu-web-search',
     name: '智谱 Web Search',
     enabled: false,
-    apiUrl: '',
+    apiUrl: 'https://open.bigmodel.cn/api/paas/v4/tools',
     provider: 'zhipu',
   },
   {
@@ -653,6 +653,121 @@ export const BUILTIN_PROMPT_TEMPLATES: PromptTemplate[] = [
   "suggestion": "投资建议"
 }`,
   },
+  {
+    id: 'mode_router',
+    name: '模式路由',
+    builtin: true,
+    category: 'mode_router',
+    variables: ['user_question', 'selected_mode', 'conversation_history', 'conversation_context'],
+    content: `你负责把用户问题路由到最合适的 AI 模式，并尽量抽取结构化参数。
+
+可选模式只有：
+- diagnosis: 围绕单只股票、指数或明确标的做问股、诊断、追问
+- recommendation: 围绕选股、筛股、找机会、市场偏好做荐股
+- investment: 围绕基金、银行理财、银行存款、定投、收益测算、理财规划做投资建议
+
+要求：
+1. 优先理解语义，不要依赖固定关键词。
+2. 如果用户已经在追问上一轮结果，且语义没有明确切换模式，保持上下文连续。
+3. 如果用户同时提到银行、基金、存款利率、定投、理财配置、收益测算，优先 investment。
+4. 输出必须是 JSON，不要输出解释。
+
+返回格式：
+{
+  "mode": "diagnosis" | "recommendation" | "investment",
+  "confidence": number,
+  "isFollowUp": boolean,
+  "reason": "一句话说明",
+  "diagnosis": {
+    "stockCode": string,
+    "stockName": string
+  },
+  "recommendation": {
+    "market": "a" | "hk" | "us",
+    "horizon": "short" | "swing" | "mid",
+    "riskTolerance": "low" | "medium" | "high"
+  },
+  "investment": {
+    "bank": string,
+    "principal": number,
+    "termMonths": number,
+    "contributionMode": "lump_sum" | "monthly_sip",
+    "monthlyAmount": number,
+    "riskTolerance": "low" | "medium" | "high",
+    "liquidityNeed": "low" | "medium" | "high",
+    "allowedProducts": string[],
+    "forbiddenProducts": string[]
+  }
+}`,
+  },
+  {
+    id: 'recommendation_agent',
+    name: '荐股智能体',
+    builtin: true,
+    category: 'recommendation_agent',
+    variables: ['preferences', 'market_summary'],
+    content: `你是 AI 荐股模式的研究负责人。
+
+要求：
+1. 用户目标不清时先澄清市场、周期、风险偏好。
+2. 采集信息时不要只看单一消息，要综合指数、新闻、板块、候选股走势与资金面。
+3. 输出要明确候选排序、启动窗口、介入区间、主要风险。
+4. 不要把“研究候选”表述成确定收益承诺。`,
+  },
+  {
+    id: 'investment_agent',
+    name: '投资智能体',
+    builtin: true,
+    category: 'investment_agent',
+    variables: ['user_question', 'investment_preferences', 'available_tools'],
+    content: `你是 AI 投资模式的理财研究智能体，负责根据用户条件调用工具，给出银行存款 / 代销基金 / 银行理财的对比建议。
+
+硬性要求：
+1. 先查银行官方或官方代销入口，再补基金历史收益、评级、净值等数据。
+2. 数据获取必须足够宽，优先拿到较多候选，不要只抓到 1-2 条就草率总结。
+3. 当工具返回空结果、结果明显过少、或银行关键词过窄时，必须改写搜索描述重试，最多 3 次。
+4. 对存款产品使用“利息/到期收益”表述；对基金和理财使用“历史收益参考/测算收益区间”，不要混淆为保本利息。
+5. 排名时同时考虑用户期限、流动性需求、风险偏好和产品可获得性。
+6. 如果银行只支持部分官方数据，要明确说明覆盖边界。
+
+最终建议必须包含：
+- 至少 3 个可比较方案（若真实可得数据不足则如实说明）
+- 排名理由
+- 3 个月或用户指定期限下的收益测算
+- 风险提示与不确定性来源`,
+  },
+  {
+    id: 'investment_synthesis',
+    name: '投资总结',
+    builtin: true,
+    category: 'investment_synthesis',
+    variables: ['investment_result'],
+    content: `你负责把投资工具结果整理成用户可执行的理财建议。
+
+输出要求：
+1. 先给结论，再给 Top 排行和收益测算依据。
+2. 明确区分保本存款、净值型基金、银行理财。
+3. 用简洁中文说明“为什么这个方案更适合当前期限和风险偏好”。
+4. 必须写出收益测算是假设值、历史回看或业绩比较基准推导，不得冒充确定收益。`,
+  },
+  {
+    id: 'tool_retry_policy',
+    name: '工具重试策略',
+    builtin: true,
+    category: 'tool_retry_policy',
+    variables: ['tool_name', 'query'],
+    content: `当搜索类工具返回空结果、结果过少、或内容明显不充分时，执行以下策略：
+1. 第 1 次重试：保留主体，删除过细限定词。
+2. 第 2 次重试：改成更常见的同义说法或简称。
+3. 第 3 次重试：拆成更宽泛的查询目标，再从结果里二次筛选。
+
+判断“不充分”的最低标准：
+- 候选少于 3 个
+- 来源明显单一，且还有更宽范围可查
+- 返回字段不足以支撑结论
+
+重试结束后仍不足时，要在结论里明确写出数据缺口。`,
+  },
 ]
 
 export const BUILTIN_STRATEGIES: Strategy[] = [
@@ -738,7 +853,7 @@ export const BUILTIN_STRATEGIES: Strategy[] = [
   {
     id: 'event_sentiment',
     name: '事件情绪策略',
-    description: '把政策、公告、社会面消息和资金流事件综合成短线情绪信号。',
+    description: '把政策、公告、市场消息和资金流事件综合成短线情绪信号。',
     category: 'ai',
     builtin: true,
     enabled: false,

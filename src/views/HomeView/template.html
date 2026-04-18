@@ -24,15 +24,6 @@
           <span v-for="risk in aiDigest.keyRisks" :key="risk" class="eval-risk-tag">{{ risk }}</span>
         </div>
       </div>
-      <div v-else-if="!aiDigestLoading && marketNarrative" class="hero-ai-eval hero-local-eval">
-        <div class="eval-header">
-          <span class="eval-confidence eval-confidence-local">{{ marketMoodMeta.label }}</span>
-        </div>
-        <p class="eval-text">{{ marketNarrative }}</p>
-        <div class="eval-risks">
-          <span class="eval-risk-tag eval-risk-tag-local">{{ localEvalSummary }}</span>
-        </div>
-      </div>
     </div>
 
     <div class="hero-status">
@@ -96,29 +87,11 @@
     </div>
   </section>
 
-  <section v-if="currentMarket === 'a'" class="breadth-panel">
-    <div class="breadth-header">
-      <div>
-        <h3 class="section-title">市场广度</h3>
-      </div>
-      <div class="breadth-totals">
-        <span>上涨 {{ adv.advance }}</span>
-        <span>平盘 {{ adv.flat }}</span>
-        <span>下跌 {{ adv.decline }}</span>
-      </div>
-    </div>
-    <div class="breadth-bar">
-      <div class="bar-segment up" :style="{ width: adv.total ? adv.advance / adv.total * 100 + '%' : '0%' }"></div>
-      <div class="bar-segment flat" :style="{ width: adv.total ? adv.flat / adv.total * 100 + '%' : '0%' }"></div>
-      <div class="bar-segment down" :style="{ width: adv.total ? adv.decline / adv.total * 100 + '%' : '0%' }"></div>
-    </div>
-  </section>
-
   <section class="home-grid">
     <article class="panel panel-ai">
       <div class="panel-head">
         <div>
-          <h3 class="section-title">AI 市场点评</h3>
+          <h3 class="section-title">{{ aiDigestTitle }}</h3>
         </div>
         <div v-if="!homeDigestAutoEnabled" class="panel-actions">
           <button v-if="!aiDigestLoading" class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost" @click="requestDigest(true)">
@@ -138,74 +111,86 @@
         <div class="digest-headline">{{ aiDigest.headline }}</div>
         <p class="digest-summary">{{ aiDigest.summary }}</p>
         <div class="digest-sentiment">
-          <span class="sentiment-pill" :class="newsSentiment.tone">消息情绪 {{ newsSentiment.label }}</span>
-          <span class="sentiment-note">{{ newsSentiment.hint }}</span>
+          <span class="sentiment-pill balanced">{{ aiDigest.confidenceLabel }}</span>
+          <span class="sentiment-note">{{ aiDigest.futureOutlook || '等待智能体补充时段判断。' }}</span>
         </div>
-        <div class="deep-dive-grid">
-          <div v-for="item in sessionInsights" :key="item.label" class="deep-dive-card">
-            <div class="label-row">
-              <span>{{ item.label }}</span>
-              <info-tooltip
-                :title="item.label"
-                :description="item.description"
-                :range="item.range"
-              />
-            </div>
-            <p>{{ item.summary }}</p>
-          </div>
-        </div>
-        <div class="digest-grid">
+        <div class="digest-grid digest-grid--triple">
           <div class="digest-card">
             <span>消息面</span>
             <p>{{ aiDigest.newsView }}</p>
           </div>
           <div class="digest-card">
-            <span>社会面</span>
-            <p>{{ aiDigest.socialView }}</p>
+            <span>政策面</span>
+            <p>{{ aiDigest.policyView }}</p>
           </div>
           <div class="digest-card">
-            <span>趋势判断</span>
-            <p>{{ aiDigest.trendView }}</p>
-          </div>
-          <div class="digest-card">
-            <span>执行建议</span>
-            <p>{{ aiDigest.actionView }}</p>
+            <span>国际消息</span>
+            <p>{{ aiDigest.globalView }}</p>
           </div>
         </div>
+        <div class="digest-grid digest-grid--double">
+          <div class="digest-card">
+            <span>短线关注</span>
+            <p>{{ aiDigest.shortTermView }}</p>
+          </div>
+          <div class="digest-card">
+            <span>长线关注</span>
+            <p>{{ aiDigest.longTermView }}</p>
+          </div>
+        </div>
+        <div v-if="aiDigest.focusThemes?.length" class="digest-focus-grid">
+          <article v-for="item in aiDigest.focusThemes" :key="item.theme" class="digest-card digest-card-theme">
+            <span>板块焦点</span>
+            <strong>{{ item.theme }}</strong>
+            <p>{{ item.reason }}</p>
+            <span class="digest-card-foot">催化：{{ item.catalyst }}</span>
+          </article>
+        </div>
+        <article v-if="shortWatchStocks.length || longWatchStocks.length" class="digest-card digest-stock-summary">
+          <div class="digest-stock-summary-head">
+            <span>推荐股票</span>
+            <strong>短线与长线统一总览</strong>
+          </div>
+          <div class="digest-stock-columns">
+            <section v-if="shortWatchStocks.length" class="digest-stock-section">
+              <div class="digest-stock-heading">短线推荐</div>
+              <div class="digest-stock-list">
+                <article v-for="item in shortWatchStocks" :key="`${item.code}-${item.style}`" class="digest-stock-item">
+                  <strong>{{ item.name }} <em>{{ item.code }}</em></strong>
+                  <p>{{ item.reason }}</p>
+                  <div class="digest-stock-meta">
+                    <span>入场价：{{ item.entryPrice }}</span>
+                    <span>退出价：{{ item.exitPrice }}</span>
+                    <span>风险：{{ item.riskTip }}</span>
+                  </div>
+                </article>
+              </div>
+            </section>
+            <section v-if="longWatchStocks.length" class="digest-stock-section">
+              <div class="digest-stock-heading">长线推荐</div>
+              <div class="digest-stock-list">
+                <article v-for="item in longWatchStocks" :key="`${item.code}-${item.style}`" class="digest-stock-item">
+                  <strong>{{ item.name }} <em>{{ item.code }}</em></strong>
+                  <p>{{ item.reason }}</p>
+                  <div class="digest-stock-meta">
+                    <span>入场价：{{ item.entryPrice }}</span>
+                    <span>退出价：{{ item.exitPrice }}</span>
+                    <span>风险：{{ item.riskTip }}</span>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </article>
       </div>
       <div v-else-if="aiDigestLoading" class="panel-empty">
-        AI评估中，正在整理当前盘面、消息和板块方向...
+        AI评估中，正在整理当前盘面、财经快讯、政策面和国际消息...
       </div>
-      <div v-else class="ai-digest ai-digest-fallback">
-        <div class="digest-headline">{{ defaultDigestHeadline }}</div>
-        <p class="digest-summary">{{ marketNarrative }}</p>
-        <div class="digest-sentiment">
-          <span class="sentiment-pill" :class="marketMood">{{ marketMoodMeta.label }}</span>
-          <span class="sentiment-pill" :class="newsSentiment.tone">消息情绪 {{ newsSentiment.label }}</span>
-          <span class="sentiment-note">{{ homeDigestAutoEnabled ? 'AI评估尚未返回，先看实时盘面总览。' : '未触发AI评估时，先看实时盘面总览。' }}</span>
-        </div>
-        <div class="digest-grid">
-          <div v-for="item in defaultDigestCards" :key="item.label" class="digest-card">
-            <span>{{ item.label }}</span>
-            <p>
-              <strong>{{ item.value }}</strong>
-              {{ item.detail }}
-            </p>
-          </div>
-        </div>
-        <div class="deep-dive-grid">
-          <div v-for="item in sessionInsights" :key="item.label" class="deep-dive-card">
-            <div class="label-row">
-              <span>{{ item.label }}</span>
-              <info-tooltip
-                :title="item.label"
-                :description="item.description"
-                :range="item.range"
-              />
-            </div>
-            <p>{{ item.summary }}</p>
-          </div>
-        </div>
+      <div v-else-if="aiDigestError" class="panel-empty">
+        {{ aiDigestError }}
+      </div>
+      <div v-else class="panel-empty">
+        {{ homeDigestAutoEnabled ? '等待自动触发 AI 市场点评。' : '点击上方“AI评估”后由智能体直接生成市场点评。' }}
       </div>
     </article>
 
@@ -262,37 +247,76 @@
     <article class="panel">
       <div class="panel-head">
         <div>
-          <h3 class="section-title">{{ policySectionTitle }}</h3>
+          <h3 class="section-title">{{ aiPolicySectionTitle }}</h3>
+        </div>
+        <div v-if="!homeDigestAutoEnabled" class="panel-actions">
+          <button v-if="!aiDigestLoading" class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost" @click="requestDigest(true)">
+            AI评估
+          </button>
+          <button v-else class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost ai-cancel-btn" @click="cancelHomeAiDigest">
+            立即停止
+          </button>
+        </div>
+        <div v-else-if="aiDigestLoading" class="panel-actions">
+          <button class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost ai-cancel-btn" @click="cancelHomeAiDigest">
+            立即停止
+          </button>
         </div>
       </div>
-      <div class="policy-grid policy-scroll">
-        <div v-for="item in policyGuides" :key="item.label" class="policy-card" :class="item.tone">
+      <div v-if="aiPolicyCards.length" class="policy-grid policy-scroll">
+        <div v-for="item in aiPolicyCards" :key="item.label" class="policy-card" :class="item.tone">
           <div class="policy-top">
             <strong>{{ item.label }}</strong>
+            <span>{{ item.catalyst }}</span>
           </div>
           <p>{{ item.summary }}</p>
-          <div class="policy-meta">
-            <span>受益：{{ item.beneficiary }}</span>
-            <span>留意：{{ item.caution }}</span>
-            <span>推荐：{{ item.recommendedStocks.length ? item.recommendedStocks.join('、') : '等待同步' }}</span>
-          </div>
-          <div v-if="item.headline" class="policy-headline">{{ item.headline }}</div>
         </div>
+      </div>
+      <div v-else-if="aiDigestLoading" class="panel-empty">
+        AI评估中，正在筛选更值得关注的政策与国际催化...
+      </div>
+      <div v-else-if="aiDigestError" class="panel-empty">
+        {{ aiDigestError }}
+      </div>
+      <div v-else class="panel-empty">
+        {{ homeDigestAutoEnabled ? '等待自动触发 AI 政策导向评估。' : '点击上方“AI评估”后由智能体直接生成政策与催化结论。' }}
       </div>
     </article>
 
     <article class="panel">
       <div class="panel-head">
         <div>
-          <h3 class="section-title">未来市场预期</h3>
+          <h3 class="section-title">AI未来市场预期</h3>
+        </div>
+        <div v-if="!homeDigestAutoEnabled" class="panel-actions">
+          <button v-if="!aiDigestLoading" class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost" @click="requestDigest(true)">
+            AI评估
+          </button>
+          <button v-else class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost ai-cancel-btn" @click="cancelHomeAiDigest">
+            立即停止
+          </button>
+        </div>
+        <div v-else-if="aiDigestLoading" class="panel-actions">
+          <button class="btn-ghost panel-action-btn ai-trigger-btn ai-trigger-btn-ghost ai-cancel-btn" @click="cancelHomeAiDigest">
+            立即停止
+          </button>
         </div>
       </div>
-      <div class="outlook-grid outlook-scroll">
-        <div v-for="item in marketOutlookCards" :key="item.label" class="outlook-card">
+      <div v-if="aiOutlookCards.length" class="outlook-grid outlook-scroll">
+        <div v-for="item in aiOutlookCards" :key="item.label" class="outlook-card">
           <span>{{ item.label }}</span>
           <strong>{{ item.value }}</strong>
           <p>{{ item.detail }}</p>
         </div>
+      </div>
+      <div v-else-if="aiDigestLoading" class="panel-empty">
+        AI评估中，正在整理当前时段的后续预期和执行节奏...
+      </div>
+      <div v-else-if="aiDigestError" class="panel-empty">
+        {{ aiDigestError }}
+      </div>
+      <div v-else class="panel-empty">
+        {{ homeDigestAutoEnabled ? '等待自动触发 AI 未来市场预期评估。' : '点击上方“AI评估”后由智能体直接生成时段预期。' }}
       </div>
     </article>
 

@@ -1,6 +1,6 @@
 [project]
 name = "mi-quantify-sidecar"
-version = "0.1.0"
+version = "0.1.1"
 description = "MI Quantify Python Sidecar - Market Data & News Service"
 requires-python = ">=3.10"
 dependencies = [

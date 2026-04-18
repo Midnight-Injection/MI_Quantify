@@ -1,32 +1,35 @@
 <div class="ai-provider-card" :class="{ active: isActive }">
-  <div class="provider-header">
+  <div class="provider-header" @click="toggleExpanded">
     <div class="provider-info">
       <span class="provider-name">{{ provider.name }}</span>
       <span v-if="isActive" class="tag tag-positive">已激活</span>
       <span v-else-if="provider.enabled" class="tag tag-neutral">已启用</span>
       <span v-else class="tag tag-info">未启用</span>
     </div>
-    <label class="switch" @click.stop>
-      <input type="checkbox" :checked="provider.enabled" @change="$emit('toggle-enabled', provider.id, $event.target.checked)" />
-      <span class="slider"></span>
-    </label>
+    <div class="provider-header-actions">
+      <span class="provider-toggle" :class="{ expanded }">{{ expanded ? '⌄' : '›' }}</span>
+      <label class="switch" @click.stop>
+        <input type="checkbox" :checked="provider.enabled" @change="$emit('toggle-enabled', provider.id, $event.target.checked)" />
+        <span class="slider"></span>
+      </label>
+    </div>
   </div>
-  <div v-if="provider.enabled" class="provider-body">
+  <div v-if="expanded" class="provider-body">
     <div class="form-group">
       <label>API 地址</label>
-      <input class="input" :value="provider.apiUrl" placeholder="https://api.example.com/v1/chat/completions" @change="$emit('update', provider.id, { apiUrl: $event.target.value })" />
+      <input class="input" :value="provider.apiUrl" placeholder="https://api.example.com/v1/chat/completions" @input="$emit('update', provider.id, { apiUrl: $event.target.value })" />
     </div>
     <div class="form-group">
       <label>API Key</label>
       <div class="key-input">
-        <input class="input" :type="showKey ? 'text' : 'password'" :value="provider.apiKey" placeholder="sk-..." @change="$emit('update', provider.id, { apiKey: $event.target.value })" />
-        <button class="btn-eye" @click="showKey = !showKey">{{ showKey ? '🙈' : '👁' }}</button>
+        <input class="input" :type="showKey ? 'text' : 'password'" :value="provider.apiKey" placeholder="sk-..." @input="$emit('update', provider.id, { apiKey: $event.target.value })" />
+        <button type="button" class="btn-eye" @click="showKey = !showKey">{{ showKey ? '🙈' : '👁' }}</button>
       </div>
     </div>
     <div class="form-row">
       <div class="form-group flex-1">
         <label>模型</label>
-        <input class="input" :value="provider.model" placeholder="model-name" @change="$emit('update', provider.id, { model: $event.target.value })" />
+        <input class="input" :value="provider.model" placeholder="model-name" @input="$emit('update', provider.id, { model: $event.target.value })" />
       </div>
       <div class="form-group">
         <label>温度 ({{ provider.temperature }})</label>

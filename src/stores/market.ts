@@ -11,6 +11,20 @@ import {
 } from '@/utils/monitorPersistence'
 
 export const useMarketStore = defineStore('market', () => {
+  type MarketCode = 'a' | 'hk' | 'us'
+  interface MarketSnapshot {
+    advanceDecline: AdvanceDecline
+    advanceDeclineUpdatedAt: number
+    indices: MarketIndex[]
+    indicesUpdatedAt: number
+    sectors: SectorData[]
+    sectorsUpdatedAt: number
+    stockList: StockListItem[]
+    stockListPage: number
+    stockListTotal: number
+    stockListUpdatedAt: number
+  }
+
   const settingsStore = useSettingsStore()
   const indices = ref<MarketIndex[]>([])
   const advanceDecline = ref<AdvanceDecline>({
@@ -28,71 +42,144 @@ export const useMarketStore = defineStore('market', () => {
   const stockListPage = ref(1)
   const loading = ref(false)
   const sectorLoading = ref(false)
-  const currentMarket = ref<'a' | 'hk' | 'us'>('a')
+  const currentMarket = ref<MarketCode>('a')
+  let fetchGeneration = 0
   const indicesUpdatedAt = ref(0)
   const advanceDeclineUpdatedAt = ref(0)
   const quotesUpdatedAt = ref(0)
   const sectorsUpdatedAt = ref(0)
   const stockListUpdatedAt = ref(0)
+  const marketSnapshots = new Map<MarketCode, MarketSnapshot>()
+
+  function buildEmptyAdvanceDecline(): AdvanceDecline {
+    return { advance: 0, decline: 0, flat: 0, total: 0, totalAmount: 0 }
+  }
+
+  function getSnapshot(market: MarketCode): MarketSnapshot {
+    const existing = marketSnapshots.get(market)
+    if (existing) return existing
+    const snapshot: MarketSnapshot = {
+      advanceDecline: buildEmptyAdvanceDecline(),
+      advanceDeclineUpdatedAt: 0,
+      indices: [],
+      indicesUpdatedAt: 0,
+      sectors: [],
+      sectorsUpdatedAt: 0,
+      stockList: [],
+      stockListPage: 1,
+      stockListTotal: 0,
+      stockListUpdatedAt: 0,
+    }
+    marketSnapshots.set(market, snapshot)
+    return snapshot
+  }
+
+  function applySnapshot(market: MarketCode) {
+    const snapshot = marketSnapshots.get(market)
+    if (!snapshot) return false
+    indices.value = [...snapshot.indices]
+    advanceDecline.value = { ...snapshot.advanceDecline }
+    sectors.value = [...snapshot.sectors]
+    stockList.value = [...snapshot.stockList]
+    stockListTotal.value = snapshot.stockListTotal
+    stockListPage.value = snapshot.stockListPage
+    indicesUpdatedAt.value = snapshot.indicesUpdatedAt
+    advanceDeclineUpdatedAt.value = snapshot.advanceDeclineUpdatedAt
+    sectorsUpdatedAt.value = snapshot.sectorsUpdatedAt
+    stockListUpdatedAt.value = snapshot.stockListUpdatedAt
+    return snapshot.indices.length > 0 || snapshot.stockList.length > 0 || snapshot.sectors.length > 0
+  }
+
+  function hasFreshSnapshotData(market: MarketCode, key: 'indices' | 'stockList' | 'sectors' | 'advanceDecline', maxAgeMs: number) {
+    const snapshot = marketSnapshots.get(market)
+    if (!snapshot) return false
+    const updatedAtKey = `${key}UpdatedAt` as const
+    return snapshot[updatedAtKey] > 0 && Date.now() - snapshot[updatedAtKey] < maxAgeMs
+  }
+
+  function hasPrimarySnapshot(market: MarketCode) {
+    const snapshot = marketSnapshots.get(market)
+    return !!snapshot && (snapshot.indices.length > 0 || snapshot.stockList.length > 0)
+  }
 
   function syncLegacyWatchList() {
     settingsStore.settings.watchList.stocks = [...watchList.value]
     void settingsStore.saveSettings()
   }
 
-  async function fetchIndices(market: 'a' | 'hk' | 'us' = currentMarket.value) {
+  async function fetchIndices(market: MarketCode = currentMarket.value) {
+    const gen = fetchGeneration
     try {
-      const switchingMarket = market !== currentMarket.value
       currentMarket.value = market
       const { get } = useSidecar()
       const res = await get<{ data: MarketIndex[] }>(`/api/market/indices?market=${market}`)
+      if (gen !== fetchGeneration) return
       const nextData = res.data ?? []
-      if (switchingMarket || nextData.length || !indices.value.length) {
+      if (nextData.length || !indices.value.length) {
         indices.value = nextData
       }
       if (nextData.length) {
         indicesUpdatedAt.value = Date.now()
+        const snapshot = getSnapshot(market)
+        snapshot.indices = [...nextData]
+        snapshot.indicesUpdatedAt = indicesUpdatedAt.value
       }
     } catch (e) {
+      if (gen !== fetchGeneration) return
       console.error('Failed to fetch indices:', e)
     }
   }
 
   async function fetchAdvanceDecline() {
+    const gen = fetchGeneration
     try {
       const { get } = useSidecar()
       const res = await get<{ data: AdvanceDecline }>('/api/market/advance-decline')
+      if (gen !== fetchGeneration) return
       if (res.data && (res.data.advance > 0 || res.data.decline > 0)) {
         advanceDecline.value = res.data
         advanceDeclineUpdatedAt.value = Date.now()
+        const snapshot = getSnapshot('a')
+        snapshot.advanceDecline = { ...res.data }
+        snapshot.advanceDeclineUpdatedAt = advanceDeclineUpdatedAt.value
       }
     } catch (e) {
+      if (gen !== fetchGeneration) return
       console.error('Failed to fetch advance/decline:', e)
     }
   }
 
-  async function fetchStockList(market: 'a' | 'hk' | 'us' = currentMarket.value, page = 1, pageSize = 50) {
+  async function fetchStockList(market: MarketCode = currentMarket.value, page = 1, pageSize = 50) {
+    const gen = fetchGeneration
     loading.value = true
     try {
-      const switchingMarket = market !== currentMarket.value
       currentMarket.value = market
       const { get } = useSidecar()
       const res = await get<{ data: StockListItem[]; total: number; page: number }>(
         `/api/market/stocks?market=${market}&page=${page}&pageSize=${pageSize}`
       )
+      if (gen !== fetchGeneration) return
       const nextData = res.data ?? []
-      if (switchingMarket || nextData.length || !stockList.value.length) {
+      if (nextData.length || !stockList.value.length) {
         stockList.value = nextData
         stockListTotal.value = res.total
         stockListPage.value = res.page
       }
       if (nextData.length) {
         stockListUpdatedAt.value = Date.now()
+        const snapshot = getSnapshot(market)
+        snapshot.stockList = [...nextData]
+        snapshot.stockListTotal = res.total
+        snapshot.stockListPage = res.page
+        snapshot.stockListUpdatedAt = stockListUpdatedAt.value
       }
     } catch (e) {
+      if (gen !== fetchGeneration) return
       console.error('Failed to fetch stock list:', e)
     } finally {
-      loading.value = false
+      if (gen === fetchGeneration) {
+        loading.value = false
+      }
     }
   }
 
@@ -118,22 +205,30 @@ export const useMarketStore = defineStore('market', () => {
   }
 
   async function fetchSectors(type: 'industry' | 'concept' = 'industry') {
+    const gen = fetchGeneration
     sectorLoading.value = true
     try {
       const { get } = useSidecar()
       const path = type === 'industry' ? '/api/sector/industry' : '/api/sector/concept'
       const res = await get<{ data: SectorData[] }>(path)
+      if (gen !== fetchGeneration) return
       const nextData = res.data ?? []
       if (nextData.length || !sectors.value.length) {
         sectors.value = nextData
       }
       if (nextData.length) {
         sectorsUpdatedAt.value = Date.now()
+        const snapshot = getSnapshot('a')
+        snapshot.sectors = [...nextData]
+        snapshot.sectorsUpdatedAt = sectorsUpdatedAt.value
       }
     } catch (e) {
+      if (gen !== fetchGeneration) return
       console.error('Failed to fetch sectors:', e)
     } finally {
-      sectorLoading.value = false
+      if (gen === fetchGeneration) {
+        sectorLoading.value = false
+      }
     }
   }
 
@@ -197,6 +292,22 @@ export const useMarketStore = defineStore('market', () => {
     }
   }
 
+  function clearMarketData(market: MarketCode) {
+    currentMarket.value = market
+    fetchGeneration++
+    if (applySnapshot(market)) return
+    stockList.value = []
+    stockListTotal.value = 0
+    stockListPage.value = 1
+    indices.value = []
+    sectors.value = []
+    advanceDecline.value = buildEmptyAdvanceDecline()
+    indicesUpdatedAt.value = 0
+    advanceDeclineUpdatedAt.value = 0
+    sectorsUpdatedAt.value = 0
+    stockListUpdatedAt.value = 0
+  }
+
   return {
     indices,
     advanceDecline,
@@ -223,5 +334,8 @@ export const useMarketStore = defineStore('market', () => {
     hydrateWatchList,
     addToWatchList,
     removeFromWatchList,
+    clearMarketData,
+    hasFreshSnapshotData,
+    hasPrimarySnapshot,
   }
 })

@@ -442,6 +442,10 @@ export default defineComponent({
 
     async function runDiagnosis() {
       diagnosisError.value = ''
+      if (!settingsStore.isAiProviderConfigured(settingsStore.activeProvider)) {
+        diagnosisError.value = '当前未配置 AI 模型，无法进行智能诊断。请先前往「设置 → 大模型」配置 API 地址、API Key 和模型名称后再使用。'
+        return
+      }
       const task = aiTaskLogger.createTask(`AI评估 ${stockInfo.value?.name || code.value}`, 'stockDetail')
       diagnosisTaskId.value = task.id
       diagnosisLoading.value = true
@@ -473,16 +477,8 @@ export default defineComponent({
         if (aiTaskLogger.isTaskCancelled(task.id)) {
           aiTaskLogger.addLog(task.id, '评估已被取消', 'warn')
         } else {
-          if (!settingsStore.activeProvider) {
-            aiTaskLogger.addLog(task.id, '未启用AI模型，已使用本地规则评估', 'warn')
-          } else {
-            aiTaskLogger.addLog(task.id, `AI评估完成，建议：${result.diagnosis?.recommendation || '待确认'}`, 'success')
-          }
+          aiTaskLogger.addLog(task.id, `AI评估完成，建议：${result.diagnosis?.recommendation || '待确认'}`, 'success')
           aiTaskLogger.completeTask(task.id, true)
-        }
-
-        if (!settingsStore.activeProvider) {
-          diagnosisError.value = '当前未启用模型，已退回到本地规则诊股结论。'
         }
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error)
@@ -517,14 +513,19 @@ export default defineComponent({
       }
     }
 
-    async function addToWatchlist() {
+    async function toggleWatchlist() {
       if (!stockInfo.value) return
-      await marketStore.addToWatchList({
-        code: stockInfo.value.code,
-        name: stockInfo.value.name,
-        addedAt: Date.now(),
-      })
-      alertFeedback.value = '已加入关注列表'
+      if (isWatched.value) {
+        await marketStore.removeFromWatchList(code.value)
+        alertFeedback.value = '已从关注列表移除'
+      } else {
+        await marketStore.addToWatchList({
+          code: stockInfo.value.code,
+          name: stockInfo.value.name,
+          addedAt: Date.now(),
+        })
+        alertFeedback.value = '已加入关注列表'
+      }
     }
 
     async function loadFinanceReport() {
@@ -919,7 +920,7 @@ export default defineComponent({
       runDiagnosis,
       requestDiagnosis,
       cancelDiagnosis,
-      addToWatchlist,
+      toggleWatchlist,
       addGuardRule,
       loadFinanceReport,
       removeAlert,

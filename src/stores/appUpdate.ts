@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getVersion } from '@tauri-apps/api/app'
+import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '@tauri-apps/api/core'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check, type Update } from '@tauri-apps/plugin-updater'
@@ -64,6 +65,15 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
   const isBusy = computed(() => ['checking', 'downloading', 'installing'].includes(status.value))
   const lastCheckedAt = computed(() => settingsStore.settings.appUpdate.lastCheckedAt)
 
+  async function syncProxyEnv() {
+    if (!supported.value) return
+    try {
+      await invoke('set_proxy_env', { proxies: settingsStore.settings.proxy.proxies })
+    } catch (e) {
+      console.warn('[app-update] failed to sync proxy env:', e)
+    }
+  }
+
   async function initialize() {
     if (initialized.value) return
 
@@ -102,6 +112,7 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
     progress.value = null
 
     try {
+      await syncProxyEnv()
       const update = await check()
       settingsStore.updateAppUpdate('lastCheckedAt', new Date().toISOString())
 
@@ -141,6 +152,7 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
     status.value = 'downloading'
 
     try {
+      await syncProxyEnv()
       await currentUpdate.downloadAndInstall((event) => {
         if (event.event === 'Started') {
           progress.value = {

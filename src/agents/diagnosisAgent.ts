@@ -1,11 +1,9 @@
-import { useAiChat } from '@/composables/useAiChat'
-import type { StreamCallbacks } from '@/composables/useAiChat'
+import { useAiChat, isAuthError } from '@/composables/useAiChat'
 import { useSidecar } from '@/composables/useSidecar'
 import { runReActLoop, type ReActTool, type ReActToolResult } from '@/agents/core/reactAgent'
-import { useStrategyStore } from '@/stores/strategy'
 import type { AiDiagnosis, AiProvider, DiagnosisAgentStep, DiagnosisEvidence, KlineData, SearchProvider, Strategy, TechnicalSnapshot } from '@/types'
-import { buildDiagnosisTimingPrompt, buildSessionPromptRules, getMarketSessionContext, type MarketSessionContext } from '@/utils/marketSession'
-import { buildTechnicalSnapshot, getLimitPrices, getStockProfile } from '@/utils/marketMetrics'
+import { buildDiagnosisTimingPrompt, getMarketSessionContext, type MarketSessionContext } from '@/utils/marketSession'
+import { buildTechnicalSnapshot, getStockProfile } from '@/utils/marketMetrics'
 import { normalizeSecurityCode } from '@/utils/security'
 
 interface BidAsk {
@@ -118,7 +116,6 @@ export interface DiagnosisAgentResult {
   selectedStrategy: StrategyContext | null
   llmSummary: {
     used: boolean
-    fallback: boolean
     notice: string
   }
 }
@@ -215,19 +212,6 @@ function describeToolFocus(tool: AgentPlanStep['tool'], strategy?: Strategy | nu
   }
 }
 
-function humanizeAgentError(message: string) {
-  if (/429|Too Many Requests|余额不足|无可用资源包/i.test(message)) {
-    return '模型调用额度不足，已自动切换为本地回退分析流程，页面结论仍基于实时行情和已采集证据生成。'
-  }
-  if (/web search failed/i.test(message)) {
-    return '外部搜索暂时不可用，本轮仅使用站内实时行情、资讯和板块数据继续分析。'
-  }
-  if (/Failed to fetch|NetworkError|fetch/i.test(message)) {
-    return '网络请求失败，本轮分析缺少部分远端数据，建议稍后重试。'
-  }
-  return message
-}
-
 function createAbortError() {
   const error = new Error('AI 任务已停止')
   error.name = 'AbortError'
@@ -261,44 +245,8 @@ function throwIfAborted(signal?: AbortSignal) {
   }
 }
 
-function summarizeLlmStatus(trace: DiagnosisAgentStep[], provider: AiProvider | null) {
-  if (!provider) {
-    return {
-      used: false,
-      fallback: true,
-      notice: '当前未启用模型，本轮使用本地规则 + 实时行情/资讯完成诊断。',
-    }
-  }
-
-  const llmSteps = trace.filter((step) => step.strategy?.includes('LLM') || step.strategy?.includes('ReAct'))
-  const success = llmSteps.some((step) => step.status === 'done')
-  const errorStep = [...llmSteps].reverse().find((step) => step.status === 'error')
-  if (success && !errorStep) {
-    return {
-      used: true,
-      fallback: false,
-      notice: `本轮已调用 ${provider.name} 完成规划与结论汇总。`,
-    }
-  }
-
-  return {
-    used: false,
-    fallback: true,
-    notice: errorStep?.resultSummary || `模型调用异常，当前已回退为本地规则 + 实时数据。`,
-  }
-}
-
 function escapeRegExp(input: string) {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function getPromptTemplateText(category: 'daily_eval' | 'news_analysis') {
-  try {
-    const strategyStore = useStrategyStore()
-    return strategyStore.getPromptTemplateByCategory(category)?.content?.trim() || ''
-  } catch {
-    return ''
-  }
 }
 
 function resolveMarketQueryParam(code: string) {
@@ -351,7 +299,7 @@ function buildToolCatalog(searchProviders: SearchProvider[]): AgentToolDescripto
     module: 'search.web',
     description: searchProviders.length
       ? `补充外部舆情、政策消息、行业讨论和国际热点。可用搜索源：${searchProviders.map((item) => item.name).join('、')}`
-      : '补充外部舆情、政策消息、行业讨论和国际热点。未配置外部搜索源时会自动使用内置新闻搜索回退。',
+      : '补充外部舆情、政策消息、行业讨论和国际热点。未配置外部搜索源时使用当前默认搜索实现。',
   })
 
   return tools
@@ -367,53 +315,11 @@ function pickSearchQuery(strategy?: Strategy | null, questionFocus?: string) {
   return `${strategy.name} 政策变化 国际事件 社会舆情 行业动态${focus}`
 }
 
-function fallbackPlan(searchEnabled: boolean, strategy?: Strategy | null): AgentPlanStep[] {
-  const toolOrder =
-    strategy?.category === 'fundamental'
-      ? ['load_quote', 'load_market_indices', 'load_advance_decline', 'load_kline', 'load_finance_report', 'load_stock_news', 'load_macro_news', 'load_financial_news', 'load_fund_flow', 'load_sector_rank', 'load_concept_rank']
-      : strategy?.category === 'volume'
-        ? ['load_quote', 'load_kline', 'load_fund_flow', 'load_market_indices', 'load_advance_decline', 'load_sector_rank', 'load_concept_rank', 'load_finance_report', 'load_stock_news', 'load_macro_news', 'load_financial_news']
-        : strategy?.category === 'pattern' || strategy?.category === 'trend' || strategy?.category === 'momentum' || strategy?.category === 'mean_reversion'
-          ? ['load_quote', 'load_kline', 'load_fund_flow', 'load_market_indices', 'load_advance_decline', 'load_sector_rank', 'load_concept_rank', 'load_stock_news', 'load_macro_news', 'load_financial_news']
-          : ['load_quote', 'load_market_indices', 'load_advance_decline', 'load_kline', 'load_fund_flow', 'load_finance_report', 'load_stock_news', 'load_macro_news', 'load_financial_news', 'load_sector_rank', 'load_concept_rank']
-
-  const reasonMap: Record<AgentPlanStep['tool'], string> = {
-    search_stock: '从用户问题中搜索匹配的股票，获取准确的股票代码和名称。',
-    load_quote: '先锁定当前价格、盘口、估值和涨跌停位置。',
-    load_market_indices: '确认指数环境和市场风格是否支持个股方向。',
-    load_advance_decline: '确认全市场涨跌比和赚钱效应。',
-    load_kline: '提取 K 线、均线、量能、支撑和压力。',
-    load_stock_news: '提取公司近端催化、公告、澄清和风险。',
-    load_macro_news: '补充与个股相关的政策环境、行业消息和宏观扰动。',
-    load_financial_news: '补充最新财经要闻、国际事件和政策变化。',
-    load_fund_flow: '确认个股近期主力资金趋势、超大单大单散户资金流向。',
-    load_sector_rank: '判断当前行业主线和个股所在行业热度。',
-    load_concept_rank: '补充概念题材是否处于扩散阶段。',
-    load_finance_report: '读取近4期三大财报，评估营收增速、盈利质量、现金流健康度和负债趋势。',
-    web_search: '补充社会面、政策导向、公司未来战略和市场讨论。',
-  }
-
-  const plan: AgentPlanStep[] = toolOrder.map((tool) => ({
-    tool: tool as AgentPlanStep['tool'],
-    reason: reasonMap[tool as AgentPlanStep['tool']],
-  }))
-
-  if (searchEnabled) {
-    plan.push({
-      tool: 'web_search',
-      reason: reasonMap.web_search,
-      query: pickSearchQuery(strategy),
-    })
-  }
-
-  return plan
-}
-
 function buildStrategyFocus(strategy: Strategy | null | undefined, technical: TechnicalSnapshot, evidence: DiagnosisEvidence[]) {
-  const fallback = technical.trend === 'bullish'
+  const defaultFocus = technical.trend === 'bullish'
     ? ['趋势延续', '量价确认', '支撑防守']
     : ['技术面优先', '消息面交叉验证', '仓位先行控制']
-  if (!strategy) return fallback
+  if (!strategy) return defaultFocus
   return [
     strategy.name,
     strategy.notes?.split('。').find(Boolean) || strategy.description,
@@ -437,7 +343,7 @@ function buildToolInputSummary(step: AgentPlanStep, stockInfo: DiagnosisStockInf
     case 'load_stock_news':
       return `读取 ${stockInfo.name} 近端公司新闻、公告、回购、订单和经营动态。`
     case 'load_macro_news':
-      return `读取与 ${stockInfo.name} 直接相关的政策、国际、行业和社会面消息。`
+      return `读取与 ${stockInfo.name} 直接相关的政策、国际、行业和市场环境消息。`
     case 'load_financial_news':
       return '读取最新财经要闻、国际事件和政策变化。'
     case 'load_fund_flow':
@@ -527,93 +433,8 @@ function clipText(text?: string, limit = 56) {
   return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized
 }
 
-function stringifyToolPayload(value: unknown, fallback = '') {
-  if (typeof value === 'string') {
-    return value || fallback
-  }
-  if (value === undefined) return fallback
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
-}
-
 function isNegativeSignal(text?: string) {
   return /(下滑|承压|风险|拖累|制裁|冲突|波动|收紧|下跌|减持|亏损|回落|压力|疲弱|走弱|扰动)/.test(`${text || ''}`)
-}
-
-function buildCatalystHints(
-  stockInfo: DiagnosisStockInfo,
-  stockNews: DiagnosisNewsItem[],
-  macroNews: DiagnosisNewsItem[],
-  searchEvidence: SearchResultItem[],
-  sectorRank: any[],
-  conceptRank: any[],
-  fundFlow: any,
-  technical: TechnicalSnapshot,
-) {
-  return dedupeStrings([
-    ...stockNews.slice(0, 3).map((item) => `公司消息：${clipText(item.title, 34)}`),
-    ...macroNews.slice(0, 2).map((item) => `外部刺激：${clipText(item.title, 34)}`),
-    ...searchEvidence.slice(0, 2).map((item) => `${item.providerName || item.media || '外部搜索'}：${clipText(item.title, 32)}`),
-    fundFlow && Number(fundFlow.mainNetInflow) > 0
-      ? `资金面：主力净流入 ${fundFlow.mainNetInflow}，短线承接仍在`
-      : '',
-    sectorRank[0]
-      ? `行业热度：${sectorRank[0].name} 涨跌幅 ${sectorRank[0].changePercent}%`
-      : '',
-    conceptRank[0]
-      ? `概念扩散：${conceptRank[0].name} 活跃，情绪仍有扩散空间`
-      : '',
-    technical.trend === 'bullish'
-      ? `价格结构：现价 ${stockInfo.price.toFixed(2)} 仍在支撑 ${technical.supportPrice.toFixed(2)} 上方`
-      : '',
-  ], 5)
-}
-
-function buildRiskHints(
-  stockInfo: DiagnosisStockInfo,
-  macroNews: DiagnosisNewsItem[],
-  searchEvidence: SearchResultItem[],
-  marketIndices: Array<{ code: string; name: string; price: number; changePercent: number }>,
-  fundFlow: any,
-  technical: TechnicalSnapshot,
-) {
-  const negativeNews = [
-    ...macroNews.filter((item) => isNegativeSignal(`${item.title} ${item.summary || item.content || ''}`)).slice(0, 2).map((item) => `外部扰动：${clipText(item.title, 34)}`),
-    ...searchEvidence.filter((item) => isNegativeSignal(`${item.title} ${item.content}`)).slice(0, 2).map((item) => `舆情扰动：${clipText(item.title, 34)}`),
-  ]
-
-  return dedupeStrings([
-    ...negativeNews,
-    fundFlow && Number(fundFlow.mainNetInflow) < 0
-      ? `资金面：主力净流入 ${fundFlow.mainNetInflow}，短线抛压仍需防守`
-      : '',
-    marketIndices.some((item) => Number(item.changePercent) < 0)
-      ? `市场环境：${marketIndices.filter((item) => Number(item.changePercent) < 0).slice(0, 2).map((item) => item.name).join('、')}偏弱，风险偏好不足`
-      : '',
-    technical.trend === 'bearish' || technical.momentum === 'weak'
-      ? `技术面：若跌破 ${technical.supportPrice.toFixed(2)}，节奏容易继续转弱`
-      : `风控位：短线失守 ${technical.supportPrice.toFixed(2)} 需及时降仓`,
-    `价格波动：当前振幅与换手需结合 ${stockInfo.preClose.toFixed(2)} 一线防守`,
-  ], 5)
-}
-
-function buildImpactHints(
-  macroNews: DiagnosisNewsItem[],
-  searchEvidence: SearchResultItem[],
-  marketIndices: Array<{ code: string; name: string; price: number; changePercent: number }>,
-  sectorRank: any[],
-) {
-  return dedupeStrings([
-    ...macroNews.slice(0, 3).map((item) => `${item.source || '市场消息'}：${clipText(item.title, 34)}`),
-    ...searchEvidence.slice(0, 3).map((item) => `${item.providerName || item.media || '外部搜索'}：${clipText(item.title || item.content, 34)}`),
-    ...marketIndices.slice(0, 2).map((item) => `${item.name} ${item.changePercent}% ，影响整体风险偏好`),
-    sectorRank[0]
-      ? `${sectorRank[0].name} 为当前行业风向参考，需观察板块热度是否延续`
-      : '',
-  ], 5)
 }
 
 function buildPhaseActionLabel(session: MarketSessionContext) {
@@ -647,176 +468,29 @@ function buildSessionSummary(
   return `当前结构以震荡为主，暂未形成高把握度单边趋势。${phaseActionLabel}，先看 ${support.toFixed(2)} 至 ${resistance.toFixed(2)} 区间内的量价选择，再决定是否参与。`
 }
 
-function buildSessionPositionAdvice(session: MarketSessionContext, prediction: string) {
-  if (prediction !== '看多') {
-    return session.phase === 'holiday_closed'
-      ? '建议轻仓或空仓等待，先做节后预案，只有下一次开盘后量价转强再考虑参与。'
-      : session.phase === 'post_market'
-        ? '建议轻仓观察，等待下一交易日竞价和开盘强弱确认后再决定是否参与。'
-        : '建议轻仓观察，只有量价重新转强后再考虑参与。'
-  }
-
-  switch (session.phase) {
-    case 'pre_market':
-      return '建议 20%-35% 试探仓位，先看开盘后 15-30 分钟量价是否同步转强，再决定是否加到中仓。'
-    case 'trading':
-      return '建议 20%-35% 试探仓位，盘中只在承接稳定且量能继续放大时逐步加到中仓。'
-    case 'midday_break':
-      return '建议先维持 20%-35% 试探仓位，午后开盘后若承接不弱且板块继续扩散，再考虑加仓。'
-    case 'post_market':
-      return '建议先控制在 20%-30% 仓位，下一交易日只在竞价和开盘确认偏强后再逐步加仓。'
-    case 'holiday_closed':
-      return '建议先做节后预案，下一次开盘后只有量价同步转强时才把仓位从试探仓提升到中仓。'
-  }
-}
-
-function buildSessionEntryAdvice(session: MarketSessionContext, support: number) {
-  switch (session.phase) {
-    case 'pre_market':
-      return `盘前先看开盘后 15-30 分钟量价确认，若回踩 ${support.toFixed(2)} 附近仍有承接，再分批买入。`
-    case 'trading':
-      return `盘中优先看当前到尾盘的承接，只有在 ${support.toFixed(2)} 附近稳住并出现放量回拉时再分批买入。`
-    case 'midday_break':
-      return `午间先等午后开盘后的承接确认，若 ${support.toFixed(2)} 附近不破并重新放量，再分批买入。`
-    case 'post_market':
-      return `盘后不追价，下一交易日只在 ${support.toFixed(2)} 附近获得承接并重新放量时再分批买入。`
-    case 'holiday_closed':
-      return `休市期间先做预案，下一次开盘后只有在 ${support.toFixed(2)} 附近承接有效并放量时再分批买入。`
-  }
-}
-
-function buildSessionExitAdvice(session: MarketSessionContext, support: number, resistance: number) {
-  switch (session.phase) {
-    case 'pre_market':
-      return `盘前先设好计划，若日内冲至 ${resistance.toFixed(2)} 一带但量能跟不上，当天分批止盈；若开盘后直接失守 ${support.toFixed(2)}，先降仓。`
-    case 'trading':
-      return `盘中到尾盘若反弹至 ${resistance.toFixed(2)} 一带但量能未继续放大，直接分批止盈；若先跌破 ${support.toFixed(2)}，先降仓。`
-    case 'midday_break':
-      return `午后若反抽至 ${resistance.toFixed(2)} 一带仍放不出量，分批止盈；若午后开盘直接跌破 ${support.toFixed(2)}，先降仓。`
-    case 'post_market':
-      return `盘后先写好次日计划，下一交易日若冲高到 ${resistance.toFixed(2)} 附近仍无量，分批止盈；若开盘转弱跌破 ${support.toFixed(2)}，先止损。`
-    case 'holiday_closed':
-      return `休市阶段先定好风控，下一次开盘后若冲高到 ${resistance.toFixed(2)} 附近仍无量，分批止盈；若跌破 ${support.toFixed(2)}，直接止损。`
-  }
-}
-
-function buildSessionScenarioHint(session: MarketSessionContext, horizon: '1d' | '3d' | '5d') {
-  if (horizon === '1d') {
-    switch (session.phase) {
-      case 'pre_market':
-        return '重点观察今日开盘后首轮量价确认'
-      case 'trading':
-        return '重点观察当前到尾盘的承接与回封强弱'
-      case 'midday_break':
-        return '重点观察午后开盘后的承接与板块回流'
-      case 'post_market':
-        return '重点观察下一交易日竞价与开盘强弱'
-      case 'holiday_closed':
-        return '重点观察下一次开盘后的资金承接'
-    }
-  }
-
-  if (horizon === '3d') {
-    return session.phase === 'holiday_closed'
-      ? '重点观察节后 1-3 个交易日支撑是否有效'
-      : '重点观察未来 1-3 个交易日支撑是否有效'
-  }
-
-  return session.phase === 'holiday_closed'
-    ? '只有节后持续放量才有进一步上测空间'
-    : '只有持续放量才有进一步上测空间'
-}
-
 function sanitizeDiagnosis(
   diagnosis: AiDiagnosis,
-  stockInfo: DiagnosisStockInfo,
-  technical: TechnicalSnapshot,
   trace: DiagnosisAgentStep[],
   evidence: DiagnosisEvidence[],
-  derived: {
-    catalysts: string[]
-    risks: string[]
-    impacts: string[]
-  },
 ) {
-  const lotSize = getStockProfile(stockInfo.code).lotSize
-  const support = technical.supportPrice || diagnosis.supportPrice || Number((stockInfo.price * 0.97).toFixed(2))
-  const resistance = technical.resistancePrice || diagnosis.resistancePrice || Number((stockInfo.price * 1.04).toFixed(2))
-  const buyLowerBase = Math.min(support, stockInfo.price)
-  const buyUpperBase = Math.min(stockInfo.price * 1.02, Math.max(stockInfo.price, resistance))
-  const sellLowerBase = Math.max(stockInfo.price * 1.01, buyUpperBase * 1.015)
-  const sellUpperBase = Math.max(sellLowerBase * 1.01, resistance)
-  const suggestedLots = Math.max(1, Math.round((diagnosis.suggestedShares || lotSize) / lotSize))
-
+  const normalizeStringArray = (value: unknown, limit = 5) => {
+    if (Array.isArray(value)) {
+      return value.map((item) => `${item || ''}`.trim()).filter(Boolean).slice(0, limit)
+    }
+    if (typeof value === 'string' && value.trim()) {
+      return value.split(/[；;\n]/).map((item) => item.trim()).filter(Boolean).slice(0, limit)
+    }
+    return []
+  }
   return {
     ...diagnosis,
-    confidence: clamp(Math.round(diagnosis.confidence || 55), 18, 88),
-    supportPrice: Number((diagnosis.supportPrice || support).toFixed(2)),
-    resistancePrice: Number((diagnosis.resistancePrice || resistance).toFixed(2)),
-    buyLower: Number(clamp(diagnosis.buyLower || buyLowerBase, buyLowerBase * 0.98, stockInfo.price).toFixed(2)),
-    buyUpper: Number(clamp(diagnosis.buyUpper || buyUpperBase, buyLowerBase, Math.max(stockInfo.price * 1.02, buyUpperBase)).toFixed(2)),
-    sellLower: Number(clamp(diagnosis.sellLower || sellLowerBase, stockInfo.price * 1.005, sellUpperBase).toFixed(2)),
-    sellUpper: Number(clamp(diagnosis.sellUpper || sellUpperBase, sellLowerBase, sellUpperBase * 1.05).toFixed(2)),
-    stopLossPrice: Number(clamp(diagnosis.stopLossPrice || support * 0.97, support * 0.92, stockInfo.price * 0.99).toFixed(2)),
-    takeProfitPrice: Number(clamp(diagnosis.takeProfitPrice || sellUpperBase, sellLowerBase, sellUpperBase * 1.08).toFixed(2)),
-    suggestedShares: suggestedLots * lotSize,
-    catalysts: diagnosis.catalysts?.length ? diagnosis.catalysts.slice(0, 5) : derived.catalysts,
-    risks: diagnosis.risks?.length ? diagnosis.risks.slice(0, 5) : derived.risks,
-    socialSignals: diagnosis.socialSignals?.length ? diagnosis.socialSignals.slice(0, 5) : derived.impacts,
+    confidence: Number(diagnosis.confidence) || 0,
+    catalysts: normalizeStringArray(diagnosis.catalysts),
+    risks: normalizeStringArray(diagnosis.risks),
+    socialSignals: normalizeStringArray(diagnosis.socialSignals),
     scenarios: diagnosis.scenarios?.length ? diagnosis.scenarios.slice(0, 5) : diagnosis.scenarios,
-    evidence: diagnosis.evidence?.length ? diagnosis.evidence.slice(0, 8) : evidence,
-    toolCalls: trace,
-    generatedAt: Date.now(),
-  }
-}
-
-function buildFallbackDiagnosis(
-  stockInfo: DiagnosisStockInfo,
-  technical: TechnicalSnapshot,
-  trace: DiagnosisAgentStep[],
-  evidence: DiagnosisEvidence[],
-  derived: {
-    catalysts: string[]
-    risks: string[]
-    impacts: string[]
-  },
-  session: MarketSessionContext,
-  strategy?: Strategy | null,
-): AiDiagnosis {
-  const bullish = technical.trend === 'bullish'
-  const support = technical.supportPrice || Number((stockInfo.price * 0.97).toFixed(2))
-  const resistance = technical.resistancePrice || Number((stockInfo.price * 1.04).toFixed(2))
-  const prediction = bullish ? '看多' : technical.trend === 'bearish' ? '看空' : '震荡'
-
-  return {
-    recommendation: bullish ? '买入' : technical.trend === 'bearish' ? '卖出' : '观望',
-    prediction,
-    confidence: bullish ? 63 : 51,
-    riskLevel: technical.momentum === 'weak' ? '高' : '中',
-    summary: buildSessionSummary(session, prediction, support, resistance),
-    supportPrice: support,
-    resistancePrice: resistance,
-    buyLower: support,
-    buyUpper: Number((support * 1.01).toFixed(2)),
-    sellLower: Number((resistance * 0.985).toFixed(2)),
-    sellUpper: resistance,
-    positionAdvice: buildSessionPositionAdvice(session, prediction),
-    positionSize: bullish ? '轻仓到中仓' : '轻仓',
-    entryAdvice: buildSessionEntryAdvice(session, support),
-    exitAdvice: buildSessionExitAdvice(session, support, resistance),
-    stopLossPrice: Number((support * 0.97).toFixed(2)),
-    takeProfitPrice: resistance,
-    suggestedShares: Math.max(100, getStockProfile(stockInfo.code).lotSize),
-    catalysts: derived.catalysts,
-    risks: derived.risks,
-    socialSignals: derived.impacts,
-    scenarios: [
-      { label: '1日情景', expectedPrice: stockInfo.price, probabilityHint: buildSessionScenarioHint(session, '1d') },
-      { label: '3日情景', expectedPrice: Number(((stockInfo.price + support) / 2).toFixed(2)), probabilityHint: buildSessionScenarioHint(session, '3d') },
-      { label: '5日情景', expectedPrice: resistance, probabilityHint: buildSessionScenarioHint(session, '5d') },
-    ],
-    strategyFocus: buildStrategyFocus(strategy, technical, evidence),
-    evidence,
+    strategyFocus: normalizeStringArray(diagnosis.strategyFocus),
+    evidence: diagnosis.evidence?.length ? diagnosis.evidence.slice(0, 8) : evidence.slice(0, 8),
     toolCalls: trace,
     generatedAt: Date.now(),
   }
@@ -858,6 +532,7 @@ async function runWebSearch(
       apiUrl: provider.apiUrl,
       apiKey: provider.apiKey,
       enabled: provider.enabled,
+      proxyId: provider.proxyId || '',
     })),
   })
   return payload.data || []
@@ -883,7 +558,6 @@ export async function runDiagnosisAgent(options: {
   abortSignal?: AbortSignal
 }): Promise<DiagnosisAgentResult> {
   const { get, post } = useSidecar()
-  const { chatStream } = useAiChat()
   const trace: DiagnosisAgentStep[] = []
   const selectedStrategy = options.selectedStrategy || null
   const selectedStrategyContext = createStrategyContext(selectedStrategy)
@@ -905,24 +579,9 @@ export async function runDiagnosisAgent(options: {
 
   const period = options.period || 'daily'
   const adjust = options.adjust || 'qfq'
-  const maxSteps = Math.max(4, Math.min(options.maxSteps || 12, 20))
-  const planningTimeoutMs = 18000
-  const synthesisTimeoutMs = 25000
+  const maxSteps = Math.max(3, Math.min(options.maxSteps || 12, 5))
+  const planningTimeoutMs = 240000
   let normalizedCode = options.code ? normalizeSecurityCode(options.code) : ''
-
-  const searchEnabled = true
-  const fallbackSequence = fallbackPlan(searchEnabled, selectedStrategy)
-  const keywordPrelude: AgentPlanStep[] = !normalizedCode && (options.question || options.resolvedName || options.matchedKeyword)
-    ? [
-        { tool: 'load_stock_news', reason: '先按名称或关键词补充公司近端消息。' } as AgentPlanStep,
-        { tool: 'load_macro_news', reason: '先按名称或关键词补充政策、行业与国际背景。' } as AgentPlanStep,
-        ...(searchEnabled ? [{ tool: 'web_search', reason: '先按关键词补齐站外舆情与政策搜索。', query: pickSearchQuery(selectedStrategy) } as AgentPlanStep] : []),
-      ]
-    : []
-  const fallbackSteps: AgentPlanStep[] = [
-    ...keywordPrelude,
-    ...fallbackSequence.filter((step) => !keywordPrelude.some((item) => item.tool === step.tool)),
-  ]
 
   let stockInfo: DiagnosisStockInfo = { code: '', name: '', price: 0, open: 0, high: 0, low: 0, preClose: 0, change: 0, changePercent: 0, volume: 0, amount: 0, turnover: 0, date: '', time: '', bids: [], asks: [] }
   let finance: DiagnosisFinanceInfo = { pe: 0, pb: 0, totalMv: 0, circMv: 0, roe: 0, eps: 0, bps: 0, turnover: 0 }
@@ -930,7 +589,6 @@ export async function runDiagnosisAgent(options: {
   let marketQuery = resolveMarketQueryParam('')
   let marketSession = getMarketSessionContext('a')
   let diagnosisTimingPrompt = ''
-  let limitPrices = { limitUp: 0, limitDown: 0, ratio: 0 }
   let questionFocus = ''
   let financeReport: any = null
   let klineData: KlineData[] = []
@@ -956,19 +614,6 @@ export async function runDiagnosisAgent(options: {
     return stockInfo.name || options.resolvedName || options.matchedKeyword || buildLookupKeyword() || normalizedCode || '未命名标的'
   }
 
-  function buildToolRequestPayload(step: Pick<AgentPlanStep, 'tool' | 'query' | 'providers'>) {
-    return {
-      tool: step.tool,
-      query: step.query || '',
-      code: normalizedCode || stockInfo.code || '',
-      name: buildDisplayName(),
-      market: marketQuery,
-      period,
-      adjust,
-      providers: step.providers || [],
-    }
-  }
-
   function syncDerivedState() {
     const code = stockInfo.code || normalizedCode
     if (!code) return
@@ -976,7 +621,6 @@ export async function runDiagnosisAgent(options: {
     marketQuery = resolveMarketQueryParam(code)
     marketSession = getMarketSessionContext(profile.market)
     diagnosisTimingPrompt = buildDiagnosisTimingPrompt(marketSession, stockInfo.name || options.resolvedName || code)
-    limitPrices = getLimitPrices(code, stockInfo.preClose)
     questionFocus = buildQuestionFocus(options.question, stockInfo.name || options.resolvedName, options.matchedKeyword)
   }
 
@@ -1062,6 +706,94 @@ export async function runDiagnosisAgent(options: {
         operatingCashFlow: item.operatingCashFlow,
         capex: item.capex,
       })),
+    }
+  }
+
+  function compactFundFlowData() {
+    if (!fundFlow) return null
+    return {
+      code: fundFlow.code || normalizedCode,
+      mainNetInflow: fundFlow.mainNetInflow,
+      mainNetInflowPercent: fundFlow.mainNetInflowPercent,
+      recentFlows: (fundFlow.recentFlows || []).slice(-3).map((item: any) => ({
+        date: item.date,
+        mainNetInflow: item.mainNetInflow,
+        mainNetInflowPercent: item.mainNetInflowPercent,
+      })),
+    }
+  }
+
+  function compactMarketIndicesData() {
+    return marketIndices.slice(0, 3).map((item) => ({
+      code: item.code,
+      name: item.name,
+      price: item.price,
+      changePercent: item.changePercent,
+    }))
+  }
+
+  function compactSectorRankData(items: any[], limit = 4) {
+    return items.slice(0, limit).map((item) => ({
+      name: item.name,
+      changePercent: item.changePercent,
+      leadingStock: item.leadingStock || '',
+    }))
+  }
+
+  function compactSearchEvidenceData(limit = 4) {
+    return searchEvidence.slice(0, limit).map((item) => ({
+      title: item.title,
+      content: clipText(item.content, 120),
+      source: item.providerName || item.media || '',
+      link: item.link,
+    }))
+  }
+
+  function buildSynthesisPayload() {
+    return {
+      question: options.question || '',
+      stock: {
+        code: stockInfo.code,
+        name: stockInfo.name,
+        price: stockInfo.price,
+        changePercent: stockInfo.changePercent,
+        turnover: stockInfo.turnover,
+      },
+      finance: {
+        pe: finance.pe,
+        pb: finance.pb,
+        roe: finance.roe,
+        totalMv: finance.totalMv,
+      },
+      technical,
+      marketSession: {
+        market: marketSession.market,
+        phase: marketSession.phase,
+        currentTime: `${marketSession.currentDate} ${marketSession.currentTime}`,
+      },
+      fundFlow: compactFundFlowData(),
+      marketIndices: compactMarketIndicesData().slice(0, 2),
+      advanceDecline,
+      sectorRank: compactSectorRankData(sectorRank, 2),
+      conceptRank: compactSectorRankData(conceptRank, 2),
+      stockNews: compactNews(stockNews, 2),
+      macroNews: compactNews(macroNews, 2),
+      financialNews: compactNews(financialNews, 2),
+      financeReport: compactFinanceReportData()
+        ? {
+            incomeStatement: compactFinanceReportData()?.incomeStatement?.slice(0, 2),
+            balanceSheet: compactFinanceReportData()?.balanceSheet?.slice(0, 1),
+          }
+        : null,
+      searchEvidence: compactSearchEvidenceData(2),
+      recentKline: compactKline(),
+      trace: trace
+        .filter((item) => item.kind === 'tool')
+        .slice(-6)
+        .map((item) => ({
+          tool: item.tool || item.title,
+          summary: item.resultSummary,
+        })),
     }
   }
 
@@ -1343,56 +1075,11 @@ export async function runDiagnosisAgent(options: {
     }
   }
 
-  async function executeFallbackStep(step: AgentPlanStep) {
-    throwIfAborted(options.abortSignal)
-    const startedAt = Date.now()
-    const runningStep: DiagnosisAgentStep = {
-      id: `${step.tool}_${startedAt}`,
-      kind: 'tool',
-      title: step.reason,
-      status: 'running',
-      tool: step.tool,
-      strategy: 'Fallback Tool Call',
-      query: step.query || describeToolFocus(step.tool, selectedStrategy),
-      inputSummary: buildToolInputSummary(step, stockInfo, selectedStrategy, period, adjust),
-      toolInputText: stringifyToolPayload(buildToolRequestPayload(step), '{}'),
-      resultSummary: '执行中...',
-      toolOutputText: '',
-      startedAt,
-      finishedAt: startedAt,
-      durationMs: 0,
-    }
-    emitProgress(runningStep)
-    try {
-      const result = await withAbort(runDiagnosisTool(step), options.abortSignal)
-      const doneStep: DiagnosisAgentStep = {
-        ...runningStep,
-        status: 'done',
-        finishedAt: Date.now(),
-        durationMs: Date.now() - startedAt,
-        resultSummary: result.summary || '工具执行完成',
-        toolOutputText: stringifyToolPayload(result.observation, result.summary || '工具执行完成'),
-      }
-      trace.push(doneStep)
-      emitProgress(doneStep)
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw error
-      }
-      const errorStep: DiagnosisAgentStep = {
-        ...runningStep,
-        status: 'error',
-        finishedAt: Date.now(),
-        durationMs: Date.now() - startedAt,
-        resultSummary: humanizeAgentError(error instanceof Error ? error.message : String(error)),
-        toolOutputText: error instanceof Error ? error.message : String(error),
-      }
-      trace.push(errorStep)
-      emitProgress(errorStep)
-    }
-  }
-
   throwIfAborted(options.abortSignal)
+
+  if (!options.provider) {
+    throw new Error('当前未配置 AI 模型，无法执行智能诊股。')
+  }
 
   if (normalizedCode) {
     await ensureQuoteLoaded(normalizedCode)
@@ -1417,8 +1104,6 @@ export async function runDiagnosisAgent(options: {
     }
   }
 
-  const dailyEvalPrompt = getPromptTemplateText('daily_eval')
-  const newsAnalysisPrompt = getPromptTemplateText('news_analysis')
   const reactTools: ReActTool[] = [
     {
       name: 'search_stock',
@@ -1497,109 +1182,210 @@ export async function runDiagnosisAgent(options: {
     },
   ]
 
-  let usedReActLoop = false
+  let agentDiagnosis: AiDiagnosis | null = null
 
-  if (options.provider) {
-    try {
-      const reactResult = await withAbort(withTimeout(runReActLoop({
-        provider: options.provider,
-        context: undefined,
-        tools: reactTools,
-        maxTurns: maxSteps,
-        abortSignal: options.abortSignal,
-        planInputSummary: selectedStrategy ? `本次按「${selectedStrategy.name}」评估。` : '本次按默认综合框架评估。',
-        planQuery: fallbackSteps.map((item) => describeToolFocus(item.tool, selectedStrategy)).join(' / '),
-        onProgress: (step) => emitProgress(step),
-        systemPrompt: `你是股票研究统一智能体。你的职责是围绕“先补齐证据，再形成结论”来决定下一步工具调用。${diagnosisTimingPrompt}
+  try {
+    const reactResult = await withAbort(withTimeout(runReActLoop<void, AiDiagnosis>({
+      provider: options.provider,
+      context: undefined,
+      tools: reactTools,
+      maxTurns: maxSteps,
+      abortSignal: options.abortSignal,
+      requireFinalAnswer: true,
+      finalAnswerSchema: {
+        recommendation: '买入/卖出/观望',
+        prediction: '看多/看空/震荡',
+        confidence: '0-100',
+        riskLevel: '低/中/高',
+        summary: '必须先回答用户最关心的问题，并严格匹配当前市场时段',
+        klineAnalysis: {
+          currentPhase: 'string',
+          trendDirection: 'up/down/sideways',
+          shortTermForecast: '未来1-5日预判',
+          mediumTermForecast: '未来1-4周预判',
+          keySupportLevels: ['number'],
+          keyResistanceLevels: ['number'],
+          volumeSignal: 'string',
+          maAlignment: 'string',
+        },
+        supportPrice: 0,
+        resistancePrice: 0,
+        buyLower: 0,
+        buyUpper: 0,
+        sellLower: 0,
+        sellUpper: 0,
+        positionAdvice: 'string',
+        positionSize: 'string',
+        entryAdvice: 'string',
+        exitAdvice: 'string',
+        stopLossPrice: 0,
+        takeProfitPrice: 0,
+        suggestedShares: 0,
+        catalysts: ['string'],
+        risks: ['string'],
+        socialSignals: ['string'],
+        policyImpact: 'string',
+        internationalFactors: 'string',
+        strategyFocus: ['string'],
+        evidence: [{ title: 'string', summary: 'string', source: 'string', tone: 'positive|negative|neutral' }],
+        scenarios: [
+          { label: '1日情景', expectedPrice: 0, probabilityHint: 'string' },
+          { label: '5日情景', expectedPrice: 0, probabilityHint: 'string' },
+          { label: '20日情景', expectedPrice: 0, probabilityHint: 'string' },
+        ],
+      },
+      planInputSummary: selectedStrategy ? `本次按「${selectedStrategy.name}」评估。` : '本次按默认综合框架评估。',
+      planQuery: toolCatalog.map((item) => `${item.tool}:${item.description}`).join(' / '),
+      onProgress: (step) => emitProgress(step),
+      systemPrompt: `你是股票研究统一智能体。你的职责是围绕“先补齐证据，再形成结论”来决定下一步工具调用。${diagnosisTimingPrompt}
 你只能使用内置工具，不能虚构行情、新闻、财报或资金数据。
 如果用户给了具体关注点，你要优先拉取能回答该关注点的证据。
 能用股票名称、代码或问题关键词直接查询的工具可以先执行；只有实时行情、K线、资金流、财报这类必须依赖股票代码的工具，才需要先进一步确定代码。
-在 finish 之前，至少要保证已经拿到实时行情和 K 线；如果问题明显依赖消息面、财报、资金面或市场环境，也要优先补齐对应工具。`,
-        userPrompt: JSON.stringify({
-          task: '针对用户问题进行股票研究，决定本轮要调用哪些工具以及何时停止。',
-          goal: '最终需要产出看多/看空/震荡判断、买卖区间、止损止盈、仓位建议，以及对用户关注点的明确回答。',
-          questionContext: {
-            originalQuestion: options.question || '',
-            matchedKeyword: options.matchedKeyword || '',
-            resolvedStockName: options.resolvedName || stockInfo.name,
-            focus: questionFocus || '默认围绕价格、资金、消息、板块、财报和风险收益比展开',
-            candidates: options.matchCandidates?.slice(0, 5) || [],
-          },
-          stock: stockInfo.code
-            ? {
-                code: stockInfo.code,
-                name: stockInfo.name,
-                board: profile.board,
-                price: stockInfo.price,
-                changePercent: stockInfo.changePercent,
-              }
-            : null,
-          selectedStrategy: selectedStrategyContext,
-          marketSession,
-          availableSearchProviders: availableSearchProviders.map((item) => ({
-            id: item.id,
-            name: item.name,
-            provider: item.provider,
-          })),
-          promptTemplate: dailyEvalPrompt || undefined,
-          tools: toolCatalog,
-          conversationHistory: (options.conversationHistory || []).slice(-10),
-        }, null, 2),
-      }), planningTimeoutMs, '统一智能体规划'), options.abortSignal)
-      trace.push(...reactResult.trace)
-      usedReActLoop = true
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw error
-      }
-      const planStep = createStep({
-        kind: 'plan',
-        title: '统一智能体规划',
-        status: 'error',
-        strategy: 'ReAct Planner',
-        inputSummary: selectedStrategy ? `本次按「${selectedStrategy.name}」评估。` : '本次按默认综合框架评估。',
-        resultSummary: humanizeAgentError(error instanceof Error ? error.message : String(error)),
-        query: fallbackSteps.map((item) => describeToolFocus(item.tool, selectedStrategy)).join(' / '),
-      })
-      trace.push(planStep)
-      emitProgress(planStep)
+在 finish 之前，至少要保证已经拿到实时行情和 K 线；如果问题明显依赖消息面、财报、资金面或市场环境，也要优先补齐对应工具。
+对于“现在怎么看、短线空间、能不能买/卖”这类单票问诊，如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就必须优先 finish，不要再为了补充可有可无的板块工具而拖延。
+最终结论必须直接、明确，不能输出模糊空话。`,
+      userPrompt: JSON.stringify({
+        task: '针对用户问题进行股票研究并直接输出最终诊断 JSON。',
+        goal: '最终需要产出看多/看空/震荡判断、买卖区间、止损止盈、仓位建议，以及对用户关注点的明确回答。',
+        questionContext: {
+          originalQuestion: options.question || '',
+          matchedKeyword: options.matchedKeyword || '',
+          resolvedStockName: options.resolvedName || stockInfo.name,
+          focus: questionFocus || '默认围绕价格、资金、消息、板块、财报和风险收益比展开',
+          candidates: options.matchCandidates?.slice(0, 5) || [],
+        },
+        stock: stockInfo.code
+          ? {
+              code: stockInfo.code,
+              name: stockInfo.name,
+              board: profile.board,
+              price: stockInfo.price,
+              changePercent: stockInfo.changePercent,
+            }
+          : null,
+        selectedStrategy: selectedStrategyContext,
+        marketSession,
+        availableSearchProviders: availableSearchProviders.map((item) => ({
+          id: item.id,
+          name: item.name,
+          provider: item.provider,
+        })),
+        tools: toolCatalog,
+        conversationHistory: (options.conversationHistory || []).slice(-10),
+      }, null, 2),
+      nextStepPrompt: '请判断当前已有数据是否足以完整回答用户问题；如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就应直接 finish 并返回最终诊断 JSON；只有确实存在关键缺口时才继续只选择一个最必要的工具。注意同一个失败超过3次的工具不能再调用。',
+      toolMaxTokens: 1100,
+      toolTimeoutMs: 210000,
+    }), planningTimeoutMs, '统一智能体规划'), options.abortSignal)
+    trace.push(...reactResult.trace)
+    agentDiagnosis = reactResult.finalAnswer || null
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw error
     }
-  } else {
-    const planStep = createStep({
-      kind: 'plan',
-      title: '统一智能体规划',
-      status: 'skipped',
-      strategy: 'Fallback Planner',
-      inputSummary: selectedStrategy ? `本次按「${selectedStrategy.name}」评估。` : '本次按默认综合框架评估。',
-      resultSummary: '未配置模型，已切换到本地固定研究序列。',
-      query: fallbackSteps.map((item) => describeToolFocus(item.tool, selectedStrategy)).join(' / '),
+    if (isAuthError(error)) {
+      throw new Error(
+        `AI 模型认证失败，请检查 API Key 是否有效。${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+    }
+    const timeoutMessage = error instanceof Error ? error.message : String(error)
+    const canFallbackToSynthesis = Boolean(stockInfo.code && klineData.length)
+    if (!/超时/i.test(timeoutMessage) || !canFallbackToSynthesis) {
+      throw error
+    }
+    const timeoutStep = createStep({
+      kind: 'synthesis',
+      title: 'ReAct 超时保护',
+      status: 'error',
+      strategy: 'ReAct Timeout Guard',
+      inputSummary: '关键证据已到位，转入 AI 最终总结',
+      resultSummary: timeoutMessage,
+      query: options.question || stockInfo.name || stockInfo.code,
+      toolOutputText: timeoutMessage,
     })
-    trace.push(planStep)
-    emitProgress(planStep)
+    trace.push(timeoutStep)
+    emitProgress(timeoutStep)
   }
 
-  if (!usedReActLoop) {
-    for (const step of fallbackSteps.slice(0, maxSteps)) {
-      throwIfAborted(options.abortSignal)
-      await executeFallbackStep(step)
-    }
-  }
-
-  throwIfAborted(options.abortSignal)
-  if (!stockInfo.code && normalizedCode) {
-    await executeFallbackStep({ tool: 'load_quote', reason: '补齐实时行情数据。' } as AgentPlanStep)
-  }
-  if (stockInfo.code && !klineData.length) {
-    await executeFallbackStep({ tool: 'load_kline', reason: '补齐 K 线走势数据。' } as AgentPlanStep)
-  }
-  if (stockInfo.code && !stockNews.length) {
-    await executeFallbackStep({ tool: 'load_stock_news', reason: '补齐个股消息证据。' } as AgentPlanStep)
-  }
-  if (stockInfo.code && !macroNews.length) {
-    await executeFallbackStep({ tool: 'load_macro_news', reason: '补齐外部政策与行业消息。' } as AgentPlanStep)
+  if (!stockInfo.code || !klineData.length) {
+    throw new Error('智能体在结论完成前未补齐实时行情或 K 线数据')
   }
 
   const technical = buildTechnicalSnapshot(klineData)
+  if (!agentDiagnosis) {
+    const synthesisRunning = createStep({
+      kind: 'synthesis',
+      title: '最终结论生成',
+      status: 'running',
+      strategy: 'AI Final Synthesis',
+      inputSummary: '基于已收集证据生成最终诊股 JSON',
+      resultSummary: '正在汇总行情、K线、资金、消息和财报证据...',
+      query: options.question || stockInfo.name || stockInfo.code,
+    })
+    trace.push(synthesisRunning)
+    emitProgress(synthesisRunning)
+
+    const { chat } = useAiChat()
+    try {
+      const synthesisPayload = buildSynthesisPayload()
+      const synthesisRaw = await withAbort(chat(
+        options.provider,
+        [
+          {
+            role: 'system',
+            content: `你是股票研究总结智能体。你只能基于用户提供的结构化证据输出最终诊股 JSON，不能虚构任何数据。${diagnosisTimingPrompt}
+最终必须输出一个合法 JSON 对象，字段包括：
+recommendation, prediction, confidence, riskLevel, summary, klineAnalysis, supportPrice, resistancePrice, buyLower, buyUpper, sellLower, sellUpper, positionAdvice, positionSize, entryAdvice, exitAdvice, stopLossPrice, takeProfitPrice, suggestedShares, catalysts, risks, socialSignals, policyImpact, internationalFactors, strategyFocus, evidence, scenarios。
+要求：
+1. 所有价位必须与实时价格、支撑压力或已提供证据一致。
+2. 结论必须直接回答用户问题，不要空话。
+3. 信息不足时直接在对应字段说明证据不足，不要臆测。
+4. 保持简洁，summary 不超过 120 字，evidence 和 scenarios 各不超过 3 条。
+不要输出 Markdown，不要解释。`,
+          },
+          {
+            role: 'user',
+            content: JSON.stringify(synthesisPayload),
+          },
+        ],
+        {
+          temperature: 0.15,
+          maxTokens: Math.min(Math.max(options.provider.maxTokens || 1100, 900), 1400),
+          signal: options.abortSignal,
+          timeoutMs: 210000,
+        },
+      ), options.abortSignal)
+      agentDiagnosis = parseJsonBlock<AiDiagnosis>(synthesisRaw)
+      const synthesisDone: DiagnosisAgentStep = {
+        ...synthesisRunning,
+        status: 'done',
+        finishedAt: Date.now(),
+        durationMs: Date.now() - synthesisRunning.startedAt,
+        resultSummary: '已基于完整证据生成最终结论。',
+      }
+      trace.push(synthesisDone)
+      emitProgress(synthesisDone)
+    } catch (error) {
+      const synthesisError: DiagnosisAgentStep = {
+        ...synthesisRunning,
+        status: 'error',
+        finishedAt: Date.now(),
+        durationMs: Date.now() - synthesisRunning.startedAt,
+        resultSummary: error instanceof Error ? error.message : String(error),
+        toolOutputText: error instanceof Error ? error.message : String(error),
+      }
+      trace.push(synthesisError)
+      emitProgress(synthesisError)
+      throw error
+    }
+  }
+
+  if (!agentDiagnosis) {
+    throw new Error('智能体未返回最终诊股结果')
+  }
+
   const marketBreadthEvidence: DiagnosisEvidence[] = []
   if (advanceDecline) {
     const breadth = advanceDecline as MarketBreadthSnapshot
@@ -1666,246 +1452,16 @@ export async function runDiagnosisAgent(options: {
       : []),
   ]
 
-  const derivedNarratives = {
-    catalysts: buildCatalystHints(stockInfo, stockNews, macroNews, searchEvidence, sectorRank, conceptRank, fundFlow, technical),
-    risks: buildRiskHints(stockInfo, macroNews, searchEvidence, marketIndices, fundFlow, technical),
-    impacts: buildImpactHints(macroNews, searchEvidence, marketIndices, sectorRank),
+  const diagnosis = sanitizeDiagnosis({
+    ...agentDiagnosis,
+    evidence: agentDiagnosis.evidence?.length ? agentDiagnosis.evidence : evidence,
+    toolCalls: trace,
+    generatedAt: Date.now(),
+  }, trace, evidence)
+  const llmSummary = {
+    used: true,
+    notice: `本轮已调用 ${options.provider.name} 完成研究与结论生成。`,
   }
-
-  let diagnosis = buildFallbackDiagnosis(stockInfo, technical, trace, evidence, derivedNarratives, marketSession, selectedStrategy)
-
-  if (options.provider) {
-    try {
-      throwIfAborted(options.abortSignal)
-      const synthesisStarted = Date.now()
-      const synthesisId = `synthesis_${synthesisStarted}`
-      emitProgress({
-        id: synthesisId,
-        kind: 'synthesis',
-        title: '结论汇总',
-        status: 'running',
-        strategy: 'LLM Synthesis',
-        inputSummary: selectedStrategy ? `按「${selectedStrategy.name}」综合结论。` : '按默认综合框架综合结论。',
-        resultSummary: '正在汇总买卖区间、风险和催化...',
-        query: '价格结构、资金变化、消息催化、行业板块与风险收益比',
-        startedAt: synthesisStarted,
-        finishedAt: synthesisStarted,
-        durationMs: 0,
-      })
-      const synthesisMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-        {
-          role: 'system' as const,
-          content: `你是审慎但结论明确的股票投研 Agent。你的证据只能来自输入里的内置股票模块结果与可选外部搜索结果。${diagnosisTimingPrompt} 你必须：1）先回答用户问题里最关心的点；2）方向判断只能输出"看多 / 看空 / 震荡"三选一，推荐动作只能输出"买入 / 卖出 / 观望"三选一；3）基于 K 线历史走势（近10根K线的开盘收盘高低、均线排列、量能变化）详细分析当前处于上涨/下跌/震荡的哪个阶段，预测未来1-5日和1-4周的K线走势方向，明确给出预计持续时间，并用具体价格区间标注支撑和压力；4）如果有财报数据（financeReport），要分析营收增速趋势、净利润变化、现金流健康度（经营现金流是否为正且持续）、负债率是否合理等基本面因素，将基本面与技术面结合判断；5）再给买卖区间、止损止盈和仓位建议，操作建议必须明确、直接，不要模棱两可；6）尽可能多引用外部证据：社会舆情、政策变化、国际事件、行业动态等对股价的影响判断；7）严格服从当前市场时段，禁止在盘中结论里提前把第一执行动作写成明天开盘，禁止在盘后/休市结论里把第一执行动作写成当前盘中。若不满足时段要求，整份输出视为无效。禁止承诺收益率或保证胜率。${dailyEvalPrompt ? `\n\n以下是当前启用的每日评估模板，可作为额外框架参考：\n${dailyEvalPrompt}` : ''}${newsAnalysisPrompt ? `\n\n以下是当前启用的新闻分析模板，可作为消息面提取框架参考：\n${newsAnalysisPrompt}` : ''}\n请严格输出 JSON。`,
-        },
-      ]
-
-      const history = (options.conversationHistory || []).slice(-8)
-      for (const entry of history) {
-        synthesisMessages.push({
-          role: entry.role === 'user' ? 'user' : 'assistant',
-          content: entry.role === 'user'
-            ? `用户之前的提问：${entry.content}`
-            : `之前的分析摘要：${entry.content.slice(0, 600)}`,
-        })
-      }
-
-      synthesisMessages.push({
-          role: 'user',
-          content: JSON.stringify({
-            questionContext: {
-              originalQuestion: options.question || '',
-              matchedKeyword: options.matchedKeyword || '',
-              resolvedStockName: options.resolvedName || stockInfo.name,
-              focus: questionFocus || '价格、资金、消息、板块、风险收益比',
-              candidates: options.matchCandidates?.slice(0, 5) || [],
-            },
-            stock: {
-              code: stockInfo.code,
-              name: stockInfo.name,
-              price: stockInfo.price,
-              changePercent: stockInfo.changePercent,
-              board: profile.board,
-              limitUp: limitPrices.limitUp,
-              limitDown: limitPrices.limitDown,
-            },
-            selectedStrategy: selectedStrategyContext,
-            marketSession,
-            timingRules: buildSessionPromptRules(marketSession),
-            toolCatalog,
-            finance,
-            technical,
-            klineSummary: klineData.length ? {
-              totalCandles: klineData.length,
-              recent: klineData.slice(-10).map((k) => ({
-                date: k.timestamp ? new Date(k.timestamp).toISOString().slice(0, 10) : '',
-                open: k.open, high: k.high, low: k.low, close: k.close, volume: k.volume,
-              })),
-              ma5: klineData.slice(-5).reduce((s, k) => s + k.close, 0) / Math.min(5, klineData.length),
-              ma10: klineData.slice(-10).reduce((s, k) => s + k.close, 0) / Math.min(10, klineData.length),
-              ma20: klineData.slice(-20).reduce((s, k) => s + k.close, 0) / Math.min(20, klineData.length),
-            } : null,
-            marketIndices,
-            marketBreadth: advanceDecline,
-            orderBook: {
-              bids: stockInfo.bids,
-              asks: stockInfo.asks,
-            },
-            fundFlow,
-            topSectors: sectorRank.slice(0, 8),
-            topConcepts: conceptRank.slice(0, 8),
-            stockNews: stockNews.slice(0, 20),
-            macroNews: macroNews.slice(0, 20),
-            financialNews: financialNews.slice(0, 20),
-            financeReport: financeReport ? {
-              incomeStatement: financeReport.incomeStatement?.slice(0, 4).map((r: any) => ({
-                reportDate: r.reportDate,
-                totalRevenue: r.totalRevenue,
-                operatingRevenue: r.operatingRevenue,
-                totalCost: r.totalCost,
-                netProfit: r.netProfit,
-                netProfitAttributable: r.netProfitAttributable,
-                eps: r.eps,
-                sellingExpense: r.sellingExpense,
-                adminExpense: r.adminExpense,
-                financeExpense: r.financeExpense,
-                rdExpense: r.rdExpense,
-              })),
-              balanceSheet: financeReport.balanceSheet?.slice(0, 4).map((r: any) => ({
-                reportDate: r.reportDate,
-                totalAssets: r.totalAssets,
-                totalLiabilities: r.totalLiabilities,
-                totalEquity: r.totalEquity,
-                currentAssets: r.currentAssets,
-                currentLiabilities: r.currentLiabilities,
-                cash: r.cash,
-                accountsReceivable: r.accountsReceivable,
-                inventory: r.inventory,
-              })),
-              cashflowStatement: financeReport.cashflowStatement?.slice(0, 4).map((r: any) => ({
-                reportDate: r.reportDate,
-                operatingCashFlow: r.operatingCashFlow,
-                investingCashFlow: r.investingCashFlow,
-                financingCashFlow: r.financingCashFlow,
-                capex: r.capex,
-              })),
-            } : null,
-            externalSearch: searchEvidence,
-            searchProviders: availableSearchProviders.map((item) => ({
-              id: item.id,
-              name: item.name,
-              provider: item.provider,
-            })),
-            trace: trace.map((item) => ({
-              tool: item.tool,
-              status: item.status,
-              input: item.inputSummary,
-              summary: item.resultSummary,
-            })),
-            schema: {
-              recommendation: 'string（只能是 买入/卖出/观望 三选一）',
-              prediction: 'string（看多/看空/震荡）',
-              confidence: '0-100',
-              riskLevel: '低/中/高',
-              summary: 'string（必须包含：①K线走势阶段判断（当前处于上涨/下跌/震荡的哪个阶段及依据）②未来1-5日走势预测（方向+具体持续天数）③未来1-4周趋势判断 ④消息面影响评估 ⑤资金面判断，并且第一句必须严格匹配当前市场时段）',
-              klineAnalysis: {
-                currentPhase: 'string（如"上升中继"、"顶部震荡"、"下跌加速"、"底部企稳"等）',
-                trendDirection: 'string（up/down/sideways）',
-                shortTermForecast: 'string（未来1-5日走势预判，含预计持续天数，如"预计继续回调2-3个交易日"）',
-                mediumTermForecast: 'string（未来1-4周趋势预判，含预计持续时间，如"预计震荡上行1-2周后选择方向"）',
-                keySupportLevels: ['number（关键支撑价位）'],
-                keyResistanceLevels: ['number（关键压力价位）'],
-                volumeSignal: 'string（放量/缩量/量价背离等判断）',
-                maAlignment: 'string（均线排列：多头/空头/粘合）',
-              },
-              supportPrice: 'number',
-              resistancePrice: 'number',
-              buyLower: 'number',
-              buyUpper: 'number',
-              sellLower: 'number',
-              sellUpper: 'number',
-              positionAdvice: 'string（第一句必须严格匹配当前市场时段）',
-              positionSize: 'string',
-              entryAdvice: 'string（含具体入场时机和条件；第一句必须严格匹配当前市场时段）',
-              exitAdvice: 'string（含具体出场时机和条件；盘前/盘中/盘后/休市分别给出对应时段的退出预案）',
-              stopLossPrice: 'number',
-              takeProfitPrice: 'number',
-              suggestedShares: 'number',
-              catalysts: ['string'],
-              risks: ['string'],
-              socialSignals: ['string（社会舆情、政策面、国际事件对股价的影响）'],
-              policyImpact: 'string（当前政策环境对该股/行业的利好利空判断）',
-              internationalFactors: 'string（国际事件、贸易、地缘政治对该股的影响）',
-              strategyFocus: ['string'],
-              evidence: [{ title: 'string', summary: 'string', source: 'string', tone: 'positive|negative|neutral' }],
-              scenarios: [
-                { label: '1日情景', expectedPrice: 0, probabilityHint: 'string' },
-                { label: '5日情景', expectedPrice: 0, probabilityHint: 'string' },
-                { label: '20日情景', expectedPrice: 0, probabilityHint: 'string' },
-              ],
-            },
-          }),
-        },
-      )
-
-      const streamCallbacks: StreamCallbacks = {
-        onDelta: (delta, accumulated) => {
-          options.onStreamDelta?.(accumulated)
-        },
-      }
-
-      const raw = await withAbort(withTimeout(chatStream(
-        options.provider,
-        synthesisMessages,
-        streamCallbacks,
-        { temperature: 0.2, maxTokens: 2200, signal: options.abortSignal },
-      ), synthesisTimeoutMs, '结论汇总'), options.abortSignal)
-
-      const parsed = parseJsonBlock<AiDiagnosis>(raw)
-      diagnosis = sanitizeDiagnosis({
-        ...diagnosis,
-        ...parsed,
-        strategyFocus: parsed.strategyFocus?.length ? parsed.strategyFocus : buildStrategyFocus(selectedStrategy, technical, evidence),
-        evidence: parsed.evidence?.length ? parsed.evidence : diagnosis.evidence,
-        toolCalls: trace,
-        generatedAt: Date.now(),
-        rawText: raw,
-      }, stockInfo, technical, trace, evidence, derivedNarratives)
-      const synthesisStep: DiagnosisAgentStep = {
-        id: synthesisId,
-        kind: 'synthesis',
-        title: '结论汇总',
-        status: 'done',
-        strategy: 'LLM Synthesis',
-        inputSummary: selectedStrategy ? `按「${selectedStrategy.name}」把价格、消息、资金和板块证据综合成结论。` : '按默认综合框架汇总结论。',
-        resultSummary: `${diagnosis.recommendation} / ${diagnosis.prediction} / 置信 ${diagnosis.confidence}%`,
-        query: '价格结构、资金变化、消息催化、行业板块与风险收益比',
-        startedAt: synthesisStarted,
-        finishedAt: Date.now(),
-        durationMs: Date.now() - synthesisStarted,
-      }
-      trace.push(synthesisStep)
-      emitProgress(synthesisStep)
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw error
-      }
-      const synthesisStep = createStep({
-        kind: 'synthesis',
-        title: '结论汇总',
-        status: 'error',
-        strategy: 'Fallback Synthesis',
-        inputSummary: selectedStrategy ? `按「${selectedStrategy.name}」汇总结论。` : '按默认综合框架汇总结论。',
-        resultSummary: humanizeAgentError(error instanceof Error ? error.message : String(error)),
-        query: '价格结构、资金变化、消息催化、行业板块与风险收益比',
-      })
-      trace.push(synthesisStep)
-      emitProgress(synthesisStep)
-      diagnosis.toolCalls = trace
-    }
-  }
-
-  diagnosis = sanitizeDiagnosis(diagnosis, stockInfo, technical, trace, evidence, derivedNarratives)
-  const llmSummary = summarizeLlmStatus(trace, options.provider)
 
   return {
     stockInfo,

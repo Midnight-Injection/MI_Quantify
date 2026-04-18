@@ -29,7 +29,7 @@
       </div>
 
       <div class="hero-actions">
-        <button class="btn-ghost" @click="addToWatchlist">{{ isWatched ? '已在关注中' : '加入关注' }}</button>
+        <button class="btn-ghost" @click="toggleWatchlist">{{ isWatched ? '取消关注' : '加入关注' }}</button>
         <button v-if="!stockDiagnosisAutoEnabled && !diagnosisLoading" class="btn-primary ai-trigger-btn" @click="requestDiagnosis(true)">
           AI评估
         </button>

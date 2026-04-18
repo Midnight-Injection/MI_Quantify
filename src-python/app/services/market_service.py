@@ -2,8 +2,11 @@ import re
 import json
 import time
 import threading
+import subprocess
+import os
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from app.services.network_env import clear_proxy_env, create_http_session
+from app.services.network_env import clear_proxy_env, create_http_session, get_original_proxy_env
 
 clear_proxy_env()
 from typing import Optional
@@ -14,13 +17,101 @@ _ad_cache = {
 }
 _ad_lock = threading.Lock()
 _ad_refresh_interval = 30
+_A_SHARE_SNAPSHOT_TTL = 45
+_a_share_snapshot_cache = {"data": [], "updated": 0.0, "breadth": None}
+_a_share_snapshot_lock = threading.Lock()
+_a_share_snapshot_refresh_lock = threading.Lock()
+_a_share_code_cache = {"codes": [], "updated": 0.0, "trade_day": ""}
+_a_share_code_lock = threading.Lock()
 _hk_share_cache: dict[str, dict] = {}
 _hk_share_lock = threading.Lock()
 _HK_SHARE_CACHE_TTL = 6 * 60 * 60
+_EASTMONEY_A_LIST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
+_EASTMONEY_A_LIST_FS = "m:0+t:6+f:!2,m:0+t:13+f:!2,m:0+t:80+f:!2,m:1+t:2+f:!2,m:1+t:23+f:!2,m:0+t:7+f:!2,m:1+t:3+f:!2"
+_EASTMONEY_A_LIST_FIELDS = "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17,f18,f8,f9,f23,f20,f21"
+_EASTMONEY_UT = "b2884a393a59ad64002292a3e90d46a5"
 
 
 def _http_get(url: str, **kwargs):
     return create_http_session(target_url=url).get(url, **kwargs)
+
+
+def _curl_text(url: str, timeout: int = 15) -> str:
+    env = os.environ.copy()
+    env.update(get_original_proxy_env())
+    env.pop("NO_PROXY", None)
+    env.pop("no_proxy", None)
+    result = subprocess.run(
+        ["curl", "-fsSL", "--max-time", str(timeout), url],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    )
+    return result.stdout
+
+
+def _make_eastmoney_session(url: str):
+    session = create_http_session(
+        referer="https://data.eastmoney.com/",
+        target_url=url,
+    )
+    session.headers.update(
+        {
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Connection": "close",
+            "Origin": "https://data.eastmoney.com",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+    )
+    return session
+
+
+def _request_eastmoney_a_page(page: int, page_size: int) -> tuple[int, list[dict]]:
+    params = {
+        "fid": "f3",
+        "po": "1",
+        "pn": str(max(1, page)),
+        "pz": str(max(1, min(page_size, 500))),
+        "np": "1",
+        "fltt": "2",
+        "invt": "2",
+        "ut": _EASTMONEY_UT,
+        "fs": _EASTMONEY_A_LIST_FS,
+        "fields": _EASTMONEY_A_LIST_FIELDS,
+    }
+    session = _make_eastmoney_session(_EASTMONEY_A_LIST_URL)
+    try:
+        response = session.get(_EASTMONEY_A_LIST_URL, params=params, timeout=15)
+        response.raise_for_status()
+        payload = response.json()
+        data = payload.get("data") or {}
+        total = int(data.get("total") or 0)
+        diff = data.get("diff") or []
+        return total, diff if isinstance(diff, list) else []
+    finally:
+        session.close()
+
+
+def _map_eastmoney_stock_item(item: dict) -> dict:
+    return {
+        "code": str(item.get("f12", "") or ""),
+        "name": str(item.get("f14", "") or ""),
+        "price": _safe_float(item.get("f2")),
+        "change": _safe_float(item.get("f4")),
+        "changePercent": _safe_float(item.get("f3")),
+        "open": _safe_float(item.get("f17")),
+        "high": _safe_float(item.get("f15")),
+        "low": _safe_float(item.get("f16")),
+        "preClose": _safe_float(item.get("f18")),
+        "volume": _safe_float(item.get("f5")),
+        "amount": _safe_float(item.get("f6")),
+        "turnover": _safe_float(item.get("f8")),
+        "pe": _safe_float(item.get("f9")),
+        "pb": _safe_float(item.get("f23")),
+        "totalMv": _safe_float(item.get("f20")),
+        "circMv": _safe_float(item.get("f21")),
+    }
 
 
 def _bg_refresh_advance_decline():
@@ -284,73 +375,195 @@ def _get_us_indices() -> list[dict]:
 # ─── Advance/Decline Stats ───
 
 
+def _get_recent_trade_day() -> str:
+    today = datetime.now().date()
+    for offset in range(0, 14):
+        current = today - timedelta(days=offset)
+        if current.weekday() >= 5:
+            continue
+        return current.isoformat()
+    return today.isoformat()
+
+
+def _load_a_share_codes() -> list[str]:
+    trade_day = _get_recent_trade_day()
+    with _a_share_code_lock:
+        cached_codes = list(_a_share_code_cache["codes"])
+        cached_day = str(_a_share_code_cache.get("trade_day", "") or "")
+        updated_at = float(_a_share_code_cache.get("updated", 0.0) or 0.0)
+        if cached_codes and cached_day == trade_day and time.time() - updated_at < 12 * 60 * 60:
+            return cached_codes
+
+        import baostock as bs
+
+        login = bs.login()
+        if str(login.error_code) != "0":
+            if cached_codes:
+                return cached_codes
+            raise RuntimeError(f"baostock login failed: {login.error_msg}")
+
+        codes: list[str] = []
+        try:
+            query = bs.query_all_stock(day=trade_day)
+            if str(query.error_code) != "0":
+                if cached_codes:
+                    return cached_codes
+                raise RuntimeError(f"baostock query_all_stock failed: {query.error_msg}")
+            while query.next():
+                row = query.get_row_data()
+                if not row:
+                    continue
+                raw_code = str(row[0] or "").strip().lower()
+                if raw_code.startswith("sh.6"):
+                    codes.append(raw_code.replace(".", ""))
+                elif raw_code.startswith(("sz.0", "sz.3", "bj.4", "bj.8")):
+                    codes.append(raw_code.replace(".", ""))
+        finally:
+            try:
+                bs.logout()
+            except Exception:
+                pass
+
+        if not codes:
+            if cached_codes:
+                return cached_codes
+            raise RuntimeError("baostock returned empty A-share universe")
+
+        _a_share_code_cache["codes"] = list(codes)
+        _a_share_code_cache["updated"] = time.time()
+        _a_share_code_cache["trade_day"] = trade_day
+        return codes
+
+
+def _chunk_codes(values: list[str], size: int = 80) -> list[list[str]]:
+    return [values[index:index + size] for index in range(0, len(values), size)]
+
+
+def _parse_tencent_a_line(line: str) -> Optional[dict]:
+    if not line:
+        return None
+    match = re.search(r'v_(s[hz]|bj)(\d{6})="([^"]*)"', line)
+    if not match:
+        return None
+    code = match.group(2)
+    parts = match.group(3).split("~")
+    if len(parts) < 47:
+        return None
+    price = _safe_float(parts[3])
+    pre_close = _safe_float(parts[4])
+    if price <= 0 or pre_close <= 0:
+        return None
+
+    amount = _safe_float(parts[37]) * 10000
+    circ_mv = _safe_float(parts[44]) * 100000000
+    total_mv = _safe_float(parts[45]) * 100000000
+    return {
+        "code": code,
+        "name": str(parts[1] or "").strip(),
+        "price": price,
+        "change": _safe_float(parts[31]),
+        "changePercent": _safe_float(parts[32]),
+        "open": _safe_float(parts[5]),
+        "high": _safe_float(parts[33]),
+        "low": _safe_float(parts[34]),
+        "preClose": pre_close,
+        "volume": _safe_float(parts[36]),
+        "amount": amount,
+        "turnover": _safe_float(parts[38]),
+        "pe": _safe_float(parts[39]),
+        "pb": _safe_float(parts[46]),
+        "totalMv": total_mv,
+        "circMv": circ_mv,
+        "dateTime": parts[30],
+    }
+
+
+def _fetch_tencent_a_quotes(codes: list[str]) -> list[dict]:
+    if not codes:
+        return []
+    url = f"http://qt.gtimg.cn/q={','.join(codes)}"
+    response = create_http_session(referer="http://gu.qq.com", target_url=url).get(url, timeout=20)
+    rows = []
+    for line in response.text.strip().split("\n"):
+        item = _parse_tencent_a_line(line.strip())
+        if item:
+            rows.append(item)
+    return rows
+
+
+def _build_a_share_snapshot() -> list[dict]:
+    now = time.time()
+    with _a_share_snapshot_lock:
+        cached_data = list(_a_share_snapshot_cache["data"])
+        updated_at = float(_a_share_snapshot_cache.get("updated", 0.0) or 0.0)
+    if cached_data and now - updated_at < _A_SHARE_SNAPSHOT_TTL:
+        return cached_data
+
+    with _a_share_snapshot_refresh_lock:
+        with _a_share_snapshot_lock:
+            cached_data = list(_a_share_snapshot_cache["data"])
+            updated_at = float(_a_share_snapshot_cache.get("updated", 0.0) or 0.0)
+        if cached_data and time.time() - updated_at < _A_SHARE_SNAPSHOT_TTL:
+            return cached_data
+
+        codes = _load_a_share_codes()
+        chunks = _chunk_codes(codes, 80)
+        results: list[dict] = []
+
+        with ThreadPoolExecutor(max_workers=min(12, max(1, len(chunks)))) as executor:
+            futures = {executor.submit(_fetch_tencent_a_quotes, chunk): index for index, chunk in enumerate(chunks)}
+            for future in as_completed(futures):
+                results.extend(future.result())
+
+        if not results:
+            raise RuntimeError("腾讯行情未返回 A 股实时快照")
+
+        results.sort(
+            key=lambda item: (
+                item.get("changePercent", 0),
+                item.get("amount", 0),
+                item.get("volume", 0),
+            ),
+            reverse=True,
+        )
+
+        advance = sum(1 for item in results if item.get("changePercent", 0) > 0)
+        decline = sum(1 for item in results if item.get("changePercent", 0) < 0)
+        total = len(results)
+        breadth = {
+            "advance": advance,
+            "decline": decline,
+            "flat": max(0, total - advance - decline),
+            "total": total,
+            "totalAmount": round(sum(_safe_float(item.get("amount", 0)) for item in results), 2),
+        }
+
+        with _a_share_snapshot_lock:
+            _a_share_snapshot_cache["data"] = list(results)
+            _a_share_snapshot_cache["updated"] = time.time()
+            _a_share_snapshot_cache["breadth"] = dict(breadth)
+        return results
+
+
 def get_advance_decline() -> dict:
-    with _ad_lock:
-        return dict(_ad_cache["data"])
+    return _compute_advance_decline()
 
 
 _AD_COMPUTE_TIMEOUT = 60
 
 
 def _compute_advance_decline() -> dict:
-    default = {"advance": 0, "decline": 0, "flat": 0, "total": 0, "totalAmount": 0}
-    deadline = time.time() + _AD_COMPUTE_TIMEOUT
-    try:
-        total_url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCount?node=hs_a&symbol="
-        tr = _http_get(total_url, timeout=10)
-        total = (
-            int(tr.text.strip().strip('"'))
-            if tr.text.strip().strip('"').isdigit()
-            else 0
-        )
-
-        advance = 0
-        decline = 0
-        flat = 0
-        total_amount = 0.0
-        counted = 0
-
-        pages = max(1, (total + 79) // 80)
-        pages = min(pages, 70)
-        for p in range(1, pages + 1):
-            if time.time() > deadline:
-                print(f"[market] advance/decline compute timed out after page {p - 1}")
-                break
-            url = f"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={p}&num=80&sort=changepercent&asc=0&node=hs_a&symbol=&_s_r_a=auto"
-            try:
-                remaining = max(5, int(deadline - time.time()))
-                r = _http_get(url, timeout=min(15, remaining))
-                if r.status_code != 200 or not r.text.strip():
-                    continue
-                stocks = json.loads(r.text)
-                if not isinstance(stocks, list):
-                    continue
-                for s in stocks:
-                    pct = _safe_float(s.get("changepercent", 0))
-                    if pct > 0:
-                        advance += 1
-                    elif pct < 0:
-                        decline += 1
-                    else:
-                        flat += 1
-                    total_amount += _safe_float(s.get("amount", 0))
-                    counted += 1
-            except Exception:
-                continue
-
-        if counted == 0:
-            return default
-
-        return {
-            "advance": advance,
-            "decline": decline,
-            "flat": flat,
-            "total": total or counted,
-            "totalAmount": round(total_amount, 2),
-        }
-    except Exception as e:
-        print(f"[market] error computing advance/decline: {e}")
-        return default
+    snapshot = _build_a_share_snapshot()
+    with _a_share_snapshot_lock:
+        breadth = dict(_a_share_snapshot_cache.get("breadth") or {})
+    if breadth:
+        with _ad_lock:
+            _ad_cache["data"] = dict(breadth)
+            _ad_cache["updated"] = time.time()
+        return breadth
+    if not snapshot:
+        raise RuntimeError("A 股实时快照为空，无法计算涨跌家数")
+    raise RuntimeError("A 股涨跌家数计算失败")
 
 
 # ─── Realtime Stock Quotes ───
@@ -360,6 +573,7 @@ def get_realtime_quotes(codes: list[str]) -> list[dict]:
     if not codes:
         return []
     try:
+        fetched_at = int(time.time() * 1000)
         sina_codes = []
         code_map = {}
         has_hk_codes = False
@@ -383,7 +597,7 @@ def get_realtime_quotes(codes: list[str]) -> list[dict]:
                 continue
             code = code_map.get(sc, sc)
             market = _infer_market_from_code(code)
-            quote = _parse_quote_line(sc, code, parts, market)
+            quote = _parse_quote_line(sc, code, parts, market, fetched_at)
             if quote:
                 result.append(quote)
         if has_hk_codes:
@@ -395,73 +609,23 @@ def get_realtime_quotes(codes: list[str]) -> list[dict]:
 
 
 def get_stock_list(market: str = "a", page: int = 1, page_size: int = 50) -> dict:
-    try:
-        if market == "a":
-            return _get_a_stock_list_sina(page, page_size)
-        elif market == "hk":
-            return _get_hk_stock_list(page, page_size)
-        elif market == "us":
-            return _get_us_stock_list(page, page_size)
-        return {"data": [], "total": 0, "page": page}
-    except Exception as e:
-        print(f"[market] error fetching stock list: {e}")
-        return {"data": [], "total": 0, "page": page}
+    if market == "a":
+        return _get_a_stock_list_sina(page, page_size)
+    if market == "hk":
+        return _get_hk_stock_list(page, page_size)
+    if market == "us":
+        return _get_us_stock_list(page, page_size)
+    raise RuntimeError(f"unsupported market: {market}")
 
 
 def _get_a_stock_list_sina(page: int, page_size: int) -> dict:
-    try:
-        num = page_size
-        url = f"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num={num}&sort=changepercent&asc=0&node=hs_a&symbol=&_s_r_a=auto"
-        r = _http_get(url, timeout=15)
-        if r.status_code != 200 or not r.text.strip():
-            return {"data": [], "total": 0, "page": page}
-        try:
-            stocks = json.loads(r.text)
-        except (json.JSONDecodeError, ValueError):
-            print(f"[market] stock list response not JSON: {r.text[:200]}")
-            return {"data": [], "total": 0, "page": page}
-
-        if not isinstance(stocks, list):
-            return {"data": [], "total": 0, "page": page}
-
-        total_url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCount?node=hs_a&symbol="
-        try:
-            tr = _http_get(total_url, timeout=10)
-            raw = tr.text.strip().strip('"')
-            total = int(raw) if raw.isdigit() else len(stocks)
-        except Exception:
-            total = len(stocks)
-
-        result = []
-        for s in stocks:
-            result.append(
-                {
-                    "code": s.get("code", "")
-                    or s.get("symbol", "")
-                    .replace("sh", "")
-                    .replace("sz", "")
-                    .replace("bj", ""),
-                    "name": s.get("name", ""),
-                    "price": _safe_float(s.get("trade", 0)),
-                    "change": _safe_float(s.get("pricechange", 0)),
-                    "changePercent": _safe_float(s.get("changepercent", 0)),
-                    "open": _safe_float(s.get("open", 0)),
-                    "high": _safe_float(s.get("high", 0)),
-                    "low": _safe_float(s.get("low", 0)),
-                    "preClose": _safe_float(s.get("settlement", 0)),
-                    "volume": _safe_float(s.get("volume", 0)),
-                    "amount": _safe_float(s.get("amount", 0)),
-                    "turnover": _safe_float(s.get("turnoverratio", 0)),
-                    "pe": _safe_float(s.get("per", 0)),
-                    "pb": _safe_float(s.get("pb", 0)),
-                    "totalMv": _safe_float(s.get("mktcap", 0)) * 10000,
-                    "circMv": _safe_float(s.get("nmc", 0)) * 10000,
-                }
-            )
-        return {"data": result, "total": total, "page": page}
-    except Exception as e:
-        print(f"[market] error fetching A stock list: {e}")
-        return {"data": [], "total": 0, "page": page}
+    snapshot = _build_a_share_snapshot()
+    total = len(snapshot)
+    if total == 0:
+        raise RuntimeError("A 股实时股票池为空")
+    start = max(0, page - 1) * page_size
+    end = start + page_size
+    return {"data": snapshot[start:end], "total": total, "page": page}
 
 
 def _get_hk_stock_list(page: int, page_size: int) -> dict:
@@ -579,7 +743,7 @@ def _to_sina_symbol(code: str) -> str:
 
 
 def _parse_quote_line(
-    sina_code: str, code: str, parts: list[str], market: str
+    sina_code: str, code: str, parts: list[str], market: str, fetched_at: int
 ) -> Optional[dict]:
     if market == "hk":
         if len(parts) < 13:
@@ -612,7 +776,7 @@ def _parse_quote_line(
             "volume": volume,
             "amount": amount,
             "turnover": 0,
-            "timestamp": 0,
+            "timestamp": fetched_at,
             "pe": _safe_float(parts[13]) if len(parts) > 13 else 0,
             "pb": 0,
             "totalMv": 0,
@@ -649,7 +813,7 @@ def _parse_quote_line(
             "turnover": round((volume / shares_outstanding) * 100, 2)
             if shares_outstanding
             else 0,
-            "timestamp": 0,
+            "timestamp": fetched_at,
             "pe": _safe_float(parts[14]) if len(parts) > 14 else 0,
             "pb": 0,
             "totalMv": total_mv,
@@ -681,8 +845,8 @@ def _parse_quote_line(
         "preClose": prev_close,
         "volume": volume,
         "amount": amount,
-        "turnover": _safe_float(parts[10]) if len(parts) > 10 else 0,
-        "timestamp": 0,
+        "turnover": 0,
+        "timestamp": fetched_at,
     }
 
 

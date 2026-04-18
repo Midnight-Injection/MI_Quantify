@@ -128,84 +128,6 @@ export default defineComponent({
       return '--'
     }
 
-    function buildLocalFallbackDiagnosis(stockInfo: DiagnosisStockInfo, partial: DiagnosisAgentPartialResult): AiDiagnosis {
-      const technicalSnapshot = buildTechnicalSnapshot(partial.klineData)
-      const support = technicalSnapshot.supportPrice || Number((stockInfo.price * 0.97).toFixed(2))
-      const resistance = technicalSnapshot.resistancePrice || Number((stockInfo.price * 1.04).toFixed(2))
-      const prediction = technicalSnapshot.trend === 'bullish'
-        ? '看多'
-        : technicalSnapshot.trend === 'bearish'
-          ? '看空'
-          : '震荡'
-      const recommendation = prediction === '看多' ? '买入' : prediction === '看空' ? '卖出' : '观望'
-      const session = getMarketSessionContext(realtimeMarket.value)
-      const phaseSummary = session.phase === 'trading'
-        ? '当前处于盘中阶段，结论以当下量价和承接为准。'
-        : session.phase === 'post_market'
-          ? '当前处于盘后阶段，结论以下一交易日执行计划为准。'
-          : '当前处于非连续交易阶段，结论以下一次开盘确认信号为准。'
-      const catalysts = dedupeBullets(partial.stockNews.slice(0, 5).map((item) => `公司消息：${item.title}`), 5)
-      const risks = dedupeBullets([
-        ...partial.macroNews.slice(0, 3).map((item) => `外部扰动：${item.title}`),
-        `风控位：跌破 ${formatPrice(support)} 需要收缩仓位。`,
-      ], 5)
-      const impacts = dedupeBullets([
-        ...partial.macroNews.slice(0, 3).map((item) => `${item.source || '市场消息'}：${item.summary || item.content || item.title}`),
-        `技术位置：当前关注 ${formatPrice(support)} 支撑与 ${formatPrice(resistance)} 压力。`,
-      ], 5)
-      const lotSize = getStockProfile(stockInfo.code).lotSize
-
-      return {
-        recommendation,
-        prediction,
-        confidence: prediction === '震荡' ? 52 : 60,
-        riskLevel: technicalSnapshot.momentum === 'weak' ? '高' : '中',
-        summary: `${phaseSummary}${prediction === '看多' ? `短线先看 ${formatPrice(support)} 上方承接，若放量突破 ${formatPrice(resistance)}，走势仍有延续空间。` : prediction === '看空' ? `短线先看 ${formatPrice(resistance)} 一带反压，若继续失守 ${formatPrice(support)}，节奏仍偏弱。` : `短线更像区间震荡，先看 ${formatPrice(support)} - ${formatPrice(resistance)} 的区间选择。`}`,
-        supportPrice: support,
-        resistancePrice: resistance,
-        buyLower: support,
-        buyUpper: Number((support * 1.01).toFixed(2)),
-        sellLower: Number((resistance * 0.985).toFixed(2)),
-        sellUpper: resistance,
-        positionAdvice: recommendation === '买入' ? '先用轻仓试探，确认承接后再逐步加到中仓。' : '以轻仓观察为主，优先等确认信号后再动作。',
-        positionSize: recommendation === '买入' ? '轻仓到中仓' : '轻仓',
-        entryAdvice: `优先观察 ${formatPrice(support)} 附近承接，只有回踩不破并重新放量时再考虑介入。`,
-        exitAdvice: `若反弹至 ${formatPrice(resistance)} 一带但量能跟不上，分批兑现；若直接跌破 ${formatPrice(support)}，先止损。`,
-        stopLossPrice: Number((support * 0.97).toFixed(2)),
-        takeProfitPrice: resistance,
-        suggestedShares: Math.max(100, lotSize),
-        catalysts,
-        risks,
-        socialSignals: impacts,
-        scenarios: [
-          { label: '1日情景', expectedPrice: stockInfo.price, probabilityHint: '先看最近一个交易日的承接和量能变化。' },
-          { label: '5日情景', expectedPrice: Number(((stockInfo.price + resistance) / 2).toFixed(2)), probabilityHint: '未来 3-5 个交易日关注是否向压力位推进。' },
-          { label: '20日情景', expectedPrice: resistance, probabilityHint: '中短周期关注区间突破后的延续性。' },
-        ],
-        evidence: [
-          {
-            title: `${stockInfo.name} 实时盘口`,
-            summary: `现价 ${formatPrice(stockInfo.price)}，涨跌幅 ${formatPercent(stockInfo.changePercent)}%，换手 ${formatPercent(stockInfo.turnover)}%。`,
-            source: '实时行情',
-            tone: stockInfo.changePercent >= 0 ? 'positive' : 'negative',
-          },
-          ...partial.stockNews.slice(0, 4).map((item) => ({
-            title: item.title,
-            summary: item.summary || item.content || item.title,
-            source: item.source || '个股消息',
-            tone: 'neutral' as const,
-          })),
-          ...partial.macroNews.slice(0, 3).map((item) => ({
-            title: item.title,
-            summary: item.summary || item.content || item.title,
-            source: item.source || '市场消息',
-            tone: 'neutral' as const,
-          })),
-        ],
-        generatedAt: Date.now(),
-      }
-    }
-
     const technical = computed(() => buildTechnicalSnapshot(klineData.value))
     const profile = computed(() => getStockProfile(resolvedStockCode.value.trim()))
     const realtimeMarket = computed<MarketCode>(() => {
@@ -489,36 +411,12 @@ export default defineComponent({
           if (aiTaskLogger.isTaskCancelled(task.id)) {
             aiTaskLogger.addLog(task.id, '评估已被取消', 'warn')
           } else {
-            if (result.llmSummary.fallback) {
-              aiTaskLogger.addLog(task.id, result.llmSummary.notice, 'warn')
-            } else {
-              aiTaskLogger.addLog(task.id, `AI评估完成，建议：${result.diagnosis?.recommendation || '待确认'}`, 'success')
-            }
+            aiTaskLogger.addLog(task.id, `AI评估完成，建议：${result.diagnosis?.recommendation || '待确认'}`, 'success')
             aiTaskLogger.completeTask(task.id, true)
           }
         }
-
-        if (result.llmSummary.fallback) {
-          analysisError.value = result.llmSummary.notice
-        }
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error)
-        if (msg === 'ANALYSIS_TIMEOUT' && (latestPartial.stockInfo || currentQuote.value)) {
-          const fallbackStock = latestPartial.stockInfo || currentQuote.value
-          if (fallbackStock) {
-            diagnosis.value = buildLocalFallbackDiagnosis(fallbackStock, latestPartial)
-            if (!currentQuote.value) {
-              currentQuote.value = fallbackStock
-            }
-            lastAnalysisAt.value = Date.now()
-            analysisError.value = 'AI 汇总超时，已使用本地规则完成当前诊股结论。'
-            if (task && !aiTaskLogger.isTaskCancelled(task.id)) {
-              aiTaskLogger.addLog(task.id, 'AI 汇总超时，已使用本地规则完成当前诊股结论。', 'warn')
-              aiTaskLogger.completeTask(task.id, true)
-            }
-            return
-          }
-        }
         if (task) {
           if (aiTaskLogger.isTaskCancelled(task.id)) {
             aiTaskLogger.addLog(task.id, '评估已被取消', 'warn')

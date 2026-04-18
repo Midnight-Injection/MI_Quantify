@@ -101,7 +101,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 8px;
+  padding: 4px;
   border-radius: 10px;
   border: none;
   background: transparent;
@@ -117,6 +117,20 @@
   &.active {
     background: rgba($color-accent, 0.1);
   }
+}
+
+.sidebar-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
 .sidebar-item-title {
@@ -172,33 +186,54 @@
   gap: 12px;
   padding: 14px;
   overflow: hidden;
-  margin-left: 10px;
   border-radius: $radius-xl;
+}
 
-  &.sidebar-collapsed {
-    margin-left: 0;
+.chat-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-topbar-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  strong {
+    color: $text-primary;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  span {
+    color: $text-muted;
+    font-size: 11px;
+    line-height: 1.4;
   }
 }
 
-.sidebar-expand-arrow {
-  position: relative;
-  align-self: center;
+.chat-topbar-action {
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
-  width: 22px;
-  height: 52px;
+  border-radius: 12px;
+  border: 1px solid rgba(29, 38, 55, 0.08);
+  background: rgba(255, 255, 255, 0.92);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 0 10px 10px 0;
+  color: $text-secondary;
   cursor: pointer;
-  color: $text-muted;
-  transition: background 0.15s, color 0.15s;
+  transition: border-color $transition-fast, box-shadow $transition-fast, transform $transition-fast, color $transition-fast;
 
   &:hover {
-    background: rgba($color-accent, 0.08);
+    transform: translateY(-1px);
     color: $color-accent;
+    border-color: rgba($color-accent, 0.18);
+    box-shadow: 0 10px 22px rgba(18, 30, 49, 0.08);
   }
 }
 
@@ -537,12 +572,12 @@
 .tools-body {
   border-top: 1px solid rgba(245, 158, 11, 0.1);
   padding: 6px 10px;
-  max-height: 240px;
+  max-height: 300px;
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   @include custom-scrollbar;
 }
 
@@ -553,7 +588,8 @@
 }
 
 .tool-item {
-  padding: 6px 8px;
+  width: 100%;
+  padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid rgba(161, 98, 7, 0.1);
   background: rgba(255, 255, 255, 0.6);
@@ -575,6 +611,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  cursor: pointer;
 }
 
 .tool-name {
@@ -607,16 +644,30 @@
   flex-shrink: 0;
 }
 
+.tool-item-toggle {
+  margin-left: 2px;
+  font-size: 11px;
+  color: $text-muted;
+  transition: transform 0.2s;
+
+  &.open {
+    transform: rotate(180deg);
+  }
+}
+
 .tool-summary {
   margin: 4px 0 0;
   font-size: 11px;
   color: $text-secondary;
   line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tool-io-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin-top: 8px;
 }
@@ -639,11 +690,10 @@
 
 .tool-io-text {
   margin: 0;
-  height: 140px;
   max-height: 140px;
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
+  word-break: normal;
   font-size: 10px;
   line-height: 1.5;
   font-family: $font-mono;
@@ -651,11 +701,11 @@
   @include custom-scrollbar;
 }
 
-// ── Stop button inside live stack ──
+// ── Stop button ──
 
 .bubble-stop-btn {
   align-self: flex-start;
-  margin-top: 2px;
+  margin-top: 4px;
   padding: 6px 16px;
   border-radius: 999px;
   font-size: 12px;
@@ -926,28 +976,39 @@
   align-items: center;
   gap: 12px;
   justify-content: space-between;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .composer-toggle-group,
 .composer-select {
-  width: min(240px, 100%);
   display: flex;
   flex-direction: column;
   gap: 0;
   position: relative;
 }
 
+.composer-toggle-group {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.composer-select {
+  flex: 0 0 clamp(180px, 24vw, 240px);
+  min-width: 180px;
+}
+
 .mode-switch {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .mode-button,
 .strategy-trigger {
-  width: 100%;
   min-height: 42px;
-  padding: 8px 12px;
+  padding: 7px 10px;
   border-radius: 12px;
   border: 1px solid rgba(29, 38, 55, 0.08);
   background: rgba(255, 255, 255, 0.92);
@@ -967,12 +1028,15 @@
 }
 
 .mode-button {
+  flex: 1 1 0;
+  min-width: 0;
   justify-content: center;
 
   span {
     color: $text-secondary;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
+    white-space: nowrap;
   }
 
   &.active {
@@ -984,6 +1048,23 @@
       color: $color-accent;
     }
   }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.74;
+    transform: none;
+    box-shadow: none;
+
+    &:hover {
+      transform: none;
+      border-color: rgba(29, 38, 55, 0.08);
+      box-shadow: none;
+    }
+  }
+}
+
+.mode-button span.disabled {
+  color: $text-muted;
 }
 
 .strategy-trigger-copy {
@@ -1280,11 +1361,11 @@
   }
 
   .composer-select-row {
-    flex-direction: column;
+    gap: 10px;
   }
 
   .composer-select {
-    width: 100%;
+    flex-basis: 220px;
   }
 
   .composer-input-row {
@@ -1330,11 +1411,20 @@
   .bubble-recommendation {
     max-width: 94%;
   }
+
+  .composer-select-row {
+    flex-wrap: wrap;
+  }
+
+  .composer-toggle-group,
+  .composer-select {
+    flex-basis: 100%;
+  }
 }
 
 @media (max-width: 540px) {
-  .tool-io-grid {
-    grid-template-columns: 1fr;
+  .tools-body {
+    max-height: 260px;
   }
 
   .bubble {

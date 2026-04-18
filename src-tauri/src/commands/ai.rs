@@ -67,19 +67,38 @@ fn build_proxy_url(proxy: &ProxyConfig) -> Option<String> {
     }
 }
 
-fn build_client_with_proxy(proxy_url: Option<&str>, timeout_secs: u64) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder()
-        .timeout(Duration::from_secs(timeout_secs));
+fn build_client_with_proxy(
+    proxy_url: Option<&str>,
+    timeout_secs: u64,
+) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs));
     if let Some(url) = proxy_url {
-        let proxy = reqwest::Proxy::all(url)
-            .map_err(|e| format!("代理配置错误: {}", e))?;
+        let proxy = reqwest::Proxy::all(url).map_err(|e| format!("代理配置错误: {}", e))?;
         builder = builder.proxy(proxy);
     }
-    builder.build().map_err(|e| format!("创建请求客户端失败: {}", e))
+    builder
+        .build()
+        .map_err(|e| format!("创建请求客户端失败: {}", e))
 }
 
 fn requires_disabled_thinking(api_url: &str) -> bool {
     api_url.contains("/api/coding/paas/")
+}
+
+fn normalize_api_url(api_url: &str) -> String {
+    let trimmed = api_url.trim().trim_end_matches('/');
+    if requires_disabled_thinking(trimmed) && !trimmed.ends_with("/chat/completions") {
+        return format!("{}/chat/completions", trimmed);
+    }
+    trimmed.to_string()
+}
+
+fn normalize_model_name(api_url: &str, model: &str) -> String {
+    let trimmed = model.trim();
+    if requires_disabled_thinking(api_url) && trimmed.starts_with("zhipuai-coding-plan/") {
+        return trimmed.rsplit('/').next().unwrap_or(trimmed).to_string();
+    }
+    trimmed.to_string()
 }
 
 fn extract_response_content(data: &serde_json::Value) -> String {
@@ -106,23 +125,25 @@ pub async fn ai_chat(
     max_tokens: u32,
     proxy: Option<ProxyConfig>,
 ) -> Result<String, String> {
-    let proxy_url = proxy.as_ref().and_then(|p| {
-        if p.enabled { build_proxy_url(p) } else { None }
-    });
-    let client = build_client_with_proxy(proxy_url.as_deref(), 60)?;
+    let normalized_api_url = normalize_api_url(&api_url);
+    let normalized_model = normalize_model_name(&normalized_api_url, &model);
+    let proxy_url = proxy
+        .as_ref()
+        .and_then(|p| if p.enabled { build_proxy_url(p) } else { None });
+    let client = build_client_with_proxy(proxy_url.as_deref(), 180)?;
     let mut body = serde_json::json!({
-        "model": model,
+        "model": normalized_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
     });
-    if requires_disabled_thinking(&api_url) {
+    if requires_disabled_thinking(&normalized_api_url) {
         body["thinking"] = serde_json::json!({ "type": "disabled" });
     }
 
     for attempt in 0..3 {
         let resp = client
-            .post(&api_url)
+            .post(&normalized_api_url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&body)
@@ -166,19 +187,21 @@ pub async fn ai_chat_stream(
     max_tokens: u32,
     proxy: Option<ProxyConfig>,
 ) -> Result<String, String> {
-    let proxy_url = proxy.as_ref().and_then(|p| {
-        if p.enabled { build_proxy_url(p) } else { None }
-    });
-    let client = build_client_with_proxy(proxy_url.as_deref(), 120)?;
+    let normalized_api_url = normalize_api_url(&api_url);
+    let normalized_model = normalize_model_name(&normalized_api_url, &model);
+    let proxy_url = proxy
+        .as_ref()
+        .and_then(|p| if p.enabled { build_proxy_url(p) } else { None });
+    let client = build_client_with_proxy(proxy_url.as_deref(), 180)?;
 
     let mut body = serde_json::json!({
-        "model": model,
+        "model": normalized_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": true,
     });
-    if requires_disabled_thinking(&api_url) {
+    if requires_disabled_thinking(&normalized_api_url) {
         body["thinking"] = serde_json::json!({ "type": "disabled" });
     }
 
@@ -188,7 +211,7 @@ pub async fn ai_chat_stream(
 
     for attempt in 0..3u32 {
         let resp = match client
-            .post(&api_url)
+            .post(&normalized_api_url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&body)

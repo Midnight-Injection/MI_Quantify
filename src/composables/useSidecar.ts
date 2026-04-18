@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 const baseUrl = 'http://127.0.0.1:18911'
 const running = ref(false)
-const requestTimeoutMs = 12000
+const requestTimeoutMs = 25000
 const inflightGetRequests = new Map<string, Promise<any>>()
 let _registeredProxySignature = ''
 
@@ -43,6 +43,10 @@ async function syncProxiesToSidecar(proxies: { id: string; name: string; host: s
 }
 
 async function start() {
+  if (await checkHealth()) {
+    running.value = true
+    return 'sidecar already healthy'
+  }
   try {
     const result = await invoke<string>('sidecar_start')
     running.value = true
@@ -65,6 +69,10 @@ async function stop() {
 }
 
 async function status() {
+  if (await checkHealth()) {
+    running.value = true
+    return true
+  }
   try {
     const isRunning = await invoke<boolean>('sidecar_status')
     running.value = isRunning
@@ -85,26 +93,45 @@ async function ensureRunning() {
 
 async function waitForHealth(maxRetries = 10, interval = 1000) {
   for (let i = 0; i < maxRetries; i++) {
-    try {
-      const res = await request(`${baseUrl}/health`)
-      if (res.ok) {
-        running.value = true
-        return true
-      }
-    } catch {}
+    if (await checkHealth()) {
+      running.value = true
+      return true
+    }
     await new Promise((r) => setTimeout(r, interval))
   }
   throw new Error('sidecar health check failed: 请检查本地 Python sidecar 是否已启动、src-python 依赖是否安装完成，以及系统代理 / 网络是否能访问新浪和东方财富接口')
 }
 
+async function checkHealth() {
+  try {
+    const res = await request(`${baseUrl}/health`)
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 async function request(input: string, init?: RequestInit) {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs)
+  let timedOut = false
+  const timeoutId = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, requestTimeoutMs)
   try {
-    return await fetch(input, {
-      ...init,
-      signal: controller.signal,
-    })
+    try {
+      return await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      })
+    } catch (error) {
+      if (timedOut) {
+        const timeoutError = new Error(`sidecar request timeout after ${requestTimeoutMs}ms`)
+        timeoutError.name = 'TimeoutError'
+        throw timeoutError
+      }
+      throw error
+    }
   } finally {
     clearTimeout(timeoutId)
   }
@@ -112,7 +139,9 @@ async function request(input: string, init?: RequestInit) {
 
 function shouldRetrySidecarRequest(error: unknown) {
   if (!(error instanceof Error)) return false
-  return error.name === 'AbortError' || /Failed to fetch|NetworkError|Load failed|fetch/i.test(error.message)
+  return error.name === 'AbortError'
+    || error.name === 'TimeoutError'
+    || /Failed to fetch|NetworkError|Load failed|fetch/i.test(error.message)
 }
 
 async function get<T>(path: string): Promise<T> {

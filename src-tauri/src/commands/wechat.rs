@@ -7,19 +7,18 @@ use std::{
 };
 
 use base64::Engine;
-use dirs::home_dir;
 use qrcode::{render::svg, QrCode};
 use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use thiserror::Error;
 use tokio::{sync::Mutex, time::sleep};
 use uuid::Uuid;
 
+use crate::storage;
+
 const DEFAULT_WECHAT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
-const WECHAT_DATA_DIR_NAME: &str = ".mi_quantify";
-const WECHAT_LEGACY_DIR_NAME: &str = "mi_quantify";
 const LOGIN_FILE_NAME: &str = "wechat_accounts.json";
 const CONTEXT_FILE_NAME: &str = "wechat_contexts.json";
 const MAX_CONSECUTIVE_FAILURES: u32 = 3;
@@ -578,11 +577,7 @@ pub async fn wechat_get_channel_status(
         }
     }
 
-    let fresh_account = if !logged_in {
-        None
-    } else {
-        account
-    };
+    let fresh_account = if !logged_in { None } else { account };
 
     Ok(WechatChannelStatus {
         channel_id,
@@ -733,27 +728,15 @@ fn emit_error(app: &AppHandle, channel_id: &str, error: &str) {
 }
 
 fn data_file(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
-    let home = home_dir().ok_or_else(|| "无法读取用户目录".to_string())?;
-    let new_dir = home.join(WECHAT_DATA_DIR_NAME);
-    let legacy_home_dir = home.join(WECHAT_LEGACY_DIR_NAME);
-
-    if !new_dir.exists() && legacy_home_dir.exists() {
-        let _ = fs::rename(&legacy_home_dir, &new_dir);
+    let target = storage::app_data_file(name)
+        .map_err(|_| "无法读取用户目录或 Windows 用户目录变量".to_string())?;
+    let mut candidates = Vec::new();
+    if let Some(legacy) = storage::legacy_file(name) {
+        candidates.push(legacy);
     }
-
-    fs::create_dir_all(&new_dir).map_err(|error| format!("无法创建应用数据目录: {error}"))?;
-    let target = new_dir.join(name);
-
-    if !target.exists() {
-        let legacy_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|error| format!("无法读取应用数据目录: {error}"))?;
-        let legacy = legacy_dir.join(name);
-        if legacy.exists() {
-            fs::copy(&legacy, &target).map_err(|error| format!("迁移微信数据失败: {error}"))?;
-        }
-    }
+    candidates.extend(storage::app_support_candidates(app, name));
+    storage::migrate_file_if_missing(&target, &candidates)
+        .map_err(|error| format!("迁移微信数据失败: {error}"))?;
 
     Ok(target)
 }

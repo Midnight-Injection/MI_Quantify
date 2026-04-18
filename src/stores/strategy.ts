@@ -23,6 +23,24 @@ function mergeStrategiesWithBuiltins(storedStrategies: Strategy[]) {
   return merged
 }
 
+function mergePromptTemplatesWithBuiltins(storedTemplates: PromptTemplate[]) {
+  const builtinMap = new Map(BUILTIN_PROMPT_TEMPLATES.map((item) => [item.id, { ...item }]))
+  const merged: PromptTemplate[] = []
+
+  for (const builtin of BUILTIN_PROMPT_TEMPLATES) {
+    const stored = storedTemplates.find((item) => item.id === builtin.id)
+    merged.push(stored ? { ...builtin, ...stored, builtin: true } : { ...builtin })
+  }
+
+  for (const item of storedTemplates) {
+    if (!builtinMap.has(item.id)) {
+      merged.push({ ...item, builtin: false })
+    }
+  }
+
+  return merged
+}
+
 const MOCK_SIGNALS: Signal[] = [
   {
     id: 'sig_1',
@@ -116,7 +134,7 @@ export const useStrategyStore = defineStore('strategy', () => {
       const parsed = JSON.parse(raw) as {
         promptTemplates?: PromptTemplate[]
       }
-      return parsed.promptTemplates?.length ? parsed.promptTemplates : [...BUILTIN_PROMPT_TEMPLATES]
+      return parsed.promptTemplates?.length ? mergePromptTemplatesWithBuiltins(parsed.promptTemplates) : [...BUILTIN_PROMPT_TEMPLATES]
     } catch {
       return [...BUILTIN_PROMPT_TEMPLATES]
     }

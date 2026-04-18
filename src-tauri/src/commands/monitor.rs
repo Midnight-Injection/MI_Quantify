@@ -1,18 +1,17 @@
 use std::{fs, path::PathBuf};
 
-use dirs::home_dir;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-const DB_DIR_NAME: &str = ".mi_quantify";
+use crate::storage;
+
 const DB_FILE_NAME: &str = "mi_quantify.db";
-const LEGACY_DIR_NAME: &str = "mi_quantify";
 
 #[derive(Debug, Error)]
 enum MonitorDbError {
-    #[error("无法定位用户目录")]
+    #[error("无法定位用户目录或 Windows 用户目录变量")]
     HomeDirMissing,
     #[error("数据库目录初始化失败: {0}")]
     Io(#[from] std::io::Error),
@@ -78,15 +77,13 @@ where
 }
 
 fn monitor_db_path_inner() -> Result<PathBuf, MonitorDbError> {
-    let home = home_dir().ok_or(MonitorDbError::HomeDirMissing)?;
-    let new_dir = home.join(DB_DIR_NAME);
-    let legacy_dir = home.join(LEGACY_DIR_NAME);
-
-    if !new_dir.exists() && legacy_dir.exists() {
-        let _ = std::fs::rename(&legacy_dir, &new_dir);
-    }
-
-    Ok(new_dir.join(DB_FILE_NAME))
+    storage::app_data_file(DB_FILE_NAME).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            MonitorDbError::HomeDirMissing
+        } else {
+            MonitorDbError::Io(error)
+        }
+    })
 }
 
 fn init_schema(conn: &Connection) -> Result<(), MonitorDbError> {
@@ -132,9 +129,8 @@ fn init_schema(conn: &Connection) -> Result<(), MonitorDbError> {
         "#,
     )?;
 
-    conn.execute_batch(
-        "ALTER TABLE notifications ADD COLUMN read INTEGER NOT NULL DEFAULT 0",
-    ).ok();
+    conn.execute_batch("ALTER TABLE notifications ADD COLUMN read INTEGER NOT NULL DEFAULT 0")
+        .ok();
 
     Ok(())
 }

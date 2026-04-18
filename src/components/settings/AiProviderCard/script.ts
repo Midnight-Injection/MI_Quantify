@@ -13,7 +13,11 @@ export default defineComponent({
   emits: ['update', 'toggle-enabled', 'set-active', 'test'],
   setup(props) {
     const showKey = ref(false)
+    const expanded = ref(false)
     const enabledProxies = computed(() => props.proxies.filter((p) => p.enabled))
-    return { showKey, enabledProxies }
+    function toggleExpanded() {
+      expanded.value = !expanded.value
+    }
+    return { showKey, expanded, enabledProxies, toggleExpanded }
   },
 })

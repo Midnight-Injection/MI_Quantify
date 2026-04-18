@@ -1,13 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import type { AppSettings, AiAutoRunSettings, AiProvider, DataSource, ProxyConfig, SearchProvider } from '@/types'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 import { AI_PROVIDER_PRESETS, DATA_SOURCE_PRESETS, SEARCH_PROVIDER_PRESETS } from '@/utils/constants'
-import { load } from '@tauri-apps/plugin-store'
 import { useSidecar } from '@/composables/useSidecar'
 
 const STORE_KEY = 'app_settings'
-const STORE_FILE = 'settings.json'
 const LOCAL_PROXY_PRESET_ID = 'local_proxy_127001_7890'
 const LOCAL_PROXY_PRESET: ProxyConfig = {
   id: LOCAL_PROXY_PRESET_ID,
@@ -20,10 +19,16 @@ const LOCAL_PROXY_PRESET: ProxyConfig = {
   enabled: true,
 }
 
+const ZHIPU_CODING_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4'
+const ZHIPU_CODING_MODEL = 'zhipuai-coding-plan/glm-5.1'
+const LEGACY_ZHIPU_URLS = new Set([
+  'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+  'https://open.bigmodel.cn/api/paas/v4',
+])
+
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AppSettings>(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)))
   const initialized = ref(false)
-  let storeInstance: Awaited<ReturnType<typeof load>> | null = null
 
   function providerRequiresApiKey(provider: AiProvider | null | undefined) {
     return !!provider
@@ -93,7 +98,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const mergedProxies = hasLocalProxy
       ? savedProxies
       : [{ ...LOCAL_PROXY_PRESET }, ...savedProxies]
-    return {
+    const merged = {
       ...defaults,
       ...saved,
       ai: {
@@ -153,19 +158,21 @@ export const useSettingsStore = defineStore('settings', () => {
         proxies: mergedProxies,
       },
     }
-  }
 
-  async function getStore() {
-    if (!storeInstance) {
-      storeInstance = await load(STORE_FILE)
+    const zhipuProvider = merged.ai.providers.find((provider) => provider.id === 'zhipu')
+    if (zhipuProvider && (!zhipuProvider.apiUrl.trim() || LEGACY_ZHIPU_URLS.has(zhipuProvider.apiUrl.trim()))) {
+      zhipuProvider.apiUrl = ZHIPU_CODING_BASE_URL
+      if (!zhipuProvider.model.trim() || zhipuProvider.model.trim() === 'glm-5.1') {
+        zhipuProvider.model = ZHIPU_CODING_MODEL
+      }
     }
-    return storeInstance
+
+    return merged
   }
 
   async function loadSettings() {
     try {
-      const store = await getStore()
-      const saved = await store.get<AppSettings>(STORE_KEY)
+      const saved = await invoke<AppSettings | null>('app_store_get', { key: STORE_KEY })
       if (saved) {
         settings.value = mergeSettings(saved)
       } else {
@@ -187,8 +194,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function saveSettings() {
     try {
-      const store = await getStore()
-      await store.set(STORE_KEY, settings.value)
+      await invoke('app_store_set', { key: STORE_KEY, value: settings.value })
     } catch (e) {
       console.error('Failed to save settings:', e)
     }
@@ -364,6 +370,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateProxy,
     removeProxy,
     getProxyById,
+    isAiProviderConfigured,
   }
 })
   function normalizeMaxSteps(value: number) {

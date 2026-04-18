@@ -6,6 +6,11 @@ const CATEGORIES: Array<{ key: string; label: string }> = [
   { key: 'buy_signal', label: '买入信号' },
   { key: 'sell_signal', label: '卖出信号' },
   { key: 'news_analysis', label: '新闻分析' },
+  { key: 'mode_router', label: '模式路由' },
+  { key: 'recommendation_agent', label: '荐股智能体' },
+  { key: 'investment_agent', label: '投资智能体' },
+  { key: 'investment_synthesis', label: '投资总结' },
+  { key: 'tool_retry_policy', label: '工具重试' },
   { key: 'custom', label: '自定义' },
 ]
 

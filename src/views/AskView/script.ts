@@ -1,14 +1,26 @@
 import { computed, defineComponent, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import type { DiagnosisAgentProgressEvent, DiagnosisAgentResult } from '@/agents/diagnosisAgent'
 import { runDiagnosisAgent } from '@/agents/diagnosisAgent'
+import { runInvestmentAgent } from '@/agents/investmentAgent'
 import { runRecommendationAgent } from '@/agents/recommendationAgent'
-import type { DiagnosisAgentStep, RecommendationClarifyQuestion, RecommendationPreferences, RecommendationResult, Strategy } from '@/types'
+import type {
+  AskMode,
+  DiagnosisAgentStep,
+  InvestmentPreferences,
+  InvestmentResult,
+  RecommendationClarifyQuestion,
+  RecommendationPreferences,
+  RecommendationResult,
+  Strategy,
+} from '@/types'
 import { useMarketStore } from '@/stores/market'
 import { useSettingsStore } from '@/stores/settings'
 import { useStrategyStore } from '@/stores/strategy'
 import { useAiTaskLogger } from '@/composables/useAiTaskLogger'
 import { formatPrice } from '@/utils/format'
 import { buildDiagnosisReply } from '@/utils/aiQuestion'
+import { buildInvestmentBasisSummary, buildEmptyInvestmentPreferences, parseInvestmentPreferences } from '@/utils/investment'
 import { normalizeSecurityCode } from '@/utils/security'
 import {
   buildEmptyRecommendationPreferences,
@@ -22,23 +34,26 @@ import {
 import {
   listConversations,
   createConversation,
-  deleteConversation,
   listMessages,
   addMessage,
-  updateConversationTitle,
   type ChatConversation,
 } from '@/utils/chatPersistence'
-import { ChevronDown, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-vue-next'
-import { load, type Store } from '@tauri-apps/plugin-store'
+import { ChevronDown, Plus } from 'lucide-vue-next'
 
 const ACTIVE_CONV_KEY = 'active_conversation_id'
-let appStore: Store | null = null
 
-async function getAppStore(): Promise<Store> {
-  if (!appStore) {
-    appStore = await load('settings.json', { autoSave: true, defaults: {} })
+async function getAppStoreValue<T>(key: string): Promise<T | null> {
+  try {
+    return await invoke<T | null>('app_store_get', { key })
+  } catch {
+    return null
   }
-  return appStore
+}
+
+async function setAppStoreValue(key: string, value: unknown) {
+  try {
+    await invoke('app_store_set', { key, value })
+  } catch {}
 }
 
 interface ChatMessage {
@@ -52,6 +67,7 @@ interface ChatMessage {
   strategyName?: string
   diagnosis?: DiagnosisAgentResult
   recommendationResult?: RecommendationResult
+  investmentResult?: InvestmentResult
   clarifyQuestion?: RecommendationClarifyQuestion
   quickReplies?: string[]
   streamSteps?: DiagnosisAgentStep[]
@@ -62,13 +78,15 @@ interface ChatMessage {
   askFollowUp?: boolean
 }
 
-type AskMode = 'diagnosis' | 'recommendation'
-
 interface ConversationContextState {
   lastResolvedCode: string
   lastResolvedName: string
   lastQuestion: string
   lastMode: AskMode
+}
+
+function isAskMode(value: unknown): value is AskMode {
+  return value === 'diagnosis' || value === 'recommendation' || value === 'investment'
 }
 
 function createId(prefix: string) {
@@ -88,8 +106,8 @@ function createInitialRecommendationState(): RecommendationPreferences {
   return buildEmptyRecommendationPreferences()
 }
 
-function hasExplicitTicker(question: string) {
-  return /\b(?:sh|sz|bj|hk|us)?\d{5,6}\b/i.test(question) || /(?:^|\s)(?:us)?[A-Z]{1,5}(?:\s|$)/.test(question)
+function createInitialInvestmentState(): InvestmentPreferences {
+  return buildEmptyInvestmentPreferences()
 }
 
 function extractDirectTicker(question: string) {
@@ -103,14 +121,6 @@ function extractDirectTicker(question: string) {
   if (alpha) return normalizeSecurityCode(alpha)
 
   return ''
-}
-
-function shouldPreferDiagnosis(question: string) {
-  return hasExplicitTicker(question) || /(这只|它|该股|个股|股票|怎么看|能买吗|卖吗|分析|诊断|评估|走势|支撑|压力|风险|催化|仓位|止损|止盈|财报|消息)/.test(question)
-}
-
-function shouldPreferRecommendation(question: string) {
-  return /(推荐|筛选|选股|找股|机会|短线|中线|波段|稳健|激进|港股|美股|A股)/.test(question) && !hasExplicitTicker(question)
 }
 
 function createConversationContext(): ConversationContextState {
@@ -131,8 +141,10 @@ function createAskViewState() {
     strategyMenuOpen: ref(false),
     openThinkingIds: ref(new Set<string>()),
     openToolIds: ref(new Set<string>()),
+    openToolStepIds: ref(new Set<string>()),
     shouldStickToBottom: ref(true),
     recommendationState: ref<RecommendationPreferences>(createInitialRecommendationState()),
+    investmentState: ref<InvestmentPreferences>(createInitialInvestmentState()),
     conversationContext: ref<ConversationContextState>(createConversationContext()),
     messages: ref<ChatMessage[]>([
       createAssistantMessage(
@@ -141,7 +153,6 @@ function createAskViewState() {
     ]),
     conversations: ref<ChatConversation[]>([]),
     activeConversationId: ref<string | null>(null),
-    sidebarOpen: ref(true),
   }
 }
 
@@ -168,7 +179,7 @@ function stopLiveNowTicker() {
 
 export default defineComponent({
   name: 'AskView',
-  components: { ChevronDown, ChevronLeft, ChevronRight, Plus, Trash2 },
+  components: { ChevronDown, Plus },
   setup() {
     const marketStore = useMarketStore()
     const settingsStore = useSettingsStore()
@@ -182,13 +193,14 @@ export default defineComponent({
       strategyMenuOpen,
       openThinkingIds,
       openToolIds,
+      openToolStepIds,
       shouldStickToBottom,
       recommendationState,
+      investmentState,
       conversationContext,
       messages,
       conversations,
       activeConversationId,
-      sidebarOpen,
     } = askViewState
     const chatListRef = ref<HTMLElement | null>(null)
     const strategyPickerRef = ref<HTMLElement | null>(null)
@@ -210,6 +222,16 @@ export default defineComponent({
       else next.add(id)
       openToolIds.value = next
     }
+    function buildToolStepToggleId(messageId: string, stepId: string) {
+      return `${messageId}:${stepId}`
+    }
+    function toggleToolStep(messageId: string, stepId: string) {
+      const key = buildToolStepToggleId(messageId, stepId)
+      const next = new Set(openToolStepIds.value)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      openToolStepIds.value = next
+    }
 
     const strategyOptions = computed(() =>
       [...strategyStore.strategies].sort(
@@ -219,10 +241,16 @@ export default defineComponent({
     const selectedStrategy = computed<Strategy | null>(() =>
       strategyOptions.value.find((item) => item.id === selectedStrategyId.value) ?? null,
     )
+    const isConversationModeLocked = computed(() =>
+      messages.value.some((message) => message.role === 'user'),
+    )
+    const showStrategyPicker = computed(() => activeMode.value !== 'investment')
     const inputPlaceholder = computed(() =>
       activeMode.value === 'recommendation'
         ? '例如：A股短线、偏激进、想看机器人和算力；或港股科技、1-2周机会。'
-        : '例如：300750 现在怎么看？或 腾讯控股短线是涨还是跌？',
+        : activeMode.value === 'investment'
+          ? '例如：我有5万，定投3个月，银行限定中国银行，给我一个理财建议。'
+          : '例如：300750 现在怎么看？或 腾讯控股短线是涨还是跌？',
     )
     async function scrollToBottom(force = false) {
       await nextTick()
@@ -293,15 +321,23 @@ export default defineComponent({
     }
 
     function markAssistantStopped(messageId: string, content = '已停止当前 AI 任务。') {
-      patchMessage(messageId, (message) => ({
-        ...message,
-        content,
-        streaming: false,
-        streamingText: undefined,
-        loading: false,
-        synthesisRunning: false,
-        completedAt: Date.now(),
-      }))
+      patchMessage(messageId, (message) => {
+        if ((message.diagnosis || message.recommendationResult || message.investmentResult)
+          && !message.streaming
+          && !message.loading
+          && !message.synthesisRunning) {
+          return message
+        }
+        return {
+          ...message,
+          content,
+          streaming: false,
+          streamingText: undefined,
+          loading: false,
+          synthesisRunning: false,
+          completedAt: Date.now(),
+        }
+      })
       const updated = messages.value.find((message) => message.id === messageId)
       if (updated) {
         void persistMessage(updated)
@@ -331,7 +367,7 @@ export default defineComponent({
       }
 
       if (step.status === 'error') {
-        return `${step.title} 过程中出现异常：${step.resultSummary || '已回退到可用数据继续处理。'}`
+        return `${step.title} 过程中出现异常：${step.resultSummary || '工具调用失败。'}`
       }
 
       if (step.status === 'skipped') {
@@ -389,38 +425,84 @@ export default defineComponent({
       recommendationState.value = createInitialRecommendationState()
     }
 
-    function setMode(mode: AskMode) {
-      activeMode.value = mode
-      if (mode === 'diagnosis') {
-        resetRecommendationState()
-      }
+    function resetInvestmentState() {
+      investmentState.value = createInitialInvestmentState()
     }
 
-    function resolveModeForQuestion(question: string): AskMode {
-      if (activeMode.value === 'recommendation' && shouldPreferDiagnosis(question)) {
-        return 'diagnosis'
+    function setMode(mode: AskMode) {
+      if (isConversationModeLocked.value) return
+      activeMode.value = mode
+      if (mode === 'investment') {
+        strategyMenuOpen.value = false
       }
-      if (activeMode.value === 'diagnosis' && shouldPreferRecommendation(question) && !shouldPreferDiagnosis(question)) {
-        return 'recommendation'
-      }
-      return activeMode.value
     }
 
     function buildRecommendationReply(result: RecommendationResult) {
       const lead = result.candidates[0]
+      const listText = result.candidates.slice(0, 4).map((item) => `${item.name}（${item.code}）`).join('、')
       return [
         `已按 ${buildRecommendationBasisSummary(result.preferences).join(' / ')} 完成筛选。`,
-        `${result.marketSummary}`,
+        result.marketSummary,
+        listText ? `本轮共给出 ${result.candidates.length} 只重点候选：${listText}。` : '',
         lead
           ? `当前排在前面的候选是 ${lead.name}（${lead.code}），预计启动窗口 ${lead.launchWindow.label}。`
           : '本轮没有筛到足够明确的候选。',
         result.disclaimer,
+      ].filter(Boolean).join('\n')
+    }
+
+    function mergeRecommendationPreferences(question: string, extracted?: RecommendationPreferences | null) {
+      const parsed = parseRecommendationPreferences(question, recommendationState.value)
+      if (!extracted) {
+        recommendationState.value = parsed
+        return parsed
+      }
+      recommendationState.value = {
+        ...parsed,
+        ...extracted,
+        themes: extracted.themes?.length ? extracted.themes : parsed.themes,
+        avoidThemes: extracted.avoidThemes?.length ? extracted.avoidThemes : parsed.avoidThemes,
+        mustInclude: extracted.mustInclude?.length ? extracted.mustInclude : parsed.mustInclude,
+        mustExclude: extracted.mustExclude?.length ? extracted.mustExclude : parsed.mustExclude,
+        originalPrompt: parsed.originalPrompt,
+        lastUserMessage: question,
+      }
+      return recommendationState.value
+    }
+
+    function mergeInvestmentPreferences(question: string, extracted?: InvestmentPreferences | null) {
+      const parsed = parseInvestmentPreferences(question, investmentState.value)
+      if (!extracted) {
+        investmentState.value = parsed
+        return parsed
+      }
+      investmentState.value = {
+        ...parsed,
+        ...extracted,
+        bank: extracted.bank || parsed.bank || '中国银行',
+        allowedProducts: extracted.allowedProducts?.length ? extracted.allowedProducts : parsed.allowedProducts,
+        forbiddenProducts: extracted.forbiddenProducts?.length ? extracted.forbiddenProducts : parsed.forbiddenProducts,
+        originalPrompt: parsed.originalPrompt,
+        lastUserMessage: question,
+      }
+      return investmentState.value
+    }
+
+    function buildInvestmentReply(result: InvestmentResult) {
+      const lead = result.candidates[0]
+      return [
+        `已按 ${buildInvestmentBasisSummary(result.preferences).join(' / ')} 完成理财测算。`,
+        result.marketSummary,
+        lead
+          ? `当前排在前面的方案是 ${lead.productName}，参考收益区间约 ${formatPrice(lead.estimatedProfitMin)} - ${formatPrice(lead.estimatedProfitMax)}。`
+          : '当前可用数据不足以形成明确排序，请调整银行、期限或产品限制后再试。',
+        result.disclaimer,
       ].join('\n')
     }
 
-    async function askRecommendationClarify(question: string, assistantMessageId: string) {
-      recommendationState.value = parseRecommendationPreferences(question, recommendationState.value)
-      const clarifyQuestion = buildRecommendationClarifyQuestion(recommendationState.value)
+    async function askRecommendationClarify(question: string, assistantMessageId: string, parsedPreferences?: RecommendationPreferences) {
+      const preferences = parsedPreferences || mergeRecommendationPreferences(question)
+      const clarifyQuestion = buildRecommendationClarifyQuestion(preferences)
       if (!clarifyQuestion) return false
 
       patchMessage(assistantMessageId, (message) => ({
@@ -435,10 +517,10 @@ export default defineComponent({
       return true
     }
 
-    async function runRecommendation(question: string, assistantMessageId: string) {
-      recommendationState.value = parseRecommendationPreferences(question, recommendationState.value)
-      if (recommendationNeedsClarification(recommendationState.value)) {
-        const asked = await askRecommendationClarify(question, assistantMessageId)
+    async function runRecommendation(question: string, assistantMessageId: string, parsedPreferences?: RecommendationPreferences) {
+      const preferences = mergeRecommendationPreferences(question, parsedPreferences)
+      if (recommendationNeedsClarification(preferences)) {
+        const asked = await askRecommendationClarify(question, assistantMessageId, preferences)
         if (asked) return
       }
 
@@ -447,7 +529,7 @@ export default defineComponent({
       try {
         patchMessage(assistantMessageId, (message) => ({
           ...message,
-          content: `已确认 ${buildRecommendationBasisSummary(recommendationState.value).join(' / ')}，开始筛选研究候选池...`,
+          content: `已确认 ${buildRecommendationBasisSummary(preferences).join(' / ')}，开始筛选研究候选池...`,
           clarifyQuestion: undefined,
           quickReplies: [],
           loading: true,
@@ -455,7 +537,7 @@ export default defineComponent({
         await scrollToBottom()
 
         const result = await runRecommendationAgent({
-          preferences: recommendationState.value,
+          preferences,
           provider: settingsStore.activeProvider,
           searchProviders: settingsStore.enabledSearchProviders,
           activeSearchProvider: settingsStore.activeSearchProvider,
@@ -479,8 +561,6 @@ export default defineComponent({
           lastQuestion: question,
           lastMode: 'recommendation',
         }
-        activeMode.value = 'recommendation'
-
         patchMessage(assistantMessageId, (message) => ({
           ...message,
           content: buildRecommendationReply(result),
@@ -521,6 +601,82 @@ export default defineComponent({
       }
     }
 
+    async function runInvestment(question: string, assistantMessageId: string, parsedPreferences?: InvestmentPreferences) {
+      const preferences = mergeInvestmentPreferences(question, parsedPreferences)
+      const task = startAskTask(`AI投资 ${question.slice(0, 18)}`, assistantMessageId)
+      aiTaskLogger.addLog(task.id, '开始查询银行官方产品、存款利率和基金历史数据...')
+      try {
+        patchMessage(assistantMessageId, (message) => ({
+          ...message,
+          content: `已确认 ${buildInvestmentBasisSummary(preferences).join(' / ')}，开始检索官方产品与收益参考...`,
+          quickReplies: [],
+          loading: true,
+        }))
+        await scrollToBottom()
+
+        const result = await runInvestmentAgent({
+          question,
+          preferences,
+          provider: settingsStore.activeProvider,
+          maxSteps: settingsStore.settings.ai.diagnosis.maxSteps,
+          abortSignal: task.abortController?.signal,
+          onProgress: (step) => {
+            handleProgress(assistantMessageId, { step })
+            aiTaskLogger.addProgressLog(task.id, step)
+          },
+        })
+
+        if (aiTaskLogger.isTaskCancelled(task.id)) {
+          markAssistantStopped(assistantMessageId)
+          return
+        }
+
+        conversationContext.value = {
+          lastResolvedCode: '',
+          lastResolvedName: preferences.bank || '',
+          lastQuestion: question,
+          lastMode: 'investment',
+        }
+        patchMessage(assistantMessageId, (message) => ({
+          ...message,
+          content: buildInvestmentReply(result),
+          investmentResult: result,
+          streamSteps: result.trace,
+          streaming: false,
+          streamingText: undefined,
+          loading: false,
+          synthesisRunning: false,
+          askFollowUp: true,
+          quickReplies: ['改成一次性投入', '只看稳健方案', '只看基金方案', '重新按3个月测算'],
+          completedAt: Date.now(),
+        }))
+        aiTaskLogger.addLog(task.id, result.candidates[0]
+          ? `投资方案完成，首选 ${result.candidates[0].productName}`
+          : '投资方案完成，但候选不足', 'success')
+        aiTaskLogger.completeTask(task.id, true)
+        void persistMessage({
+          id: assistantMessageId,
+          role: 'assistant',
+          content: buildInvestmentReply(result),
+          investmentResult: result,
+          streamSteps: result.trace,
+          quickReplies: ['改成一次性投入', '只看稳健方案', '只看基金方案', '重新按3个月测算'],
+          askFollowUp: true,
+        })
+      } catch (error) {
+        if (isAbortError(error) || aiTaskLogger.isTaskCancelled(task.id)) {
+          markAssistantStopped(assistantMessageId)
+          return
+        }
+        const message = error instanceof Error ? error.message : 'AI 投资过程中出现错误，请稍后重试。'
+        aiTaskLogger.addLog(task.id, `任务失败：${message}`, 'error')
+        aiTaskLogger.completeTask(task.id, false, message)
+        throw error
+      } finally {
+        releaseAskTask(task.id, assistantMessageId)
+      }
+    }
+
     async function handleFollowUp(question: string, assistantMessageId: string) {
       const ctx = conversationContext.value
       if (!ctx.lastResolvedCode) {
@@ -532,11 +688,6 @@ export default defineComponent({
           loading: false,
           completedAt: Date.now(),
         }))
-        return
-      }
-
-      if (ctx.lastMode === 'recommendation' && !shouldPreferDiagnosis(question)) {
-        await runRecommendation(question, assistantMessageId)
         return
       }
 
@@ -630,10 +781,17 @@ export default defineComponent({
     async function sendMessage(override?: string | Event) {
       const question = (typeof override === 'string' ? override : input.value).trim()
       if (!question || sending.value) return
+      if (!settingsStore.isAiProviderConfigured(settingsStore.activeProvider)) {
+        messages.value.push(
+          { id: createId('user'), role: 'user', content: question },
+          createAssistantMessage('当前未配置 AI 模型，无法进行智能分析。请先前往「设置 → 大模型」配置 API 地址、API Key 和模型名称后再使用。'),
+        )
+        if (typeof override !== 'string') input.value = ''
+        await scrollToBottom()
+        return
+      }
       let assistantMessageId = ''
       let taskId: string | null = null
-      const resolvedMode = resolveModeForQuestion(question)
-      const directCode = extractDirectTicker(question)
 
       await ensureConversationCreated(question)
 
@@ -660,20 +818,25 @@ export default defineComponent({
         })
         await scrollToBottom()
 
-        if (resolvedMode === 'recommendation') {
-          activeMode.value = 'recommendation'
-          await runRecommendation(question, assistantMessageId)
+        if (activeMode.value === 'recommendation') {
+          const preferences = mergeRecommendationPreferences(question)
+          await runRecommendation(question, assistantMessageId, preferences)
           return
         }
 
-        if (conversationContext.value.lastResolvedCode && !hasExplicitTicker(question) && !question.match(/(推荐|筛选|选股|机会)/)) {
+        if (activeMode.value === 'investment') {
+          const preferences = mergeInvestmentPreferences(question)
+          await runInvestment(question, assistantMessageId, preferences)
+          return
+        }
+
+        const directCode = extractDirectTicker(question)
+
+        if (!directCode && conversationContext.value.lastMode === 'diagnosis' && conversationContext.value.lastResolvedCode) {
           await handleFollowUp(question, assistantMessageId)
           conversationContext.value.lastQuestion = question
           return
         }
-
-        resetRecommendationState()
-        activeMode.value = 'diagnosis'
 
         patchMessage(assistantMessageId, (message) => ({
           ...message,
@@ -784,7 +947,7 @@ export default defineComponent({
     }
 
     function getThinkingSteps(message: ChatMessage) {
-      const source = message.diagnosis?.trace ?? message.streamSteps ?? []
+      const source = message.diagnosis?.trace ?? message.investmentResult?.trace ?? message.streamSteps ?? []
       return source.filter((item) =>
         item.kind !== 'tool'
         && item.strategy !== 'ReAct Planner'
@@ -794,7 +957,7 @@ export default defineComponent({
     }
 
     function getToolSteps(message: ChatMessage) {
-      const source = message.diagnosis?.trace ?? message.streamSteps ?? []
+      const source = message.diagnosis?.trace ?? message.investmentResult?.trace ?? message.streamSteps ?? []
       return source.filter((item) => item.kind === 'tool')
     }
 
@@ -813,7 +976,7 @@ export default defineComponent({
     }
 
     function getResultText(message: ChatMessage) {
-      if (message.diagnosis || message.recommendationResult) {
+      if (message.diagnosis || message.recommendationResult || message.investmentResult) {
         return message.content || '最终结论已生成。'
       }
       if (message.streamingText?.trim()) {
@@ -834,6 +997,10 @@ export default defineComponent({
 
     function isToolsExpanded(message: ChatMessage) {
       return openToolIds.value.has(message.id)
+    }
+
+    function isToolStepExpanded(messageId: string, stepId: string) {
+      return openToolStepIds.value.has(buildToolStepToggleId(messageId, stepId))
     }
 
     function formatDuration(durationMs?: number) {
@@ -866,6 +1033,10 @@ export default defineComponent({
       const elapsedMs = getMessageElapsedMs(message)
       if (typeof elapsedMs !== 'number') return ''
       return formatDuration(elapsedMs)
+    }
+
+    function isMessageTaskRunning(message: ChatMessage) {
+      return Boolean(message.loading || message.streaming || message.synthesisRunning)
     }
 
     function formatRange(lower?: number, upper?: number) {
@@ -914,24 +1085,39 @@ export default defineComponent({
       } catch {}
     }
 
-    async function switchConversation(id: string | null) {
-      if (sending.value) return
-      if (activeConversationId.value === id) return
-      activeConversationId.value = id
-      try { (await getAppStore()).set(ACTIVE_CONV_KEY, id) } catch {}
+    async function resetConversationPanel() {
+      activeConversationId.value = null
+      await setAppStoreValue(ACTIVE_CONV_KEY, null)
       openThinkingIds.value = new Set<string>()
       openToolIds.value = new Set<string>()
-      if (!id) {
-        messages.value = [
-          createAssistantMessage(
-            '你好，我是 AI 助手。你直接说想看的市场、股票或交易诉求，我会按当前模式继续分析。',
-          ),
-        ]
-        conversationContext.value = createConversationContext()
+      openToolStepIds.value = new Set<string>()
+      messages.value = [
+        createAssistantMessage(
+          '你好，我是 AI 助手。你直接说想看的市场、股票或交易诉求，我会按当前模式继续分析。',
+        ),
+      ]
+      activeMode.value = 'diagnosis'
+      strategyMenuOpen.value = false
+      resetRecommendationState()
+      resetInvestmentState()
+      conversationContext.value = createConversationContext()
+    }
+
+    async function switchConversation(id: string | null) {
+      if (sending.value) return
+      if (id === null) {
+        await resetConversationPanel()
         return
       }
+      if (activeConversationId.value === id) return
+      activeConversationId.value = id
+      await setAppStoreValue(ACTIVE_CONV_KEY, id)
+      openThinkingIds.value = new Set<string>()
+      openToolIds.value = new Set<string>()
+      openToolStepIds.value = new Set<string>()
       try {
         const records = await listMessages(id)
+        let restoredMode: AskMode | null = null
         messages.value = records.map((record) => {
           const base: ChatMessage = {
             id: String(record.id || createId(record.role)),
@@ -947,6 +1133,7 @@ export default defineComponent({
               const meta = JSON.parse(record.meta) as Partial<ChatMessage> & { clarifyQuestion?: RecommendationClarifyQuestion }
               if (meta.diagnosis) base.diagnosis = meta.diagnosis
               if (meta.recommendationResult) base.recommendationResult = meta.recommendationResult
+              if (meta.investmentResult) base.investmentResult = meta.investmentResult
               if (meta.streamSteps) base.streamSteps = meta.streamSteps
               if (meta.quickReplies) base.quickReplies = meta.quickReplies
               if (meta.strategyName) base.strategyName = meta.strategyName
@@ -954,17 +1141,27 @@ export default defineComponent({
               if (meta.clarifyQuestion) base.clarifyQuestion = meta.clarifyQuestion
             } catch {}
           }
-          if (record.mode) {
-            activeMode.value = record.mode as AskMode
+          if (!restoredMode && isAskMode(record.mode)) {
+            restoredMode = record.mode
           }
           return base
         })
         const lastAssistant = [...messages.value].reverse().find((m) => m.role === 'assistant')
+        const inferredMode: AskMode = restoredMode
+          || (lastAssistant?.investmentResult
+            ? 'investment'
+            : lastAssistant?.recommendationResult
+              ? 'recommendation'
+              : 'diagnosis')
+        activeMode.value = inferredMode
+        strategyMenuOpen.value = false
+        recommendationState.value = lastAssistant?.recommendationResult?.preferences || createInitialRecommendationState()
+        investmentState.value = lastAssistant?.investmentResult?.preferences || createInitialInvestmentState()
         conversationContext.value = {
           lastResolvedCode: lastAssistant?.code || '',
-          lastResolvedName: lastAssistant?.stockName || '',
+          lastResolvedName: lastAssistant?.stockName || lastAssistant?.investmentResult?.preferences.bank || '',
           lastQuestion: '',
-          lastMode: activeMode.value,
+          lastMode: lastAssistant?.investmentResult ? 'investment' : inferredMode,
         }
       } catch {
         messages.value = [
@@ -974,17 +1171,7 @@ export default defineComponent({
     }
 
     async function startNewConversation() {
-      await switchConversation(null)
-    }
-
-    async function removeConversation(id: string) {
-      try {
-        await deleteConversation(id)
-        conversations.value = conversations.value.filter((c) => c.id !== id)
-        if (activeConversationId.value === id) {
-          await switchConversation(null)
-        }
-      } catch {}
+      await resetConversationPanel()
     }
 
     async function ensureConversationCreated(firstUserMessage: string) {
@@ -995,7 +1182,7 @@ export default defineComponent({
         const conv = await createConversation(id, title)
         activeConversationId.value = conv.id
         conversations.value.unshift(conv)
-        try { (await getAppStore()).set(ACTIVE_CONV_KEY, conv.id) } catch {}
+        await setAppStoreValue(ACTIVE_CONV_KEY, conv.id)
       } catch {}
     }
 
@@ -1004,6 +1191,7 @@ export default defineComponent({
       const meta: Partial<ChatMessage> & { clarifyQuestion?: RecommendationClarifyQuestion; mode?: AskMode } = {}
       if (msg.diagnosis) meta.diagnosis = msg.diagnosis
       if (msg.recommendationResult) meta.recommendationResult = msg.recommendationResult
+      if (msg.investmentResult) meta.investmentResult = msg.investmentResult
       if (msg.streamSteps?.length) meta.streamSteps = msg.streamSteps
       if (msg.quickReplies?.length) meta.quickReplies = msg.quickReplies
       if (msg.strategyName) meta.strategyName = msg.strategyName
@@ -1024,18 +1212,6 @@ export default defineComponent({
       } catch {}
     }
 
-    function formatConversationTime(timestamp: number) {
-      const date = new Date(timestamp)
-      const now = new Date()
-      const isToday = date.toDateString() === now.toDateString()
-      if (isToday) return date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
-      return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-    }
-
-    function toggleSidebar() {
-      sidebarOpen.value = !sidebarOpen.value
-    }
-
     onMounted(async () => {
       attachLiveNowTicker()
       bindPageEvents()
@@ -1049,12 +1225,10 @@ export default defineComponent({
           || strategyOptions.value[0]?.id
           || ''
       }
-      try {
-        const savedConvId = await (await getAppStore()).get<string>(ACTIVE_CONV_KEY)
-        if (savedConvId && conversations.value.some((c) => c.id === savedConvId)) {
-          await switchConversation(savedConvId)
-        }
-      } catch {}
+      const savedConvId = await getAppStoreValue<string>(ACTIVE_CONV_KEY)
+      if (savedConvId && conversations.value.some((c) => c.id === savedConvId)) {
+        await switchConversation(savedConvId)
+      }
     })
 
     onActivated(() => {
@@ -1081,9 +1255,11 @@ export default defineComponent({
       messages,
       starterPrompts,
       activeMode,
+      isConversationModeLocked,
       inputPlaceholder,
       strategyOptions,
       selectedStrategy,
+      showStrategyPicker,
       selectedStrategyId,
       strategyMenuOpen,
       strategyPickerRef,
@@ -1101,24 +1277,21 @@ export default defineComponent({
       formatDuration,
       getStepDurationLabel,
       getMessageElapsedLabel,
+      isMessageTaskRunning,
       formatRange,
       formatShares,
       getToolStatusLabel,
       getToolInputText,
       getToolOutputText,
+      isToolStepExpanded,
       getCandidateMarketLabel,
       openThinkingIds,
       openToolIds,
+      openToolStepIds,
       toggleThinking,
       toggleTools,
-      conversations,
-      activeConversationId,
-      sidebarOpen,
-      switchConversation,
+      toggleToolStep,
       startNewConversation,
-      removeConversation,
-      formatConversationTime,
-      toggleSidebar,
       stopCurrentAskTask,
     }
   },

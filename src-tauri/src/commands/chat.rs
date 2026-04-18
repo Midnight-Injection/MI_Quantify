@@ -1,12 +1,11 @@
 use std::fs;
 
-use dirs::home_dir;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-const DB_DIR_NAME: &str = ".mi_quantify";
+use crate::storage;
+
 const DB_FILE_NAME: &str = "mi_quantify.db";
-const LEGACY_DIR_NAME: &str = "mi_quantify";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,15 +34,8 @@ fn with_connection<T, F>(action: F) -> Result<T, String>
 where
     F: FnOnce(&Connection) -> Result<T, String>,
 {
-    let home = home_dir().ok_or("无法定位用户目录".to_string())?;
-    let new_dir = home.join(DB_DIR_NAME);
-    let legacy_dir = home.join(LEGACY_DIR_NAME);
-
-    if !new_dir.exists() && legacy_dir.exists() {
-        let _ = fs::rename(&legacy_dir, &new_dir);
-    }
-
-    let path = new_dir.join(DB_FILE_NAME);
+    let path = storage::app_data_file(DB_FILE_NAME)
+        .map_err(|_| "无法定位用户目录或 Windows 用户目录变量".to_string())?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -150,10 +142,7 @@ pub async fn chat_conversation_create(
 }
 
 #[tauri::command]
-pub async fn chat_conversation_update_title(
-    id: String,
-    title: String,
-) -> Result<(), String> {
+pub async fn chat_conversation_update_title(id: String, title: String) -> Result<(), String> {
     with_connection(|conn| {
         let now = chrono::Utc::now().timestamp_millis();
         conn.execute(
@@ -168,8 +157,11 @@ pub async fn chat_conversation_update_title(
 #[tauri::command]
 pub async fn chat_conversation_delete(id: String) -> Result<(), String> {
     with_connection(|conn| {
-        conn.execute("DELETE FROM chat_messages WHERE conversation_id = ?1", params![id])
-            .map_err(|error| error.to_string())?;
+        conn.execute(
+            "DELETE FROM chat_messages WHERE conversation_id = ?1",
+            params![id],
+        )
+        .map_err(|error| error.to_string())?;
         conn.execute("DELETE FROM chat_conversations WHERE id = ?1", params![id])
             .map_err(|error| error.to_string())?;
         Ok(())
@@ -213,9 +205,7 @@ pub async fn chat_message_list(
 }
 
 #[tauri::command]
-pub async fn chat_message_add(
-    message: ChatMessageRecord,
-) -> Result<(), String> {
+pub async fn chat_message_add(message: ChatMessageRecord) -> Result<(), String> {
     with_connection(|conn| {
         let now = chrono::Utc::now().timestamp_millis();
         conn.execute(

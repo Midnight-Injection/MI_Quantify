@@ -1,49 +1,16 @@
 <div class="page ask-page">
   <div class="page-shell ask-shell">
-    <aside v-if="sidebarOpen" class="chat-sidebar">
-      <div class="sidebar-header">
-        <span class="sidebar-title">对话记录</span>
-        <button type="button" class="sidebar-btn" @click="startNewConversation" title="新建对话">
+    <section class="chat-shell">
+      <div class="chat-topbar">
+        <div class="chat-topbar-copy">
+          <strong>AI问股</strong>
+          <span>点击右侧 + 直接开启全新会话面板。</span>
+        </div>
+        <button type="button" class="chat-topbar-action" @click="startNewConversation" aria-label="新建会话">
           <Plus :size="16" />
         </button>
       </div>
-      <div class="sidebar-list">
-        <button
-          v-for="conv in conversations"
-          :key="conv.id"
-          type="button"
-          class="sidebar-item"
-          :class="{ active: activeConversationId === conv.id }"
-          @click="switchConversation(conv.id)"
-        >
-          <span class="sidebar-item-title">{{ conv.title }}</span>
-          <span class="sidebar-item-time">{{ formatConversationTime(conv.updatedAt) }}</span>
-          <button type="button" class="sidebar-item-delete" @click.stop="removeConversation(conv.id)" title="删除">
-            <Trash2 :size="12" />
-          </button>
-        </button>
-        <button
-          type="button"
-          class="sidebar-item"
-          :class="{ active: !activeConversationId }"
-          @click="switchConversation(null)"
-        >
-          <span class="sidebar-item-title">新对话</span>
-        </button>
-      </div>
-      <div class="sidebar-footer">
-        <button type="button" class="sidebar-collapse-btn" @click="toggleSidebar" title="收起侧栏">
-          <ChevronLeft :size="14" />
-          <span>收起</span>
-        </button>
-      </div>
-    </aside>
 
-    <button v-if="!sidebarOpen" type="button" class="sidebar-expand-arrow" @click="toggleSidebar" title="展开对话">
-      <ChevronRight :size="16" />
-    </button>
-
-    <section class="chat-shell" :class="{ 'sidebar-collapsed': !sidebarOpen }">
       <div ref="chatListRef" class="chat-list" @scroll="handleChatScroll">
         <template v-for="message in messages" :key="message.id">
           <div v-if="message.role === 'user'" class="bubble-row user-row">
@@ -86,16 +53,17 @@
                     v-for="step in getToolSteps(message)"
                     :key="step.id"
                     class="tool-item"
-                    :class="step.status"
+                    :class="[step.status, { open: isToolStepExpanded(message.id, step.id) }]"
                   >
-                    <div class="tool-row">
+                    <div class="tool-row" @click="toggleToolStep(message.id, step.id)">
                       <span class="step-dot" :class="step.status"></span>
                       <span class="tool-name">{{ step.tool || step.title }}</span>
                       <span class="tool-status" :class="step.status">{{ getToolStatusLabel(step) }}</span>
                       <span class="tool-time">{{ getStepDurationLabel(step) }}</span>
+                      <span class="tool-item-toggle" :class="{ open: isToolStepExpanded(message.id, step.id) }">⌄</span>
                     </div>
                     <p class="tool-summary">{{ step.resultSummary || step.query || step.inputSummary || '等待工具返回...' }}</p>
-                    <div class="tool-io-grid">
+                    <div v-if="isToolStepExpanded(message.id, step.id)" class="tool-io-grid">
                       <div class="tool-io-card">
                         <span class="tool-io-label">入参</span>
                         <pre class="tool-io-text">{{ getToolInputText(step) }}</pre>
@@ -109,7 +77,7 @@
                 </div>
               </div>
 
-              <div v-if="!message.diagnosis && !message.recommendationResult" class="bubble bubble-synthesis">
+              <div v-if="!message.diagnosis && !message.recommendationResult && !message.investmentResult" class="bubble bubble-synthesis">
                 <div class="synthesis-header">
                   <span class="synthesis-icon">总结</span>
                   <span class="synthesis-title">结论生成</span>
@@ -119,7 +87,6 @@
                 <pre class="synthesis-text synthesis-merged-text">{{ getResultText(message) }}</pre>
               </div>
 
-              <button v-if="message.loading || message.streaming || message.synthesisRunning || message.streamSteps?.length" type="button" class="bubble-stop-btn" @click="stopCurrentAskTask">立即停止</button>
             </div>
 
             <div v-if="message.recommendationResult" class="bubble bubble-recommendation">
@@ -183,6 +150,62 @@
               <pre class="bubble-text result-text">{{ message.content }}</pre>
             </div>
 
+            <div v-if="message.investmentResult" class="bubble bubble-recommendation">
+              <div class="recommendation-topline">
+                <div>
+                  <h3>{{ message.investmentResult.marketSummary }}</h3>
+                </div>
+              </div>
+
+              <div class="basis-tags">
+                <span v-for="item in message.investmentResult.basisSummary" :key="item" class="basis-tag">{{ item }}</span>
+              </div>
+
+              <div class="candidate-list">
+                <article v-for="candidate in message.investmentResult.candidates" :key="candidate.productCode" class="candidate-card">
+                  <div class="candidate-head">
+                    <div>
+                      <span class="candidate-rank">No.{{ candidate.rank }}</span>
+                      <h4>{{ candidate.productName }}</h4>
+                      <p>{{ candidate.productCode }} · {{ candidate.category === 'deposit' ? '存款' : candidate.category === 'fund' ? '基金' : '理财' }}</p>
+                    </div>
+                    <div class="candidate-score">{{ candidate.suitabilityScore }}</div>
+                  </div>
+
+                  <p class="candidate-summary">{{ candidate.reason }}</p>
+
+                  <div class="candidate-metrics">
+                    <div class="candidate-metric">
+                      <span>收益测算</span>
+                      <strong>{{ formatPrice(candidate.estimatedProfitMin) }} - {{ formatPrice(candidate.estimatedProfitMax) }}</strong>
+                      <small>中性参考 {{ formatPrice(candidate.estimatedProfitMid) }}</small>
+                    </div>
+                    <div class="candidate-metric">
+                      <span>风险等级</span>
+                      <strong>{{ candidate.riskLevel }}</strong>
+                      <small>{{ candidate.benchmarkText || (candidate.annualRate ? `挂牌利率 ${candidate.annualRate}%` : '以历史收益或基准做参考') }}</small>
+                    </div>
+                  </div>
+
+                  <div class="candidate-section">
+                    <span class="candidate-section-title">主要依据</span>
+                    <div class="candidate-pills">
+                      <span v-for="item in candidate.highlights" :key="item" class="candidate-pill">{{ item }}</span>
+                    </div>
+                  </div>
+
+                  <div class="candidate-section">
+                    <span class="candidate-section-title">主要风险</span>
+                    <div class="candidate-pills warning">
+                      <span v-for="item in candidate.risks" :key="item" class="candidate-pill">{{ item }}</span>
+                    </div>
+                  </div>
+                </article>
+              </div>
+
+              <pre class="bubble-text result-text">{{ message.content }}</pre>
+            </div>
+
             <div v-if="message.diagnosis" class="bubble bubble-result">
               <div class="result-meta">
                 <span class="result-stock">{{ message.stockName || message.diagnosis?.stockInfo?.name }} · {{ message.code || message.diagnosis?.stockInfo?.code }}</span>
@@ -221,9 +244,21 @@
               <span class="dot"></span>
             </div>
 
-            <div v-else-if="!message.recommendationResult && !message.diagnosis && !message.streamingText && !(message.streaming && message.streamSteps?.length)" class="bubble bubble-plain">
+            <div
+              v-else-if="!message.recommendationResult && !message.investmentResult && !message.diagnosis && !message.streamingText && !message.streamSteps?.length"
+              class="bubble bubble-plain"
+            >
               <pre class="bubble-text">{{ message.content }}</pre>
             </div>
+
+            <button
+              v-if="isMessageTaskRunning(message)"
+              type="button"
+              class="bubble-stop-btn"
+              @click="stopCurrentAskTask"
+            >
+              立即停止
+            </button>
 
             <div v-if="message.quickReplies?.length && !message.loading" class="quick-replies">
               <button
@@ -245,15 +280,36 @@
         <div class="composer-select-row">
           <div class="composer-toggle-group">
             <div class="mode-switch">
-              <button type="button" class="mode-button" :class="{ active: activeMode === 'recommendation' }" @click="setMode('recommendation')">
-                <span>AI荐股</span>
+              <button
+                type="button"
+                class="mode-button"
+                :class="{ active: activeMode === 'recommendation' }"
+                :disabled="isConversationModeLocked && activeMode !== 'recommendation'"
+                @click="setMode('recommendation')"
+              >
+                <span :class="{ disabled: isConversationModeLocked && activeMode !== 'recommendation' }">AI荐股</span>
               </button>
-              <button type="button" class="mode-button" :class="{ active: activeMode === 'diagnosis' }" @click="setMode('diagnosis')">
-                <span>AI问股</span>
+              <button
+                type="button"
+                class="mode-button"
+                :class="{ active: activeMode === 'diagnosis' }"
+                :disabled="isConversationModeLocked && activeMode !== 'diagnosis'"
+                @click="setMode('diagnosis')"
+              >
+                <span :class="{ disabled: isConversationModeLocked && activeMode !== 'diagnosis' }">AI问股</span>
+              </button>
+              <button
+                type="button"
+                class="mode-button"
+                :class="{ active: activeMode === 'investment' }"
+                :disabled="isConversationModeLocked && activeMode !== 'investment'"
+                @click="setMode('investment')"
+              >
+                <span :class="{ disabled: isConversationModeLocked && activeMode !== 'investment' }">AI投资</span>
               </button>
             </div>
           </div>
-          <div ref="strategyPickerRef" class="composer-select strategy-picker">
+          <div v-if="showStrategyPicker" ref="strategyPickerRef" class="composer-select strategy-picker">
             <button class="strategy-trigger" type="button" @click="strategyMenuOpen = !strategyMenuOpen">
               <div class="strategy-trigger-copy">
                 <strong>{{ selectedStrategy?.name || 'AI综合评估策略' }}</strong>

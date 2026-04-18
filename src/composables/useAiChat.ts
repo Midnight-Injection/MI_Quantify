@@ -25,6 +25,24 @@ function createAbortError() {
   return error
 }
 
+function withLocalTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`${label} 超时（${Math.round(ms / 1000)}s）`))
+    }, ms)
+
+    promise
+      .then((value) => {
+        window.clearTimeout(timer)
+        resolve(value)
+      })
+      .catch((error) => {
+        window.clearTimeout(timer)
+        reject(error)
+      })
+  })
+}
+
 function withAbort<T>(promise: Promise<T>, signal?: AbortSignal, cleanup?: () => void): Promise<T> {
   if (!signal) return promise
   if (signal.aborted) {
@@ -58,6 +76,12 @@ function resolveProxy(provider: AiProvider): ProxyConfig | null {
   return proxy
 }
 
+export function isAuthError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return /(?:^|\s)(401|403)(?:\s|$|:)/.test(msg)
+    || /Unauthorized|Forbidden|令牌已过期|token.*invalid|invalid.*token|authentication/i.test(msg)
+}
+
 export function useAiChat() {
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -65,20 +89,25 @@ export function useAiChat() {
   async function chat(
     provider: AiProvider,
     messages: AiMessage[],
-    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal },
+    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal; timeoutMs?: number },
   ): Promise<string> {
     loading.value = true
     error.value = null
     try {
-      const result = await withAbort(invoke<string>('ai_chat', {
-        apiUrl: provider.apiUrl,
-        apiKey: provider.apiKey,
-        model: provider.model,
-        messages,
-        temperature: options?.temperature ?? provider.temperature,
-        maxTokens: options?.maxTokens ?? provider.maxTokens,
-        proxy: resolveProxy(provider),
-      }), options?.signal)
+      const localTimeoutMs = Math.max(15000, options?.timeoutMs ?? 90000)
+      const result = await withLocalTimeout(
+        withAbort(invoke<string>('ai_chat', {
+          apiUrl: provider.apiUrl,
+          apiKey: provider.apiKey,
+          model: provider.model,
+          messages,
+          temperature: options?.temperature ?? provider.temperature,
+          maxTokens: options?.maxTokens ?? provider.maxTokens,
+          proxy: resolveProxy(provider),
+        }), options?.signal),
+        localTimeoutMs,
+        'AI 响应',
+      )
       return result
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -93,7 +122,7 @@ export function useAiChat() {
     provider: AiProvider,
     messages: AiMessage[],
     callbacks: StreamCallbacks,
-    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal },
+    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal; timeoutMs?: number },
   ): Promise<string> {
     loading.value = true
     error.value = null
@@ -122,20 +151,25 @@ export function useAiChat() {
         }
       })
 
-      const result = await withAbort(invoke<string>('ai_chat_stream', {
-        requestId,
-        apiUrl: provider.apiUrl,
-        apiKey: provider.apiKey,
-        model: provider.model,
-        messages,
-        temperature: options?.temperature ?? provider.temperature,
-        maxTokens: options?.maxTokens ?? provider.maxTokens,
-        proxy: resolveProxy(provider),
-      }), options?.signal, () => {
-        aborted = true
-        unlisten?.()
-        unlisten = null
-      })
+      const localTimeoutMs = Math.max(15000, options?.timeoutMs ?? 120000)
+      const result = await withLocalTimeout(
+        withAbort(invoke<string>('ai_chat_stream', {
+          requestId,
+          apiUrl: provider.apiUrl,
+          apiKey: provider.apiKey,
+          model: provider.model,
+          messages,
+          temperature: options?.temperature ?? provider.temperature,
+          maxTokens: options?.maxTokens ?? provider.maxTokens,
+          proxy: resolveProxy(provider),
+        }), options?.signal, () => {
+          aborted = true
+          unlisten?.()
+          unlisten = null
+        }),
+        localTimeoutMs,
+        'AI 流式响应',
+      )
 
       return result
     } catch (e) {
@@ -151,7 +185,7 @@ export function useAiChat() {
   async function chatJson<T = unknown>(
     provider: AiProvider,
     messages: AiMessage[],
-    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal },
+    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal; timeoutMs?: number },
   ): Promise<T> {
     const content = await chat(provider, messages, options)
     const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/\{[\s\S]*\}/)

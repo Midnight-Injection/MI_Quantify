@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import market, kline, sector, fundflow, news, openclaw, finance
+from app.routers import market, kline, sector, fundflow, news, openclaw, finance, investment
 from app.services.network_env import register_proxies
 
 for k in [
@@ -16,7 +16,7 @@ for k in [
 os.environ["no_proxy"] = "*"
 os.environ["NO_PROXY"] = "*"
 
-app = FastAPI(title="MI Quantify Sidecar", version="0.1.0")
+app = FastAPI(title="MI Quantify Sidecar", version="0.1.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,6 +32,7 @@ app.include_router(fundflow.router, prefix="/api/fundflow", tags=["fundflow"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(openclaw.router, prefix="/api/openclaw", tags=["openclaw"])
 app.include_router(finance.router, prefix="/api/finance", tags=["finance"])
+app.include_router(investment.router, prefix="/api/investment", tags=["investment"])
 
 
 @app.get("/health")

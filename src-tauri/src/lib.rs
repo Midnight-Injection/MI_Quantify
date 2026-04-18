@@ -1,4 +1,5 @@
 mod commands;
+mod storage;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -19,6 +20,8 @@ pub fn run() {
         .manage(commands::wechat::init_wechat_runtime_state())
         .invoke_handler(tauri::generate_handler![
             greet,
+            commands::app_store::app_store_get,
+            commands::app_store::app_store_set,
             commands::ai::ai_chat,
             commands::ai::ai_chat_stream,
             commands::ai::test_ai_connection,
@@ -38,6 +41,7 @@ pub fn run() {
             commands::sidecar::sidecar_start,
             commands::sidecar::sidecar_stop,
             commands::sidecar::sidecar_status,
+            commands::sidecar::set_proxy_env,
             commands::scheduler::scheduler_list,
             commands::scheduler::scheduler_toggle,
             commands::scheduler::scheduler_run_now,

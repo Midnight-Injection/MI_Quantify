@@ -39,7 +39,17 @@ export interface PromptTemplate {
   variables: string[]
 }
 
-export type PromptCategory = 'daily_eval' | 'buy_signal' | 'sell_signal' | 'news_analysis' | 'custom'
+export type PromptCategory =
+  | 'daily_eval'
+  | 'buy_signal'
+  | 'sell_signal'
+  | 'news_analysis'
+  | 'mode_router'
+  | 'recommendation_agent'
+  | 'investment_agent'
+  | 'investment_synthesis'
+  | 'tool_retry_policy'
+  | 'custom'
 
 export interface BacktestResult {
   strategyId: string

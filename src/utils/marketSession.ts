@@ -169,6 +169,7 @@ function getZonedDateParts(value: Date, timezone: string) {
     weekday: 'short',
     minute: '2-digit',
     hour: '2-digit',
+    hourCycle: 'h23',
     second: '2-digit',
     hour12: false,
   })

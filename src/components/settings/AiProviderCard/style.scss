@@ -30,6 +30,28 @@
   gap: 10px;
 }
 
+.provider-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.provider-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: $text-muted;
+  font-size: 14px;
+  transition: transform $transition-fast, color $transition-fast;
+
+  &.expanded {
+    transform: rotate(0deg);
+    color: $text-primary;
+  }
+}
+
 .provider-name {
   font-size: 14px;
   font-weight: 600;

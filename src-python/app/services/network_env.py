@@ -142,6 +142,9 @@ def create_http_session(
     if proxy_dict:
         session.trust_env = False
         session.proxies.update(proxy_dict)
+    elif target_url and not should_use_proxy_for_url(target_url):
+        session.trust_env = False
+        session.proxies.clear()
     elif use_system_proxy:
         session.trust_env = True
     else:

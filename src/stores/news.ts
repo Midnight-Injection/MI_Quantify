@@ -9,15 +9,26 @@ export const useNewsStore = defineStore('news', () => {
   const newsList = ref<NewsItem[]>([])
   const loading = ref(false)
   const lastUpdated = ref<number>(0)
+  const lastLimit = ref(0)
   const analyzingIds = ref<Set<string>>(new Set())
 
-  async function fetchNews() {
+  async function fetchNews(options?: { force?: boolean; limit?: number; maxAgeMs?: number }) {
+    const limit = Math.max(1, options?.limit ?? 60)
+    const maxAgeMs = options?.maxAgeMs ?? 60_000
+    const hasFreshCache = !options?.force
+      && lastUpdated.value > 0
+      && Date.now() - lastUpdated.value < maxAgeMs
+      && newsList.value.length >= Math.min(limit, lastLimit.value || limit)
+
+    if (hasFreshCache) return
+
     loading.value = true
     try {
       const { get } = useSidecar()
-      const res = await get<{ data: NewsItem[] }>('/api/news/financial?limit=240')
+      const res = await get<{ data: NewsItem[] }>(`/api/news/financial?limit=${limit}`)
       newsList.value = res.data
       lastUpdated.value = Date.now()
+      lastLimit.value = limit
     } catch (e) {
       console.error('Failed to fetch news:', e)
     } finally {

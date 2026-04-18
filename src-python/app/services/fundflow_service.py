@@ -1,4 +1,5 @@
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.services.network_env import create_http_session
 
@@ -119,6 +120,46 @@ def _fetch_akshare(rank: int = 50) -> list[dict]:
     return []
 
 
+def _fetch_snapshot_fallback(rank: int = 50) -> list[dict]:
+    from app.services.market_service import get_stock_list
+
+    response = get_stock_list("a", page=1, page_size=max(rank * 4, 40))
+    universe = response.get("data", []) if isinstance(response, dict) else []
+    if not universe:
+        return []
+
+    def load_one(item: dict) -> dict | None:
+        code = str(item.get("code", "") or "").strip()
+        if not code:
+            return None
+        flows = get_stock_fund_flow(code, 3)
+        if not flows:
+            return None
+        latest = flows[-1]
+        return {
+            "code": code,
+            "name": str(item.get("name", "") or ""),
+            "mainNetInflow": _safe_float(latest.get("mainNetInflow")),
+            "mainNetInflowPercent": _safe_float(latest.get("mainNetInflowPercent")),
+            "superLargeNetInflow": _safe_float(latest.get("superLargeNetInflow")),
+            "largeNetInflow": _safe_float(latest.get("largeNetInflow")),
+            "mediumNetInflow": _safe_float(latest.get("mediumNetInflow")),
+            "smallNetInflow": _safe_float(latest.get("smallNetInflow")),
+        }
+
+    results: list[dict] = []
+    max_workers = min(8, max(1, len(universe)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(load_one, item) for item in universe]
+        for future in as_completed(futures):
+            row = future.result()
+            if row:
+                results.append(row)
+
+    results.sort(key=lambda item: item.get("mainNetInflow", 0), reverse=True)
+    return results[:rank]
+
+
 def get_fund_flow(rank: int = 50) -> list[dict]:
     if _fund_flow_cache["data"] and (
         time.time() - _fund_flow_cache["updated"] < _CACHE_TTL_SECONDS
@@ -130,6 +171,7 @@ def get_fund_flow(rank: int = 50) -> list[dict]:
     for loader_name, loader in (
         ("eastmoney", _fetch_eastmoney),
         ("akshare", _fetch_akshare),
+        ("snapshot", _fetch_snapshot_fallback),
     ):
         try:
             result = loader(rank)
