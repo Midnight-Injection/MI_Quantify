@@ -1,6 +1,6 @@
 import { useAiChat, isAuthError } from '@/composables/useAiChat'
 import { useSidecar } from '@/composables/useSidecar'
-import { runReActLoop, type ReActTool, type ReActToolResult } from '@/agents/core/reactAgent'
+import { normalizeAgentMaxSteps, runReActLoop, type ReActTool, type ReActToolResult } from '@/agents/core/reactAgent'
 import type { AiDiagnosis, AiProvider, DiagnosisAgentStep, DiagnosisEvidence, KlineData, SearchProvider, Strategy, TechnicalSnapshot } from '@/types'
 import { buildDiagnosisTimingPrompt, getMarketSessionContext, type MarketSessionContext } from '@/utils/marketSession'
 import { buildTechnicalSnapshot, getStockProfile } from '@/utils/marketMetrics'
@@ -468,6 +468,33 @@ function buildSessionSummary(
   return `当前结构以震荡为主，暂未形成高把握度单边趋势。${phaseActionLabel}，先看 ${support.toFixed(2)} 至 ${resistance.toFixed(2)} 区间内的量价选择，再决定是否参与。`
 }
 
+function pickPositiveNumber(...values: unknown[]) {
+  for (const value of values) {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric) && numeric > 0) return numeric
+  }
+  return undefined
+}
+
+function hasPriceHint(text?: string) {
+  return /\d+(?:\.\d+)?/.test(`${text || ''}`)
+}
+
+function hasConcreteAction(text?: string) {
+  return /(买入|低吸|试仓|布局|加仓|减仓|卖出|止损|止盈|离场|观望|回踩|突破|跌破|反弹)/.test(`${text || ''}`)
+}
+
+function normalizeDecisionLabel(value: unknown, fallback: string, mapping: Record<string, string>) {
+  const raw = `${value || ''}`.trim()
+  if (!raw) return fallback
+  for (const [pattern, label] of Object.entries(mapping)) {
+    if (new RegExp(pattern).test(raw)) {
+      return label
+    }
+  }
+  return raw
+}
+
 function sanitizeDiagnosis(
   diagnosis: AiDiagnosis,
   trace: DiagnosisAgentStep[],
@@ -482,9 +509,88 @@ function sanitizeDiagnosis(
     }
     return []
   }
+
+  const prediction = normalizeDecisionLabel(diagnosis.prediction, '震荡', {
+    '看多|上涨|偏多|bull': '看多',
+    '看空|下跌|偏空|bear': '看空',
+    '震荡|中性|整理|sideways': '震荡',
+  })
+  const recommendation = normalizeDecisionLabel(
+    diagnosis.recommendation,
+    prediction === '看多' ? '买入' : prediction === '看空' ? '卖出' : '观望',
+    {
+      '买入|低吸|布局|加仓': '买入',
+      '卖出|减仓|止盈|离场': '卖出',
+      '观望|等待|持有|观察': '观望',
+    },
+  )
+  const supportPrice = pickPositiveNumber(
+    diagnosis.supportPrice,
+    diagnosis.klineAnalysis?.keySupportLevels?.[0],
+    diagnosis.stopLossPrice,
+  )
+  const resistancePrice = pickPositiveNumber(
+    diagnosis.resistancePrice,
+    diagnosis.klineAnalysis?.keyResistanceLevels?.[0],
+    diagnosis.takeProfitPrice,
+  )
+  let buyLower = pickPositiveNumber(diagnosis.buyLower)
+  let buyUpper = pickPositiveNumber(diagnosis.buyUpper)
+  let sellLower = pickPositiveNumber(diagnosis.sellLower)
+  let sellUpper = pickPositiveNumber(diagnosis.sellUpper)
+
+  if (!buyLower && supportPrice) buyLower = supportPrice * 0.99
+  if (!buyUpper && supportPrice) buyUpper = supportPrice * 1.02
+  if (buyLower && buyUpper && buyLower > buyUpper) {
+    [buyLower, buyUpper] = [buyUpper, buyLower]
+  }
+
+  if (!sellLower && resistancePrice) sellLower = resistancePrice * 0.99
+  if (!sellUpper && resistancePrice) sellUpper = resistancePrice * 1.03
+  if (sellLower && sellUpper && sellLower > sellUpper) {
+    [sellLower, sellUpper] = [sellUpper, sellLower]
+  }
+
+  const stopLossPrice = pickPositiveNumber(diagnosis.stopLossPrice, buyLower ? buyLower * 0.97 : undefined, supportPrice ? supportPrice * 0.97 : undefined)
+  const takeProfitPrice = pickPositiveNumber(diagnosis.takeProfitPrice, sellUpper, resistancePrice ? resistancePrice * 1.03 : undefined)
+  const fallbackSummary = recommendation === '买入'
+    ? `当前建议以买入为主，仅在 ${buyLower?.toFixed(2) || '--'} - ${buyUpper?.toFixed(2) || '--'} 区间分批试仓；反弹至 ${sellLower?.toFixed(2) || '--'} - ${sellUpper?.toFixed(2) || '--'} 区间可逐步止盈，跌破 ${stopLossPrice?.toFixed(2) || '--'} 必须止损。`
+    : recommendation === '卖出'
+      ? `当前建议以卖出或减仓为主，若反弹至 ${sellLower?.toFixed(2) || '--'} - ${sellUpper?.toFixed(2) || '--'} 区间承压应优先兑现；跌破 ${stopLossPrice?.toFixed(2) || '--'} 不再博弈反弹。`
+      : `当前建议先观望，优先等待 ${buyLower?.toFixed(2) || '--'} - ${buyUpper?.toFixed(2) || '--'} 区间回踩确认后再考虑试仓；若反弹至 ${sellLower?.toFixed(2) || '--'} - ${sellUpper?.toFixed(2) || '--'} 但量能不足，不追高。`
+  const summary = diagnosis.summary?.trim()
+  const entryAdvice = diagnosis.entryAdvice?.trim()
+  const exitAdvice = diagnosis.exitAdvice?.trim()
+  const positionAdvice = diagnosis.positionAdvice?.trim()
+
   return {
     ...diagnosis,
-    confidence: Number(diagnosis.confidence) || 0,
+    recommendation,
+    prediction,
+    confidence: Math.max(0, Math.min(100, Number(diagnosis.confidence) || 0)),
+    summary: summary && hasConcreteAction(summary) && hasPriceHint(summary) ? summary : fallbackSummary,
+    supportPrice,
+    resistancePrice,
+    buyLower,
+    buyUpper,
+    sellLower,
+    sellUpper,
+    stopLossPrice,
+    takeProfitPrice,
+    entryAdvice: entryAdvice && hasConcreteAction(entryAdvice) && hasPriceHint(entryAdvice)
+      ? entryAdvice
+      : `执行上只在 ${buyLower?.toFixed(2) || '--'} - ${buyUpper?.toFixed(2) || '--'} 区间按计划分批处理，脱离该区间不追单。`,
+    exitAdvice: exitAdvice && hasConcreteAction(exitAdvice) && hasPriceHint(exitAdvice)
+      ? exitAdvice
+      : `若价格运行到 ${sellLower?.toFixed(2) || '--'} - ${sellUpper?.toFixed(2) || '--'} 区间分批止盈；一旦跌破 ${stopLossPrice?.toFixed(2) || '--'} 立即执行退出。`,
+    positionAdvice: positionAdvice && hasConcreteAction(positionAdvice)
+      ? positionAdvice
+      : recommendation === '买入'
+        ? '建议先用 20%-30% 仓位试仓，确认承接和量能后再考虑加仓。'
+        : recommendation === '卖出'
+          ? '建议把仓位压到 0%-10%，只保留观察仓或直接空仓等待。'
+          : '建议把仓位控制在 0%-20%，等待关键价位确认后再决定是否参与。',
+    positionSize: diagnosis.positionSize?.trim() || (recommendation === '买入' ? '20%-30%' : recommendation === '卖出' ? '0%-10%' : '0%-20%'),
     catalysts: normalizeStringArray(diagnosis.catalysts),
     risks: normalizeStringArray(diagnosis.risks),
     socialSignals: normalizeStringArray(diagnosis.socialSignals),
@@ -579,7 +685,7 @@ export async function runDiagnosisAgent(options: {
 
   const period = options.period || 'daily'
   const adjust = options.adjust || 'qfq'
-  const maxSteps = Math.max(3, Math.min(options.maxSteps || 12, 5))
+  const maxSteps = normalizeAgentMaxSteps(options.maxSteps, { min: 3, fallback: 12 })
   const planningTimeoutMs = 240000
   let normalizedCode = options.code ? normalizeSecurityCode(options.code) : ''
 
@@ -1243,7 +1349,8 @@ export async function runDiagnosisAgent(options: {
 能用股票名称、代码或问题关键词直接查询的工具可以先执行；只有实时行情、K线、资金流、财报这类必须依赖股票代码的工具，才需要先进一步确定代码。
 在 finish 之前，至少要保证已经拿到实时行情和 K 线；如果问题明显依赖消息面、财报、资金面或市场环境，也要优先补齐对应工具。
 对于“现在怎么看、短线空间、能不能买/卖”这类单票问诊，如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就必须优先 finish，不要再为了补充可有可无的板块工具而拖延。
-最终结论必须直接、明确，不能输出模糊空话。`,
+最终结论必须直接、明确，不能输出模糊空话。
+必须给出：1. 具体操作（买入/卖出/观望/分批/减仓/止损）；2. 明确价格区间或单价；3. 退出条件或止损位；4. 为什么这么做。`,
       userPrompt: JSON.stringify({
         task: '针对用户问题进行股票研究并直接输出最终诊断 JSON。',
         goal: '最终需要产出看多/看空/震荡判断、买卖区间、止损止盈、仓位建议，以及对用户关注点的明确回答。',
@@ -1251,7 +1358,7 @@ export async function runDiagnosisAgent(options: {
           originalQuestion: options.question || '',
           matchedKeyword: options.matchedKeyword || '',
           resolvedStockName: options.resolvedName || stockInfo.name,
-          focus: questionFocus || '默认围绕价格、资金、消息、板块、财报和风险收益比展开',
+          focus: questionFocus || '默认围绕价格、资金、消息、板块、财报和风险收益比展开，且最终必须落到具体动作和价格区间',
           candidates: options.matchCandidates?.slice(0, 5) || [],
         },
         stock: stockInfo.code
@@ -1273,8 +1380,8 @@ export async function runDiagnosisAgent(options: {
         tools: toolCatalog,
         conversationHistory: (options.conversationHistory || []).slice(-10),
       }, null, 2),
-      nextStepPrompt: '请判断当前已有数据是否足以完整回答用户问题；如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就应直接 finish 并返回最终诊断 JSON；只有确实存在关键缺口时才继续只选择一个最必要的工具。注意同一个失败超过3次的工具不能再调用。',
-      toolMaxTokens: 1100,
+      nextStepPrompt: '请判断当前已有数据是否足以完整回答用户问题；如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就应直接 finish 并返回最终诊断 JSON。最终 JSON 必须包含明确操作、具体价格区间、止损位/退出条件和理由；如果这些字段还不完整，继续只选择一个最必要的工具。注意同一个失败超过3次的工具不能再调用。',
+      toolMaxTokens: 2400,
       toolTimeoutMs: 210000,
     }), planningTimeoutMs, '统一智能体规划'), options.abortSignal)
     trace.push(...reactResult.trace)
@@ -1290,20 +1397,21 @@ export async function runDiagnosisAgent(options: {
         }`,
       )
     }
-    const timeoutMessage = error instanceof Error ? error.message : String(error)
+    const reactErrorMessage = error instanceof Error ? error.message : String(error)
     const canFallbackToSynthesis = Boolean(stockInfo.code && klineData.length)
-    if (!/超时/i.test(timeoutMessage) || !canFallbackToSynthesis) {
+    const shouldFallbackToSynthesis = canFallbackToSynthesis && /超时|JSON|finalAnswer|模型决策解析失败|模型未返回合法 JSON/i.test(reactErrorMessage)
+    if (!shouldFallbackToSynthesis) {
       throw error
     }
     const timeoutStep = createStep({
       kind: 'synthesis',
-      title: 'ReAct 超时保护',
+      title: 'ReAct 兜底保护',
       status: 'error',
-      strategy: 'ReAct Timeout Guard',
+      strategy: 'ReAct Fallback Guard',
       inputSummary: '关键证据已到位，转入 AI 最终总结',
-      resultSummary: timeoutMessage,
+      resultSummary: reactErrorMessage,
       query: options.question || stockInfo.name || stockInfo.code,
-      toolOutputText: timeoutMessage,
+      toolOutputText: reactErrorMessage,
     })
     trace.push(timeoutStep)
     emitProgress(timeoutStep)
@@ -1339,10 +1447,11 @@ export async function runDiagnosisAgent(options: {
 最终必须输出一个合法 JSON 对象，字段包括：
 recommendation, prediction, confidence, riskLevel, summary, klineAnalysis, supportPrice, resistancePrice, buyLower, buyUpper, sellLower, sellUpper, positionAdvice, positionSize, entryAdvice, exitAdvice, stopLossPrice, takeProfitPrice, suggestedShares, catalysts, risks, socialSignals, policyImpact, internationalFactors, strategyFocus, evidence, scenarios。
 要求：
-1. 所有价位必须与实时价格、支撑压力或已提供证据一致。
-2. 结论必须直接回答用户问题，不要空话。
-3. 信息不足时直接在对应字段说明证据不足，不要臆测。
-4. 保持简洁，summary 不超过 120 字，evidence 和 scenarios 各不超过 3 条。
+1. 所有价位必须与实时价格、支撑压力或已提供证据一致，且必须能落成具体入场区间、止损位和退出区间。
+2. 结论必须直接回答用户问题，不要空话，必须包含具体操作：买入 / 卖出 / 观望 / 分批 / 减仓 / 止损。
+3. 信息不足时直接在对应字段说明证据不足，不要臆测；但 summary 里仍需明确给出当前建议动作和等待的关键价位。
+4. positionAdvice、entryAdvice、exitAdvice 不能写“看情况”“适当关注”这种模糊表述，必须写到数字。
+5. 保持简洁，summary 不超过 120 字，evidence 和 scenarios 各不超过 3 条。
 不要输出 Markdown，不要解释。`,
           },
           {

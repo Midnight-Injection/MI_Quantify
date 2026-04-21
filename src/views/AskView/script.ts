@@ -36,11 +36,13 @@ import {
   createConversation,
   listMessages,
   addMessage,
+  deleteConversation,
   type ChatConversation,
 } from '@/utils/chatPersistence'
-import { ChevronDown, Plus } from 'lucide-vue-next'
+import { ChevronDown, ChevronLeft, ChevronRight, Plus } from 'lucide-vue-next'
 
 const ACTIVE_CONV_KEY = 'active_conversation_id'
+const ASK_SIDEBAR_COLLAPSED_KEY = 'ask_sidebar_collapsed'
 
 async function getAppStoreValue<T>(key: string): Promise<T | null> {
   try {
@@ -153,6 +155,7 @@ function createAskViewState() {
     ]),
     conversations: ref<ChatConversation[]>([]),
     activeConversationId: ref<string | null>(null),
+    isSidebarCollapsed: ref(false),
   }
 }
 
@@ -179,7 +182,7 @@ function stopLiveNowTicker() {
 
 export default defineComponent({
   name: 'AskView',
-  components: { ChevronDown, Plus },
+  components: { ChevronDown, ChevronLeft, ChevronRight, Plus },
   setup() {
     const marketStore = useMarketStore()
     const settingsStore = useSettingsStore()
@@ -201,6 +204,7 @@ export default defineComponent({
       messages,
       conversations,
       activeConversationId,
+      isSidebarCollapsed,
     } = askViewState
     const chatListRef = ref<HTMLElement | null>(null)
     const strategyPickerRef = ref<HTMLElement | null>(null)
@@ -268,6 +272,12 @@ export default defineComponent({
     function selectStrategy(id: string) {
       selectedStrategyId.value = id
       strategyMenuOpen.value = false
+    }
+
+    async function toggleSidebar() {
+      const next = !isSidebarCollapsed.value
+      isSidebarCollapsed.value = next
+      await setAppStoreValue(ASK_SIDEBAR_COLLAPSED_KEY, next)
     }
 
     function handleDocumentClick(event: MouseEvent) {
@@ -979,6 +989,13 @@ export default defineComponent({
       if (message.diagnosis || message.recommendationResult || message.investmentResult) {
         return message.content || '最终结论已生成。'
       }
+      const fallbackText = (message.streamingText || message.content || '').trim()
+      if (/模型未返回合法 JSON|模型决策解析失败|finalAnswer|JSON/i.test(fallbackText)) {
+        return '本轮证据采集已经完成，但结构化总结生成失败。建议直接重试，或把问题改成“分析某只股票并给出买入区间、止损和目标价”。'
+      }
+      if ((fallbackText.startsWith('{') || fallbackText.startsWith('[')) && fallbackText.length > 24) {
+        return '模型返回了原始结构化内容，但前端未成功解析成表单结果。可以直接重试一次，或换成更明确的问题重新生成。'
+      }
       if (message.streamingText?.trim()) {
         return message.streamingText
       }
@@ -989,6 +1006,30 @@ export default defineComponent({
         return '等待工具完成后生成最终结论...'
       }
       return message.content || '当前没有可展示的总结内容。'
+    }
+
+    function hasStructuredResult(message: ChatMessage) {
+      return Boolean(message.diagnosis || message.recommendationResult || message.investmentResult)
+    }
+
+    function shouldShowAssistantLiveStack(message: ChatMessage) {
+      if (hasStructuredResult(message) && !isMessageTaskRunning(message)) {
+        return false
+      }
+      return Boolean(
+        message.loading
+        || message.streaming
+        || message.synthesisRunning
+        || message.streamSteps?.length
+        || message.streamingText?.trim(),
+      )
+    }
+
+    function shouldShowPlainAssistantBubble(message: ChatMessage) {
+      return !hasStructuredResult(message)
+        && !shouldShowAssistantLiveStack(message)
+        && Boolean(message.content?.trim())
+        && !message.loading
     }
 
     function isThinkingExpanded(message: ChatMessage) {
@@ -1174,6 +1215,28 @@ export default defineComponent({
       await resetConversationPanel()
     }
 
+    function formatConversationTime(timestamp?: number) {
+      if (!timestamp) return '--:--'
+      return new Intl.DateTimeFormat('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(timestamp).replace(',', '')
+    }
+
+    async function removeConversation(id: string) {
+      if (sending.value) return
+      try {
+        await deleteConversation(id)
+        if (activeConversationId.value === id) {
+          await resetConversationPanel()
+        }
+        await loadConversationList()
+      } catch {}
+    }
+
     async function ensureConversationCreated(firstUserMessage: string) {
       if (activeConversationId.value) return
       const id = createId('conv')
@@ -1229,6 +1292,10 @@ export default defineComponent({
       if (savedConvId && conversations.value.some((c) => c.id === savedConvId)) {
         await switchConversation(savedConvId)
       }
+      const savedSidebarCollapsed = await getAppStoreValue<boolean>(ASK_SIDEBAR_COLLAPSED_KEY)
+      if (typeof savedSidebarCollapsed === 'boolean') {
+        isSidebarCollapsed.value = savedSidebarCollapsed
+      }
     })
 
     onActivated(() => {
@@ -1253,6 +1320,9 @@ export default defineComponent({
       sending,
       chatListRef,
       messages,
+      conversations,
+      activeConversationId,
+      isSidebarCollapsed,
       starterPrompts,
       activeMode,
       isConversationModeLocked,
@@ -1272,6 +1342,9 @@ export default defineComponent({
       getToolSteps,
       getThinkingText,
       getResultText,
+      hasStructuredResult,
+      shouldShowAssistantLiveStack,
+      shouldShowPlainAssistantBubble,
       isThinkingExpanded,
       isToolsExpanded,
       formatDuration,
@@ -1291,8 +1364,12 @@ export default defineComponent({
       toggleThinking,
       toggleTools,
       toggleToolStep,
+      switchConversation,
       startNewConversation,
+      removeConversation,
+      formatConversationTime,
       stopCurrentAskTask,
+      toggleSidebar,
     }
   },
 })

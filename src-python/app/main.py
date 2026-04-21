@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import market, kline, sector, fundflow, news, openclaw, finance, investment
+from app.routers import market, kline, sector, fundflow, news, openclaw, finance, investment, home
 from app.services.network_env import register_proxies
 
 for k in [
@@ -33,6 +33,7 @@ app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(openclaw.router, prefix="/api/openclaw", tags=["openclaw"])
 app.include_router(finance.router, prefix="/api/finance", tags=["finance"])
 app.include_router(investment.router, prefix="/api/investment", tags=["investment"])
+app.include_router(home.router, prefix="/api/home", tags=["home"])
 
 
 @app.get("/health")

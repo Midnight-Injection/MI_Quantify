@@ -1,4 +1,4 @@
-import { runReActLoop, type ReActTool, type ReActToolResult } from '@/agents/core/reactAgent'
+import { normalizeAgentMaxSteps, runReActLoop, type ReActTool, type ReActToolResult } from '@/agents/core/reactAgent'
 import { useSidecar } from '@/composables/useSidecar'
 import { useStrategyStore } from '@/stores/strategy'
 import type { AiProvider, DiagnosisAgentStep, InvestmentCandidate, InvestmentPreferences, InvestmentResult } from '@/types'
@@ -398,7 +398,7 @@ export async function runInvestmentAgent(options: {
     provider: options.provider,
     context,
     tools,
-    maxTurns: Math.max(6, Math.min(options.maxSteps || 8, 20)),
+    maxTurns: normalizeAgentMaxSteps(options.maxSteps, { min: 6, fallback: 8 }),
     abortSignal: options.abortSignal,
     requireFinalAnswer: true,
     finalAnswerSchema: {
@@ -446,8 +446,8 @@ export async function runInvestmentAgent(options: {
         '如果数据不足以支持某个产品，不要虚构收益率或结论。',
       ],
     }, null, 2),
-    nextStepPrompt: '请判断当前数据是否已经足以完成投资方案；如果还不够，继续只调用一个最必要的工具；如果已经足够，直接 finish 并返回最终 JSON。注意同一工具失败超过 3 次后不能再调用。',
-    toolMaxTokens: 1100,
+    nextStepPrompt: '请判断当前数据是否已经足以完成投资方案；如果还不够，继续只调用一个最必要的工具；如果已经足够，直接 finish 并返回最终 JSON。最终方案必须写清楚收益区间、适合动作、退出/赎回条件和风险来源，注意同一工具失败超过 3 次后不能再调用。',
+    toolMaxTokens: 2200,
     toolTimeoutMs: 180000,
   })
 

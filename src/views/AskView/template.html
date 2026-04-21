@@ -1,14 +1,79 @@
 <div class="page ask-page">
-  <div class="page-shell ask-shell">
+  <div class="page-shell ask-shell" :class="{ 'ask-shell--sidebar-collapsed': isSidebarCollapsed }">
+    <aside class="chat-sidebar" :class="{ collapsed: isSidebarCollapsed }">
+      <div class="sidebar-header">
+        <span v-if="!isSidebarCollapsed" class="sidebar-title">会话列表</span>
+        <button v-if="!isSidebarCollapsed" type="button" class="sidebar-btn" @click="startNewConversation" aria-label="新建会话">
+          <Plus :size="14" />
+        </button>
+        <button
+          type="button"
+          class="sidebar-btn sidebar-btn--toggle"
+          :aria-label="isSidebarCollapsed ? '展开会话列表' : '收起会话列表'"
+          @click="toggleSidebar"
+        >
+          <ChevronRight v-if="isSidebarCollapsed" :size="14" />
+          <ChevronLeft v-else :size="14" />
+        </button>
+      </div>
+
+      <div v-if="!isSidebarCollapsed" class="sidebar-list">
+        <button type="button" class="sidebar-item" :class="{ active: activeConversationId === null }" @click="switchConversation(null)">
+          <div class="sidebar-item-main">
+            <span class="sidebar-item-title">新会话</span>
+            <span class="sidebar-item-time">当前</span>
+          </div>
+        </button>
+
+        <div
+          v-for="conversation in conversations"
+          :key="conversation.id"
+          class="sidebar-item"
+          :class="{ active: activeConversationId === conversation.id }"
+        >
+          <button type="button" class="sidebar-item-main" @click="switchConversation(conversation.id)">
+            <span class="sidebar-item-title">{{ conversation.title || '未命名会话' }}</span>
+            <span class="sidebar-item-time">{{ formatConversationTime(conversation.updatedAt || conversation.createdAt) }}</span>
+          </button>
+          <button
+            type="button"
+            class="sidebar-item-delete"
+            aria-label="删除会话"
+            @click.stop="removeConversation(conversation.id)"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+
+      <div v-if="!isSidebarCollapsed" class="sidebar-footer">
+        <button type="button" class="sidebar-collapse-btn" @click="toggleSidebar" aria-label="收起会话列表">
+          <ChevronLeft :size="14" />
+          <span>收起会话列表</span>
+        </button>
+      </div>
+    </aside>
+
     <section class="chat-shell">
       <div class="chat-topbar">
         <div class="chat-topbar-copy">
           <strong>AI问股</strong>
           <span>点击右侧 + 直接开启全新会话面板。</span>
         </div>
-        <button type="button" class="chat-topbar-action" @click="startNewConversation" aria-label="新建会话">
-          <Plus :size="16" />
-        </button>
+        <div class="chat-topbar-actions">
+          <button
+            v-if="isSidebarCollapsed"
+            type="button"
+            class="chat-topbar-action chat-topbar-action--sidebar"
+            @click="toggleSidebar"
+            aria-label="展开会话列表"
+          >
+            <ChevronRight :size="16" />
+          </button>
+          <button type="button" class="chat-topbar-action" @click="startNewConversation" aria-label="新建会话">
+            <Plus :size="16" />
+          </button>
+        </div>
       </div>
 
       <div ref="chatListRef" class="chat-list" @scroll="handleChatScroll">
@@ -27,7 +92,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="8" r="1.5"/></svg>
             </div>
             <div class="assistant-content">
-            <div v-if="message.loading || message.streaming || message.streamSteps?.length || message.streamingText || message.synthesisRunning" class="assistant-live-stack">
+            <div v-if="shouldShowAssistantLiveStack(message)" class="assistant-live-stack">
               <div class="bubble bubble-thinking">
                 <div class="thinking-header" @click="toggleThinking(message.id)">
                   <span class="thinking-icon">思考</span>
@@ -245,7 +310,7 @@
             </div>
 
             <div
-              v-else-if="!message.recommendationResult && !message.investmentResult && !message.diagnosis && !message.streamingText && !message.streamSteps?.length"
+              v-else-if="shouldShowPlainAssistantBubble(message)"
               class="bubble bubble-plain"
             >
               <pre class="bubble-text">{{ message.content }}</pre>

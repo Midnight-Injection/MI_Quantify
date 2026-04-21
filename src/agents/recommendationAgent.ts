@@ -1,4 +1,4 @@
-import { runReActLoop, type ReActTool, type ReActToolResult } from '@/agents/core/reactAgent'
+import { normalizeAgentMaxSteps, runReActLoop, type ReActTool, type ReActToolResult } from '@/agents/core/reactAgent'
 import { runDiagnosisAgent } from '@/agents/diagnosisAgent'
 import { useSidecar } from '@/composables/useSidecar'
 import type {
@@ -394,7 +394,7 @@ export async function runRecommendationAgent(options: {
           selectedStrategy: toolContext.selectedStrategy,
           resolvedName: name || undefined,
           matchedKeyword: name || code,
-          maxSteps: Math.min(toolContext.maxSteps ?? 8, 8),
+          maxSteps: normalizeAgentMaxSteps(toolContext.maxSteps, { min: 3, fallback: 8 }),
           abortSignal: toolContext.abortSignal,
           onProgress: (event) => toolContext.onProgress?.(event.step),
         })
@@ -435,7 +435,7 @@ export async function runRecommendationAgent(options: {
     provider: options.provider,
     context,
     tools,
-    maxTurns: Math.max(6, Math.min(options.maxSteps || 10, 20)),
+    maxTurns: normalizeAgentMaxSteps(options.maxSteps, { min: 6, fallback: 10 }),
     abortSignal: options.abortSignal,
     requireFinalAnswer: true,
     finalAnswerSchema: {
@@ -467,7 +467,8 @@ export async function runRecommendationAgent(options: {
 禁止使用任何预打分、固定板块匹配、固定候选池或写死结论。
 你必须自己决定下一步调用哪个工具以及参数，每轮只能调用一个工具。
 如果准备把某只股票纳入最终候选，必须先调用 diagnose_stock 获取完整诊股结果。
-如果当前数据还不足以形成明确候选，继续调用工具；如果已经足够，直接 finish 并返回最终 JSON。`,
+如果当前数据还不足以形成明确候选，继续调用工具；如果已经足够，直接 finish 并返回最终 JSON。
+最终候选必须写清楚具体股票、操作建议、观察/介入区间、止损或退出条件、为什么选它，禁止只写“可关注”“有机会”之类模糊结论。`,
     userPrompt: JSON.stringify({
       task: '根据用户偏好生成荐股候选列表。',
       preferences,
@@ -475,11 +476,11 @@ export async function runRecommendationAgent(options: {
       requirement: [
         '只允许依据工具返回的真实市场、板块、新闻和诊股数据做判断。',
         '最终候选必须是已经调用 diagnose_stock 研究过的股票。',
-        '需要明确给出市场总结、候选原因、观察点和预计启动窗口。',
+        '需要明确给出市场总结、候选原因、观察点、预计启动窗口、具体入场价位和退出条件。',
       ],
     }, null, 2),
-    nextStepPrompt: '请判断当前数据是否已足够完成荐股候选列表；如果还不够，继续只调用一个最必要的工具；如果已经足够，直接 finish 并返回最终 JSON。注意候选股票必须先诊股后才能写入最终结果。',
-    toolMaxTokens: 1100,
+    nextStepPrompt: '请判断当前数据是否已足够完成荐股候选列表；如果还不够，继续只调用一个最必要的工具；如果已经足够，直接 finish 并返回最终 JSON。注意候选股票必须先诊股后才能写入最终结果，且每只候选都要写出明确的操作、价位区间和退出条件。',
+    toolMaxTokens: 2200,
     toolTimeoutMs: 180000,
   })
 

@@ -15,6 +15,10 @@
   overflow: hidden;
 }
 
+.ask-shell--sidebar-collapsed {
+  gap: 10px;
+}
+
 .chat-sidebar {
   width: 220px;
   flex-shrink: 0;
@@ -24,6 +28,21 @@
   @include card-glass;
   border-radius: $radius-xl;
   overflow: hidden;
+}
+
+.chat-sidebar.collapsed {
+  width: 56px;
+
+  .sidebar-header {
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 10px 8px;
+  }
+
+  .sidebar-btn {
+    width: 34px;
+    height: 34px;
+  }
 }
 
 .sidebar-header {
@@ -60,6 +79,10 @@
   }
 }
 
+.sidebar-btn--toggle {
+  color: $text-secondary;
+}
+
 .sidebar-footer {
   padding: 6px 8px;
   border-top: 1px solid $border-color;
@@ -83,6 +106,10 @@
   &:hover {
     background: rgba($color-accent, 0.08);
     color: $color-accent;
+  }
+
+  span {
+    white-space: nowrap;
   }
 }
 
@@ -196,6 +223,12 @@
   gap: 12px;
 }
 
+.chat-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .chat-topbar-copy {
   min-width: 0;
   display: flex;
@@ -235,6 +268,10 @@
     border-color: rgba($color-accent, 0.18);
     box-shadow: 0 10px 22px rgba(18, 30, 49, 0.08);
   }
+}
+
+.chat-topbar-action--sidebar {
+  color: $text-primary;
 }
 
 .ask-hero {

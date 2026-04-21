@@ -6,6 +6,7 @@ import subprocess
 import os
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlencode
 from app.services.network_env import clear_proxy_env, create_http_session, get_original_proxy_env
 
 clear_proxy_env()
@@ -82,9 +83,12 @@ def _request_eastmoney_a_page(page: int, page_size: int) -> tuple[int, list[dict
     }
     session = _make_eastmoney_session(_EASTMONEY_A_LIST_URL)
     try:
-        response = session.get(_EASTMONEY_A_LIST_URL, params=params, timeout=15)
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response = session.get(_EASTMONEY_A_LIST_URL, params=params, timeout=15)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            payload = json.loads(_curl_text(f"{_EASTMONEY_A_LIST_URL}?{urlencode(params)}"))
         data = payload.get("data") or {}
         total = int(data.get("total") or 0)
         diff = data.get("diff") or []
@@ -385,6 +389,59 @@ def _get_recent_trade_day() -> str:
     return today.isoformat()
 
 
+def _dedupe_codes(codes: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for code in codes:
+        normalized = str(code or "").strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
+
+
+def _load_a_share_codes_from_eastmoney() -> list[str]:
+    page_size = 100
+    page = 1
+    total = 0
+    codes: list[str] = []
+    while True:
+        page_total, diff = _request_eastmoney_a_page(page, page_size)
+        if page == 1:
+            total = page_total
+        if not diff:
+            break
+        for item in diff:
+            raw_code = str(item.get("f12", "") or "").strip().lower()
+            if raw_code.startswith(("6", "0", "3", "4", "8")):
+                prefix = "sh" if raw_code.startswith("6") else "sz" if raw_code.startswith(("0", "3")) else "bj"
+                codes.append(f"{prefix}{raw_code}")
+        if len(codes) >= total:
+            break
+        page += 1
+    return _dedupe_codes(codes)
+
+
+def _load_a_share_codes_from_akshare() -> list[str]:
+    import akshare as ak
+
+    dataset = ak.stock_info_a_code_name()
+    if dataset is None or dataset.empty:
+        return []
+
+    codes: list[str] = []
+    for raw_code in dataset["code"].astype(str).tolist():
+        normalized = raw_code.strip().lower()
+        if normalized.startswith("6"):
+            codes.append(f"sh{normalized}")
+        elif normalized.startswith(("0", "3")):
+            codes.append(f"sz{normalized}")
+        elif normalized.startswith(("4", "8")):
+            codes.append(f"bj{normalized}")
+    return _dedupe_codes(codes)
+
+
 def _load_a_share_codes() -> list[str]:
     trade_day = _get_recent_trade_day()
     with _a_share_code_lock:
@@ -394,40 +451,48 @@ def _load_a_share_codes() -> list[str]:
         if cached_codes and cached_day == trade_day and time.time() - updated_at < 12 * 60 * 60:
             return cached_codes
 
-        import baostock as bs
-
-        login = bs.login()
-        if str(login.error_code) != "0":
-            if cached_codes:
-                return cached_codes
-            raise RuntimeError(f"baostock login failed: {login.error_msg}")
-
         codes: list[str] = []
         try:
-            query = bs.query_all_stock(day=trade_day)
-            if str(query.error_code) != "0":
-                if cached_codes:
-                    return cached_codes
-                raise RuntimeError(f"baostock query_all_stock failed: {query.error_msg}")
-            while query.next():
-                row = query.get_row_data()
-                if not row:
-                    continue
-                raw_code = str(row[0] or "").strip().lower()
-                if raw_code.startswith("sh.6"):
-                    codes.append(raw_code.replace(".", ""))
-                elif raw_code.startswith(("sz.0", "sz.3", "bj.4", "bj.8")):
-                    codes.append(raw_code.replace(".", ""))
-        finally:
+            import baostock as bs
+
+            login = bs.login()
+            if str(login.error_code) == "0":
+                try:
+                    query = bs.query_all_stock(day=trade_day)
+                    if str(query.error_code) == "0":
+                        while query.next():
+                            row = query.get_row_data()
+                            if not row:
+                                continue
+                            raw_code = str(row[0] or "").strip().lower()
+                            if raw_code.startswith("sh.6"):
+                                codes.append(raw_code.replace(".", ""))
+                            elif raw_code.startswith(("sz.0", "sz.3", "bj.4", "bj.8")):
+                                codes.append(raw_code.replace(".", ""))
+                finally:
+                    try:
+                        bs.logout()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        codes = _dedupe_codes(codes)
+        if not codes:
             try:
-                bs.logout()
+                codes = _load_a_share_codes_from_akshare()
             except Exception:
-                pass
+                codes = []
+        if not codes:
+            try:
+                codes = _load_a_share_codes_from_eastmoney()
+            except Exception:
+                codes = []
 
         if not codes:
             if cached_codes:
                 return cached_codes
-            raise RuntimeError("baostock returned empty A-share universe")
+            raise RuntimeError("A 股股票池为空：baostock、akshare 与东方财富兜底均未返回有效代码")
 
         _a_share_code_cache["codes"] = list(codes)
         _a_share_code_cache["updated"] = time.time()

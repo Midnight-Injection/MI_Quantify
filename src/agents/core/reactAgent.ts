@@ -55,6 +55,18 @@ export interface ReActLoopResult<TFinal = unknown> {
   finalAnswer?: TFinal
 }
 
+export function normalizeAgentMaxSteps(
+  value: number | undefined,
+  options: { min?: number; fallback?: number; max?: number } = {},
+) {
+  const min = options.min ?? 4
+  const fallback = options.fallback ?? 8
+  const max = options.max ?? 100
+  const raw = Number(value)
+  const normalized = Number.isFinite(raw) ? Math.round(raw) : fallback
+  return Math.min(max, Math.max(min, normalized))
+}
+
 function parseJsonBlock<T>(raw: string): T {
   const fenced = raw.match(/```json\s*([\s\S]*?)\s*```/i)
   const candidate = fenced?.[1] || extractFirstJsonObject(raw)

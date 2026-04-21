@@ -1,4 +1,4 @@
-import { runReActLoop, type ReActTool } from '@/agents/core/reactAgent'
+import { normalizeAgentMaxSteps, runReActLoop, type ReActTool } from '@/agents/core/reactAgent'
 import { useSidecar } from '@/composables/useSidecar'
 import { useSettingsStore } from '@/stores/settings'
 import { useStrategyStore } from '@/stores/strategy'
@@ -350,7 +350,7 @@ export function useAiInsights() {
       provider,
       context: { payload, marketSession },
       tools,
-      maxTurns: Math.max(4, Math.min(settingsStore.settings.ai.diagnosis.maxSteps || 6, 8)),
+      maxTurns: normalizeAgentMaxSteps(settingsStore.settings.ai.diagnosis.maxSteps, { min: 4, fallback: 6 }),
       abortSignal: options?.abortSignal,
       onProgress: options?.onProgress,
       requireFinalAnswer: true,
@@ -396,6 +396,7 @@ export function useAiInsights() {
 2. 哪些股票值得短线关注，哪些股票更适合长线观察。
 3. 每只股票必须给出入场价或区间、退出价或退出条件，并说明为什么买。
 4. 当前时段对应的执行节奏是什么。
+5. watchStocks 里禁止出现“关注一下”“逢低留意”这类空话，必须写成可执行动作。
 所有字段必须简洁：
 - headline 控制在 28 字以内；
 - summary/newsView/policyView/globalView/shortTermView/longTermView/futureOutlook 每项控制在 1-2 句；
@@ -415,7 +416,7 @@ export function useAiInsights() {
           financialNewsCount: payload.financialNews.length,
         },
       }, null, 2),
-      nextStepPrompt: '请先判断当前证据是否足以回答用户的时段标题、重点板块、候选股票、关注价位、退出价或退出条件、短线与长线逻辑。最终必须给出 3 只短线股票和 3 只长线股票，并且它们都必须来自 recommendationCandidates 实时候选池；如果你还没读取候选池、盘面快照、财经快讯、政策消息、国际消息，就继续选择一个最必要的工具；如果证据已经完整，再 finish 返回最终 JSON。',
+      nextStepPrompt: '请先判断当前证据是否足以回答用户的时段标题、重点板块、候选股票、关注价位、退出价或退出条件、短线与长线逻辑。最终必须给出 3 只短线股票和 3 只长线股票，并且它们都必须来自 recommendationCandidates 实时候选池；watchStocks 每一项都要写明确动作、入场价位或区间、退出价或退出条件；如果你还没读取候选池、盘面快照、财经快讯、政策消息、国际消息，就继续选择一个最必要的工具；如果证据已经完整，再 finish 返回最终 JSON。',
       toolMaxTokens: 2800,
     })
 
