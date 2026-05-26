@@ -1,10 +1,23 @@
+# -*- mode: python ; coding: utf-8 -*-
+import importlib
+import os
+
+def _pkg_data_glob(pkg_name: str, subdir: str) -> list[tuple[str, str]]:
+    """Resolve (source, dest) pairs for a package's data subdirectory."""
+    mod = importlib.import_module(pkg_name.replace('/', '.'))
+    pkg_dir = os.path.dirname(mod.__file__)
+    src = os.path.join(pkg_dir, subdir)
+    if not os.path.isdir(src):
+        raise SystemExit(f"ERROR: data dir not found: {src}")
+    return [(src, os.path.join(pkg_name, subdir))]
+
+akshare_datas = _pkg_data_glob('akshare', 'file_fold')
+
 a = Analysis(
     ['run.py'],
     pathex=['.'],
     binaries=[],
-    datas=[
-        ('.venv/lib/python3.12/site-packages/akshare/file_fold', 'akshare/file_fold'),
-    ],
+    datas=akshare_datas,
     hiddenimports=[
         'uvicorn.logging',
         'uvicorn.loops',
