@@ -100,16 +100,31 @@ fn resolve_sidecar_launch(app: &tauri::AppHandle) -> Result<SidecarLaunch, Strin
         if cfg!(windows) { ".exe" } else { "" }
     );
 
-    // 1. bundled app: resource_dir/binaries/mi-quantify-sidecar
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled: std::path::PathBuf = resource_dir.join("binaries").join(&binary_name);
+    // 1. bundled app: check multiple possible locations where Tauri places externalBin
+    let bundled_candidates: Vec<std::path::PathBuf> = if let Ok(resource_dir) =
+        app.path().resource_dir()
+    {
+        let mut dirs = vec![
+            resource_dir.join("binaries").join(&binary_name),
+            resource_dir.join(&binary_name),
+        ];
+        // macOS: externalBin is placed in MacOS/ sibling of Resources/
+        if let Some(contents_dir) = resource_dir.parent() {
+            dirs.push(contents_dir.join("MacOS").join(&binary_name));
+        }
+        dirs
+    } else {
+        vec![]
+    };
+
+    for bundled in &bundled_candidates {
         if bundled.exists() {
             return Ok(SidecarLaunch {
                 current_dir: bundled
                     .parent()
                     .unwrap_or(std::path::Path::new("."))
                     .to_path_buf(),
-                program: bundled,
+                program: bundled.clone(),
                 args: Vec::new(),
             });
         }
