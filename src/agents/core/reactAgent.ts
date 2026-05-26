@@ -5,7 +5,7 @@ type JsonRecord = Record<string, unknown>
 
 interface ReActDecision<TFinal = unknown> {
   thought?: string
-  action?: 'tool' | 'finish'
+  action?: 'tool' | 'finish' | string | JsonRecord
   toolName?: string
   toolInput?: JsonRecord
   finishReason?: string
@@ -142,6 +142,88 @@ function normalizeToolInput(input: unknown): JsonRecord {
   return input as JsonRecord
 }
 
+function normalizeToolName<TContext>(name: unknown, tools: ReActTool<TContext>[]) {
+  const raw = `${name || ''}`.trim()
+  if (!raw) return ''
+  const matched = tools.find((tool) => tool.name === raw || tool.name.toLowerCase() === raw.toLowerCase())
+  return matched?.name || raw
+}
+
+function normalizeDecision<TContext, TFinal>(
+  rawDecision: ReActDecision<TFinal>,
+  tools: ReActTool<TContext>[],
+): ReActDecision<TFinal> {
+  const normalized: ReActDecision<TFinal> & JsonRecord = {
+    ...rawDecision,
+  }
+  const decisionRecord = rawDecision as JsonRecord
+  const actionValue = normalized.action
+
+  if (!normalized.toolName) {
+    normalized.toolName = normalizeToolName(
+      decisionRecord.toolName ?? decisionRecord.tool ?? decisionRecord.name,
+      tools,
+    )
+  } else {
+    normalized.toolName = normalizeToolName(normalized.toolName, tools)
+  }
+
+  if (!normalized.toolInput || !Object.keys(normalized.toolInput).length) {
+    normalized.toolInput = normalizeToolInput(
+      decisionRecord.toolInput ?? decisionRecord.input ?? decisionRecord.args ?? decisionRecord.parameters,
+    )
+  }
+
+  const normalizeActionLabel = (value: unknown) => `${value || ''}`.trim().toLowerCase()
+  const actionLabel = normalizeActionLabel(actionValue)
+
+  if (typeof actionValue === 'string') {
+    if (['tool', 'call_tool', 'use_tool', 'invoke_tool', 'call', '工具'].includes(actionLabel)) {
+      normalized.action = 'tool'
+    } else if (['finish', 'final', 'done', 'complete', 'answer', '结束', '完成'].includes(actionLabel)) {
+      normalized.action = 'finish'
+    } else {
+      const actionToolName = normalizeToolName(actionValue, tools)
+      if (tools.some((tool) => tool.name === actionToolName)) {
+        normalized.action = 'tool'
+        normalized.toolName = actionToolName
+      }
+    }
+  } else if (actionValue && typeof actionValue === 'object') {
+    const actionRecord = actionValue as JsonRecord
+    const actionKind = normalizeActionLabel(actionRecord.type ?? actionRecord.kind)
+    const actionToolName = normalizeToolName(
+      actionRecord.toolName ?? actionRecord.tool ?? actionRecord.name,
+      tools,
+    )
+    if (!normalized.toolName && actionToolName) {
+      normalized.toolName = actionToolName
+    }
+    if ((!normalized.toolInput || !Object.keys(normalized.toolInput).length) && actionRecord.input) {
+      normalized.toolInput = normalizeToolInput(
+        actionRecord.input ?? actionRecord.toolInput ?? actionRecord.args ?? actionRecord.parameters,
+      )
+    }
+    if (
+      ['tool', 'call_tool', 'use_tool', 'invoke_tool', 'call', '工具'].includes(actionKind)
+      || (actionToolName && tools.some((tool) => tool.name === actionToolName))
+    ) {
+      normalized.action = 'tool'
+    } else if (
+      ['finish', 'final', 'done', 'complete', 'answer', '结束', '完成'].includes(actionKind)
+      || actionRecord.finalAnswer
+    ) {
+      normalized.action = 'finish'
+    }
+  }
+
+  if (!normalized.action && normalized.finalAnswer) {
+    normalized.action = 'finish'
+  }
+
+  return normalized
+}
+
 function clipObservation(value: unknown) {
   const text = JSON.stringify(value, null, 2)
   if (text.length <= 2500) return value
@@ -161,6 +243,15 @@ function stringifyToolText(value: unknown, fallback = '') {
   } catch {
     return String(value)
   }
+}
+
+function isLikelyDirectFinalAnswer(value: unknown, schema: unknown) {
+  if (!value || Array.isArray(value) || typeof value !== 'object') return false
+  if (!schema || Array.isArray(schema) || typeof schema !== 'object') return false
+  const record = value as JsonRecord
+  if (record.action || record.toolName || record.tool) return false
+  const keys = new Set(Object.keys(record))
+  return Object.keys(schema as JsonRecord).some((key) => keys.has(key))
 }
 
 function createAbortError() {
@@ -252,6 +343,9 @@ export async function runReActLoop<TContext, TFinal = unknown>(
   let finalAnswer: TFinal | undefined
   const toolFailureHistory = new Map<string, number>()
 
+  let invalidActionRetries = 0
+  const invalidActionLimit = 3
+
   for (let turn = 0; turn < Math.max(1, options.maxTurns || 8); turn += 1) {
     throwIfAborted(options.abortSignal)
     let decision: ReActDecision<TFinal> | null = null
@@ -269,7 +363,7 @@ export async function runReActLoop<TContext, TFinal = unknown>(
       )
       lastRaw = raw
       try {
-        decision = parseJsonBlock<ReActDecision<TFinal>>(raw)
+        decision = normalizeDecision(parseJsonBlock<ReActDecision<TFinal>>(raw), options.tools)
         break
       } catch (error) {
         if (repairAttempt >= 2) {
@@ -321,12 +415,28 @@ export async function runReActLoop<TContext, TFinal = unknown>(
     }
 
     if (decision.action !== 'tool' || !decision.toolName) {
-      throw new Error('模型返回的 ReAct 动作无效')
+      invalidActionRetries += 1
+      if (invalidActionRetries > invalidActionLimit) {
+        throw new Error(`模型多次返回无效 ReAct 动作，已重试 ${invalidActionLimit} 次: ${JSON.stringify(decision).slice(0, 800)}`)
+      }
+      messages.push({
+        role: 'user',
+        content: `你上一次返回的动作无效（action 不是 "tool" 或缺少 toolName），请重新选择一个合法动作。${protocolPrompt}\n\n${nextStepPrompt}`,
+      })
+      continue
     }
 
     const tool = options.tools.find((item) => item.name === decision.toolName)
     if (!tool) {
-      throw new Error(`模型请求了未注册工具: ${decision.toolName}`)
+      invalidActionRetries += 1
+      if (invalidActionRetries > invalidActionLimit) {
+        throw new Error(`模型多次请求未注册工具 "${decision.toolName}"，已重试 ${invalidActionLimit} 次`)
+      }
+      messages.push({
+        role: 'user',
+        content: `你请求的工具 "${decision.toolName}" 不存在。可用工具：${options.tools.map((t) => t.name).join(', ')}。请重新选择一个有效工具。${protocolPrompt}\n\n${nextStepPrompt}`,
+      })
+      continue
     }
 
     const toolInput = normalizeToolInput(decision.toolInput)
@@ -398,6 +508,67 @@ export async function runReActLoop<TContext, TFinal = unknown>(
           maxFailedCount: toolFailureLimit,
         })}\n\n${nextStepPrompt}`,
       })
+    }
+  }
+
+  if (options.requireFinalAnswer !== false && !finalAnswer) {
+    messages.push({
+      role: 'user',
+      content: `已经达到最大工具轮数，必须立即基于现有 TOOL_RESULT 综合最终答案。只输出一个合法 JSON 对象：
+{"thought":"基于现有证据做最终综合","action":"finish","finishReason":"达到最大轮数，基于现有证据综合","finalAnswer":{...}}
+不要再调用工具，不要输出 Markdown 或解释。${finalAnswerSchemaText}`,
+    })
+
+    for (let repairAttempt = 0; repairAttempt < 3; repairAttempt += 1) {
+      throwIfAborted(options.abortSignal)
+      const raw = await chat(
+        options.provider,
+        messages,
+        {
+          temperature: options.toolTemperature ?? 0.1,
+          maxTokens: options.toolMaxTokens ?? 900,
+          signal: options.abortSignal,
+          timeoutMs: options.toolTimeoutMs,
+        },
+      )
+      try {
+        const parsed = parseJsonBlock<ReActDecision<TFinal> | TFinal>(raw)
+        if (isLikelyDirectFinalAnswer(parsed, options.finalAnswerSchema)) {
+          finishReason = '达到最大轮数后直接综合'
+          finalAnswer = parsed as TFinal
+          messages.push({
+            role: 'assistant',
+            content: JSON.stringify(parsed),
+          })
+          break
+        }
+        const decision = normalizeDecision(parsed as ReActDecision<TFinal>, options.tools)
+        if (decision.action === 'finish' && decision.finalAnswer) {
+          finishReason = decision.finishReason?.trim() || '达到最大轮数后强制综合'
+          finalAnswer = decision.finalAnswer
+          messages.push({
+            role: 'assistant',
+            content: JSON.stringify(decision),
+          })
+          break
+        }
+        if (repairAttempt >= 2) {
+          throw new Error(`模型最终综合无效: ${JSON.stringify(decision).slice(0, 800)}`)
+        }
+      } catch (error) {
+        if (repairAttempt >= 2) {
+          const message = error instanceof Error ? error.message : String(error)
+          throw new Error(`${message}: ${raw.slice(0, 1200)}`)
+        }
+        messages.push({
+          role: 'assistant',
+          content: raw,
+        })
+        messages.push({
+          role: 'user',
+          content: jsonRepairPrompt,
+        })
+      }
     }
   }
 

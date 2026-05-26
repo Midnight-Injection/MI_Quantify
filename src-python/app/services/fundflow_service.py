@@ -22,10 +22,11 @@ _fund_flow_cache = {"data": [], "updated": 0.0}
 _stock_fund_cache: dict[str, tuple[float, list[dict]]] = {}
 
 
-def _make_session(url: str):
+def _make_session(url: str, proxy_id: str | None = None):
     session = create_http_session(
         referer="https://data.eastmoney.com/",
         target_url=url,
+        proxy_id=proxy_id,
     )
     session.headers.update(
         {
@@ -58,14 +59,14 @@ def _map_rank_item(item: dict) -> dict:
     }
 
 
-def _request_rank_payload(rank: int) -> list[dict]:
+def _request_rank_payload(rank: int, proxy_id: str | None = None) -> list[dict]:
     params = {**_FUND_FLOW_PARAMS, "pz": str(rank)}
     last_error = None
 
     for delay in _REQUEST_RETRY_DELAYS:
         if delay:
             time.sleep(delay)
-        session = _make_session(_FUND_FLOW_URL)
+        session = _make_session(_FUND_FLOW_URL, proxy_id=proxy_id)
         try:
             resp = session.get(_FUND_FLOW_URL, params=params, timeout=15)
             resp.raise_for_status()
@@ -83,8 +84,8 @@ def _request_rank_payload(rank: int) -> list[dict]:
     return []
 
 
-def _fetch_eastmoney(rank: int = 50) -> list[dict]:
-    items = _request_rank_payload(rank)
+def _fetch_eastmoney(rank: int = 50, proxy_id: str | None = None) -> list[dict]:
+    items = _request_rank_payload(rank, proxy_id=proxy_id)
     result = [_map_rank_item(item) for item in items if item.get("f12")]
     if result:
         return result
@@ -192,50 +193,133 @@ def get_fund_flow(rank: int = 50) -> list[dict]:
     return list(_fund_flow_cache["data"])[:rank]
 
 
-def get_stock_fund_flow(code: str, days: int = 10) -> list[dict]:
+def _find_in_rank_fallback(code: str, proxy_id: str | None = None) -> list[dict]:
+    """
+    在 eastmoney 排行 API 中分页查找指定股票的今日资金流快照。
+
+    逐页查询（每页 100 条，最多 60 页 ≈ 6000 只股票），
+    找到目标股票后返回单条记录列表；未找到返回空列表。
+
+    Args:
+        code: 股票代码，如 "600038"
+
+    Returns:
+        含单日资金流数据的列表，或空列表
+    """
+    page_size = 100
+    max_pages = 60
+    target_code = str(code).strip()
+
+    for page_num in range(1, max_pages + 1):
+        params = {**_FUND_FLOW_PARAMS, "pz": str(page_size), "pn": str(page_num)}
+        try:
+            session = _make_session(_FUND_FLOW_URL, proxy_id=proxy_id)
+            resp = session.get(_FUND_FLOW_URL, params=params, timeout=15)
+            resp.raise_for_status()
+            data = resp.json().get("data", {})
+            items = data.get("diff", [])
+            session.close()
+        except Exception as error:
+            print(f"[fundflow] rank fallback page {page_num} error: {error}")
+            break
+
+        if not items:
+            break
+
+        for item in items:
+            if str(item.get("f12", "")).strip() == target_code:
+                mapped = _map_rank_item(item)
+                return [
+                    {
+                        "date": "",
+                        "close": _safe_float(item.get("f2")),
+                        "changePercent": _safe_float(item.get("f3")),
+                        "mainNetInflow": mapped["mainNetInflow"],
+                        "mainNetInflowPercent": mapped["mainNetInflowPercent"],
+                        "superLargeNetInflow": mapped["superLargeNetInflow"],
+                        "superLargeNetInflowPercent": _safe_float(item.get("f69")),
+                        "largeNetInflow": mapped["largeNetInflow"],
+                        "largeNetInflowPercent": _safe_float(item.get("f75")),
+                        "mediumNetInflow": mapped["mediumNetInflow"],
+                        "mediumNetInflowPercent": _safe_float(item.get("f81")),
+                        "smallNetInflow": mapped["smallNetInflow"],
+                        "smallNetInflowPercent": _safe_float(item.get("f87")),
+                    }
+                ]
+
+    return []
+
+
+def get_stock_fund_flow(code: str, days: int = 10, preferred_source: str | None = None) -> list[dict]:
+    """
+    获取个股资金流向数据。
+
+    数据源优先级：akshare（历史序列） → eastmoney rank fallback（仅今日快照）
+
+    Args:
+        code: 股票代码
+        days: 需要的历史天数
+        preferred_source: AI 指定的优先数据源 ID
+
+    Returns:
+        资金流向数据列表
+    """
     key = f"{code}_{days}"
     cached = _stock_fund_cache.get(key)
     if cached and (time.time() - cached[0] < _CACHE_TTL_SECONDS):
         return cached[1]
 
-    try:
-        import akshare as ak
+    from app.services.datasource_registry import get_sources_for_tool
+    sources = get_sources_for_tool("load_fund_flow", preferred_source)
+    source_ids = [s.get("id") for s in sources]
 
-        market = "sh" if code.startswith(("6", "9")) else "sz"
-        df = ak.stock_individual_fund_flow(stock=code, market=market)
-        if df is None or df.empty:
-            return cached[1] if cached else []
+    akshare_ok = "akshare" in source_ids or not source_ids
+    rank_ok = "eastmoney" in source_ids or not source_ids
 
-        result = []
-        for _, row in df.tail(days).iterrows():
-            result.append(
-                {
-                    "date": str(row.get("日期", "")),
-                    "close": _safe_float(row.get("收盘价")),
-                    "changePercent": _safe_float(row.get("涨跌幅")),
-                    "mainNetInflow": _safe_float(row.get("主力净流入-净额")),
-                    "mainNetInflowPercent": _safe_float(row.get("主力净流入-净占比")),
-                    "superLargeNetInflow": _safe_float(row.get("超大单净流入-净额")),
-                    "superLargeNetInflowPercent": _safe_float(
-                        row.get("超大单净流入-净占比")
-                    ),
-                    "largeNetInflow": _safe_float(row.get("大单净流入-净额")),
-                    "largeNetInflowPercent": _safe_float(
-                        row.get("大单净流入-净占比")
-                    ),
-                    "mediumNetInflow": _safe_float(row.get("中单净流入-净额")),
-                    "mediumNetInflowPercent": _safe_float(
-                        row.get("中单净流入-净占比")
-                    ),
-                    "smallNetInflow": _safe_float(row.get("小单净流入-净额")),
-                    "smallNetInflowPercent": _safe_float(
-                        row.get("小单净流入-净占比")
-                    ),
-                }
-            )
+    akshare_source = next((s for s in sources if s.get("id") == "akshare"), {})
+    eastmoney_source = next((s for s in sources if s.get("id") == "eastmoney"), {})
 
+    result: list[dict] = []
+
+    if akshare_ok:
+        try:
+            import akshare as ak
+
+            market = "sh" if code.startswith(("6", "9")) else "sz"
+            df = ak.stock_individual_fund_flow(stock=code, market=market)
+            if df is not None and not df.empty:
+                for _, row in df.tail(days).iterrows():
+                    result.append(
+                        {
+                            "date": str(row.get("日期", "")),
+                            "close": _safe_float(row.get("收盘价")),
+                            "changePercent": _safe_float(row.get("涨跌幅")),
+                            "mainNetInflow": _safe_float(row.get("主力净流入-净额")),
+                            "mainNetInflowPercent": _safe_float(row.get("主力净流入-净占比")),
+                            "superLargeNetInflow": _safe_float(row.get("超大单净流入-净额")),
+                            "superLargeNetInflowPercent": _safe_float(row.get("超大单净流入-净占比")),
+                            "largeNetInflow": _safe_float(row.get("大单净流入-净额")),
+                            "largeNetInflowPercent": _safe_float(row.get("大单净流入-净占比")),
+                            "mediumNetInflow": _safe_float(row.get("中单净流入-净额")),
+                            "mediumNetInflowPercent": _safe_float(row.get("中单净流入-净占比")),
+                            "smallNetInflow": _safe_float(row.get("小单净流入-净额")),
+                            "smallNetInflowPercent": _safe_float(row.get("小单净流入-净占比")),
+                        }
+                    )
+                _stock_fund_cache[key] = (time.time(), result)
+                return result
+        except Exception as error:
+            print(f"[fundflow] stock {code} akshare error: {error}")
+
+    if not result and rank_ok:
+        rank_result = _find_in_rank_fallback(code, proxy_id=eastmoney_source.get("proxyId"))
+        if rank_result:
+            result = rank_result
+            _stock_fund_cache[key] = (time.time(), result)
+            return result
+
+    if result:
         _stock_fund_cache[key] = (time.time(), result)
         return result
-    except Exception as error:
-        print(f"[fundflow] stock {code} error: {error}")
-        return cached[1] if cached else []
+
+    return cached[1] if cached else []

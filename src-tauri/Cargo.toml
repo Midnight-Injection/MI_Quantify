@@ -1,6 +1,6 @@
 [package]
 name = "mi_quantify"
-version = "0.1.2"
+version = "0.2.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -38,3 +38,16 @@ qrcode = { version = "0.14.1", features = ["svg"] }
 base64 = "0.22.1"
 dirs = "6"
 rusqlite = { version = "0.37", features = ["bundled"] }
+
+[profile.dev]
+# Keep local debugging usable, but avoid huge symbol files in repeated tauri dev rebuilds.
+debug = 1
+
+[profile.dev.package."*"]
+# Dependency debug info dominates target/debug size and is rarely needed in day-to-day UI work.
+debug = 0
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "debuginfo"

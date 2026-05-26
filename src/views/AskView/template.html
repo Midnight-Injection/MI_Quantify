@@ -93,11 +93,10 @@
             </div>
             <div class="assistant-content">
             <div v-if="shouldShowAssistantLiveStack(message)" class="assistant-live-stack">
-              <div class="bubble bubble-thinking">
+              <div v-if="getThinkingSteps(message).length" class="bubble bubble-thinking">
                 <div class="thinking-header" @click="toggleThinking(message.id)">
                   <span class="thinking-icon">思考</span>
                   <span class="thinking-title">思考轨迹</span>
-                  <span class="thinking-count">{{ getThinkingSteps(message).length || 1 }}</span>
                   <span class="thinking-toggle" :class="{ open: isThinkingExpanded(message) }">⌄</span>
                 </div>
                 <div v-if="isThinkingExpanded(message)" class="thinking-body">
@@ -105,7 +104,7 @@
                 </div>
               </div>
 
-              <div class="bubble bubble-tools">
+              <div v-if="getToolSteps(message).length" class="bubble bubble-tools">
                 <div class="tools-header" @click="toggleTools(message.id)">
                   <span class="tools-icon">工具</span>
                   <span class="tools-title">工具调用</span>
@@ -113,7 +112,6 @@
                   <span class="tools-toggle" :class="{ open: isToolsExpanded(message) }">⌄</span>
                 </div>
                 <div v-if="isToolsExpanded(message)" class="tools-body">
-                  <div v-if="!getToolSteps(message).length" class="tool-empty">等待开始调用工具...</div>
                   <div
                     v-for="step in getToolSteps(message)"
                     :key="step.id"

@@ -17,12 +17,12 @@
   min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: clamp(14px, 2vw, 24px);
+  padding: 24px 28px;
   background:
     radial-gradient(circle at top left, rgba(9, 93, 149, 0.06), transparent 24%),
     radial-gradient(circle at bottom right, rgba(183, 149, 95, 0.08), transparent 22%),
     $bg-primary;
-  @include custom-scrollbar;
+  @include no-scrollbar;
 }
 
 .page-shell {
@@ -36,6 +36,11 @@
   > * {
     flex-shrink: 0;
   }
+}
+
+.home-page,
+.settings-page {
+  padding: 0;
 }
 
 .page-title {

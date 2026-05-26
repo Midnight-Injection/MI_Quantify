@@ -1,3 +1,5 @@
+@use 'sass:color';
+
 .header {
   @include flex-between;
   height: $header-height;
@@ -424,7 +426,7 @@
 
   &.success .ai-log-entry-msg { color: $color-up; }
   &.error .ai-log-entry-msg { color: $color-down; }
-  &.warn .ai-log-entry-msg { color: darken(#f59e0b, 10%); }
+  &.warn .ai-log-entry-msg { color: color.adjust(#f59e0b, $lightness: -10%); }
   &.info .ai-log-entry-msg { color: $text-secondary; }
 }
 

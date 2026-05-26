@@ -41,14 +41,13 @@ export interface PromptTemplate {
 
 export type PromptCategory =
   | 'daily_eval'
-  | 'buy_signal'
-  | 'sell_signal'
   | 'news_analysis'
   | 'mode_router'
   | 'recommendation_agent'
   | 'investment_agent'
-  | 'investment_synthesis'
-  | 'tool_retry_policy'
+  | 'market_digest_agent'
+  | 'diagnosis_agent'
+  | 'diagnosis_synthesis'
   | 'custom'
 
 export interface BacktestResult {

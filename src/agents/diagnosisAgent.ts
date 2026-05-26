@@ -1,10 +1,11 @@
 import { useAiChat, isAuthError } from '@/composables/useAiChat'
 import { useSidecar } from '@/composables/useSidecar'
 import { normalizeAgentMaxSteps, runReActLoop, type ReActTool, type ReActToolResult } from '@/agents/core/reactAgent'
-import type { AiDiagnosis, AiProvider, DiagnosisAgentStep, DiagnosisEvidence, KlineData, SearchProvider, Strategy, TechnicalSnapshot } from '@/types'
+import type { AiDiagnosis, AiProvider, DataSource, DiagnosisAgentStep, DiagnosisEvidence, KlineData, SearchProvider, Strategy, TechnicalSnapshot } from '@/types'
 import { buildDiagnosisTimingPrompt, getMarketSessionContext, type MarketSessionContext } from '@/utils/marketSession'
 import { buildTechnicalSnapshot, getStockProfile } from '@/utils/marketMetrics'
 import { normalizeSecurityCode } from '@/utils/security'
+import { useStrategyStore } from '@/stores/strategy'
 
 interface BidAsk {
   price: number
@@ -78,6 +79,7 @@ interface AgentPlanStep {
   reason: string
   query?: string
   providers?: string[]
+  source?: string
 }
 
 interface StrategyContext {
@@ -278,20 +280,43 @@ function buildQuestionFocus(question?: string, stockName?: string, matchedKeywor
   return raw.slice(0, 18)
 }
 
-function buildToolCatalog(searchProviders: SearchProvider[]): AgentToolDescriptor[] {
+const TOOL_DATA_SOURCES: Record<string, string[]> = {
+  search_stock: ['eastmoney'],
+  load_quote: ['sina', 'eastmoney', 'easyquotation', 'akshare'],
+  load_kline: ['sina', 'akshare', 'baostock'],
+  load_market_indices: ['sina', 'eastmoney'],
+  load_advance_decline: ['eastmoney'],
+  load_stock_news: ['eastmoney', 'google-news-rss', 'yahoo-finance-rss'],
+  load_macro_news: ['eastmoney', 'google-news-rss', 'yahoo-finance-rss'],
+  load_financial_news: ['eastmoney', 'google-news-rss', 'yahoo-finance-rss'],
+  load_fund_flow: ['eastmoney', 'akshare'],
+  load_sector_rank: ['eastmoney'],
+  load_concept_rank: ['eastmoney'],
+  load_finance_report: ['akshare'],
+}
+
+function buildToolSourceLabel(toolName: string, dataSources: DataSource[]): string {
+  const allowedIds = TOOL_DATA_SOURCES[toolName]
+  if (!allowedIds?.length) return ''
+  const enabled = dataSources.filter((ds) => ds.enabled && allowedIds.includes(ds.id))
+  if (!enabled.length) return ''
+  return `可用数据源：${enabled.map((ds) => ds.name).join('、')}。可在 source 字段指定数据源名称。`
+}
+
+function buildToolCatalog(searchProviders: SearchProvider[], dataSources: DataSource[] = []): AgentToolDescriptor[] {
   const tools: AgentToolDescriptor[] = [
-    { tool: 'search_stock', module: 'stock.search', description: '根据用户问题中的股票名称或代码搜索匹配的股票，返回代码和名称。仅在后续工具必须依赖股票代码时再使用。' },
-    { tool: 'load_quote', module: 'stock.quote', description: '读取实时价格、涨跌、估值、五档盘口和涨跌停位置。' },
-    { tool: 'load_market_indices', module: 'market.indices', description: '读取上证、深证、创业板等大盘指数与市场风格。' },
-    { tool: 'load_advance_decline', module: 'market.advance_decline', description: '读取涨跌家数、总量能，判断市场整体情绪和赚钱效应。' },
-    { tool: 'load_kline', module: 'stock.kline', description: '读取日线或其他周期 K 线、均线、MACD、RSI、量能和支撑压力。' },
-    { tool: 'load_stock_news', module: 'news.stock', description: '按股票名称、代码或关键词读取个股公告、公司新闻、订单、回购和经营动态。' },
-    { tool: 'load_macro_news', module: 'news.context', description: '按股票名称、代码或关键词读取与个股相关的宏观新闻、政策导向、行业景气度。' },
-    { tool: 'load_financial_news', module: 'news.financial', description: '读取最新财经要闻、国际消息、政策变化、社会舆情和地缘政治动态。' },
-    { tool: 'load_fund_flow', module: 'capital.flow', description: '读取个股近期主力净流入、超大单、大单、散户资金趋势。' },
-    { tool: 'load_sector_rank', module: 'sector.industry', description: '读取行业热度、行业涨跌幅和龙头表现。' },
-    { tool: 'load_concept_rank', module: 'sector.concept', description: '读取概念题材热度、情绪扩散和活跃龙头。' },
-    { tool: 'load_finance_report', module: 'stock.finance', description: '读取近4期资产负债表、利润表、现金流量表，分析营收增速、利润率、现金流健康度、负债率等基本面趋势。' },
+    { tool: 'search_stock', module: 'stock.search', description: `根据用户问题中的股票名称或代码搜索匹配的股票，返回代码和名称。仅在后续工具必须依赖股票代码时再使用。${buildToolSourceLabel('search_stock', dataSources)}` },
+    { tool: 'load_quote', module: 'stock.quote', description: `读取实时价格、涨跌、估值、五档盘口和涨跌停位置。${buildToolSourceLabel('load_quote', dataSources)}` },
+    { tool: 'load_market_indices', module: 'market.indices', description: `读取上证、深证、创业板等大盘指数与市场风格。${buildToolSourceLabel('load_market_indices', dataSources)}` },
+    { tool: 'load_advance_decline', module: 'market.advance_decline', description: `读取涨跌家数、总量能，判断市场整体情绪和赚钱效应。${buildToolSourceLabel('load_advance_decline', dataSources)}` },
+    { tool: 'load_kline', module: 'stock.kline', description: `读取日线或其他周期 K 线、均线、MACD、RSI、量能和支撑压力。${buildToolSourceLabel('load_kline', dataSources)}` },
+    { tool: 'load_stock_news', module: 'news.stock', description: `按股票名称、代码或关键词读取个股公告、公司新闻、订单、回购和经营动态。${buildToolSourceLabel('load_stock_news', dataSources)}` },
+    { tool: 'load_macro_news', module: 'news.context', description: `按股票名称、代码或关键词读取与个股相关的宏观新闻、政策导向、行业景气度。${buildToolSourceLabel('load_macro_news', dataSources)}` },
+    { tool: 'load_financial_news', module: 'news.financial', description: `读取最新财经要闻、国际消息、政策变化、社会舆情和地缘政治动态。${buildToolSourceLabel('load_financial_news', dataSources)}` },
+    { tool: 'load_fund_flow', module: 'capital.flow', description: `读取个股近期主力净流入、超大单、大单、散户资金趋势。${buildToolSourceLabel('load_fund_flow', dataSources)}` },
+    { tool: 'load_sector_rank', module: 'sector.industry', description: `读取行业热度、行业涨跌幅和龙头表现。${buildToolSourceLabel('load_sector_rank', dataSources)}` },
+    { tool: 'load_concept_rank', module: 'sector.concept', description: `读取概念题材热度、情绪扩散和活跃龙头。${buildToolSourceLabel('load_concept_rank', dataSources)}` },
+    { tool: 'load_finance_report', module: 'stock.finance', description: `读取近4期资产负债表、利润表、现金流量表，分析营收增速、利润率、现金流健康度、负债率等基本面趋势。${buildToolSourceLabel('load_finance_report', dataSources)}` },
   ]
 
   tools.push({
@@ -349,9 +374,9 @@ function buildToolInputSummary(step: AgentPlanStep, stockInfo: DiagnosisStockInf
     case 'load_fund_flow':
       return `读取 ${stockInfo.name} 近期个股资金流（主力、超大单、大单、散户），确认资金趋势。`
     case 'load_sector_rank':
-      return `读取 ${stockInfo.name} 所属行业与行业热度榜，确认主线行业强弱。`
+      return `读取 ${stockInfo.name} 所属行业与行业热度榜，作为行业强弱线索，后续仍需自行判断是否构成主线。`
     case 'load_concept_rank':
-      return `读取 ${stockInfo.name} 相关概念题材与题材热度榜，确认情绪是否扩散。`
+      return `读取 ${stockInfo.name} 相关概念题材与题材热度榜，作为情绪扩散线索，后续仍需自行判断持续性。`
     case 'load_finance_report':
       return `读取 ${stockInfo.name} 近4期资产负债表、利润表和现金流量表，评估基本面趋势。`
     case 'web_search':
@@ -658,6 +683,7 @@ export async function runDiagnosisAgent(options: {
   matchedKeyword?: string
   matchCandidates?: Array<{ code: string; name: string }>
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>
+  dataSources?: DataSource[]
   onProgress?: (event: DiagnosisAgentProgressEvent) => void
   onPartial?: (result: DiagnosisAgentPartialResult) => void
   onStreamDelta?: (text: string) => void
@@ -668,7 +694,7 @@ export async function runDiagnosisAgent(options: {
   const selectedStrategy = options.selectedStrategy || null
   const selectedStrategyContext = createStrategyContext(selectedStrategy)
   const availableSearchProviders = normalizeSearchProviders(options.searchProviders, options.activeSearchProvider)
-  const toolCatalog = buildToolCatalog(availableSearchProviders)
+  const toolCatalog = buildToolCatalog(availableSearchProviders, options.dataSources || [])
   const emitProgress = (step: DiagnosisAgentStep) => {
     options.onProgress?.({ step })
   }
@@ -904,9 +930,10 @@ export async function runDiagnosisAgent(options: {
   }
 
   async function runDiagnosisTool(
-    step: Pick<AgentPlanStep, 'tool' | 'query' | 'providers'>,
+    step: Pick<AgentPlanStep, 'tool' | 'query' | 'providers' | 'source'>,
   ): Promise<ReActToolResult> {
     throwIfAborted(options.abortSignal)
+    const sourceParam = step.source ? `&source=${encodeURIComponent(step.source)}` : ''
     if (step.tool === 'search_stock') {
       const keyword = `${step.query || buildLookupKeyword()}`.trim()
       if (!keyword) {
@@ -916,7 +943,7 @@ export async function runDiagnosisAgent(options: {
         }
       }
       const searchResp = await withAbort(
-        get<{ data: Array<{ code: string; name: string }> }>(`/api/market/search?keyword=${encodeURIComponent(keyword)}&limit=5&lite=1`),
+        get<{ data: Array<{ code: string; name: string }> }>(`/api/market/search?keyword=${encodeURIComponent(keyword)}&limit=5&lite=1${sourceParam}`),
         options.abortSignal,
       )
       const candidates = searchResp.data || []
@@ -959,7 +986,7 @@ export async function runDiagnosisAgent(options: {
 
     if (step.tool === 'load_market_indices') {
       const response = await withAbort(
-        get<{ data: Array<any> }>(`/api/market/indices?market=${marketQuery}`),
+        get<{ data: Array<any> }>(`/api/market/indices?market=${marketQuery}${sourceParam}`),
         options.abortSignal,
       )
       marketIndices = response.data || []
@@ -989,7 +1016,7 @@ export async function runDiagnosisAgent(options: {
     if (step.tool === 'load_kline') {
       await resolveCodeIfNeeded()
       const response = await withAbort(
-        get<{ data: KlineData[] }>(`/api/kline/${normalizedCode}?period=${period}&adjust=${adjust}`),
+        get<{ data: KlineData[] }>(`/api/kline/${normalizedCode}?period=${period}&adjust=${adjust}${sourceParam}`),
         options.abortSignal,
       )
       klineData = response.data || []
@@ -1005,7 +1032,7 @@ export async function runDiagnosisAgent(options: {
         const lookupCode = buildNewsLookupCode()
         const lookupName = buildDisplayName()
         const response = await withAbort(
-          get<{ data: DiagnosisNewsItem[] }>(`/api/news/stock/${encodeURIComponent(lookupCode)}?limit=16&name=${encodeURIComponent(lookupName)}`),
+          get<{ data: DiagnosisNewsItem[] }>(`/api/news/stock/${encodeURIComponent(lookupCode)}?limit=16&name=${encodeURIComponent(lookupName)}${sourceParam}`),
           options.abortSignal,
         )
         stockNews = response.data || []
@@ -1027,7 +1054,7 @@ export async function runDiagnosisAgent(options: {
         const lookupCode = buildNewsLookupCode()
         const lookupName = buildDisplayName()
         const response = await withAbort(
-          get<{ data: DiagnosisNewsItem[] }>(`/api/news/context/${encodeURIComponent(lookupCode)}?limit=18&name=${encodeURIComponent(lookupName)}`),
+          get<{ data: DiagnosisNewsItem[] }>(`/api/news/context/${encodeURIComponent(lookupCode)}?limit=18&name=${encodeURIComponent(lookupName)}${sourceParam}`),
           options.abortSignal,
         )
         macroNews = response.data || []
@@ -1046,7 +1073,7 @@ export async function runDiagnosisAgent(options: {
 
     if (step.tool === 'load_financial_news') {
       const response = await withAbort(
-        get<{ data: DiagnosisNewsItem[] }>('/api/news/financial?limit=60'),
+        get<{ data: DiagnosisNewsItem[] }>(`/api/news/financial?limit=60${sourceParam}`),
         options.abortSignal,
       )
       financialNews = response.data || []
@@ -1061,7 +1088,7 @@ export async function runDiagnosisAgent(options: {
       await resolveCodeIfNeeded()
       try {
         const stockResponse = await withAbort(
-          get<{ data: Array<any> }>(`/api/fundflow/stock/${normalizedCode}?days=10`),
+          get<{ data: Array<any> }>(`/api/fundflow/stock/${normalizedCode}?days=10${sourceParam}`),
           options.abortSignal,
         )
         const recentFlows = stockResponse.data || []
@@ -1080,7 +1107,7 @@ export async function runDiagnosisAgent(options: {
           throw error
         }
         const rankResponse = await withAbort(
-          get<{ data: Array<any> }>('/api/fundflow/rank?limit=80'),
+          get<{ data: Array<any> }>(`/api/fundflow/rank?limit=80${sourceParam}`),
           options.abortSignal,
         )
         fundFlow = (rankResponse.data || []).find((item) => normalizeSecurityCode(item.code || '') === normalizedCode) || null
@@ -1214,64 +1241,74 @@ export async function runDiagnosisAgent(options: {
     {
       name: 'search_stock',
       description: '根据用户问题或股票名称搜索股票代码，输出候选列表并锁定本轮研究标的。仅在需要代码时调用。',
-      inputSchema: { query: 'string，股票名称/代码/问题片段' },
-      execute: (input) => runDiagnosisTool({ tool: 'search_stock', query: `${input.query || ''}` }),
+      inputSchema: { query: 'string，股票名称/代码/问题片段', source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'search_stock', query: `${input.query || ''}`, source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_quote',
       description: '加载实时行情、盘口、估值和涨跌停位置。',
-      inputSchema: { code: 'string，可选；不传时使用当前锁定股票' },
-      execute: (input) => runDiagnosisTool({ tool: 'load_quote', query: `${input.code || ''}` }),
+      inputSchema: { code: 'string，可选；不传时使用当前锁定股票', source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_quote', query: `${input.code || ''}`, source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_kline',
       description: '加载 K 线与量价结构，用于判断趋势、支撑和压力。',
-      execute: () => runDiagnosisTool({ tool: 'load_kline' }),
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_kline', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_stock_news',
       description: '按股票名称、代码或问题关键词加载个股相关新闻、公告与经营动态。',
-      execute: () => runDiagnosisTool({ tool: 'load_stock_news' }),
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_stock_news', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_macro_news',
       description: '按股票名称、代码或问题关键词加载和个股关联的政策、行业、宏观与国际消息。',
-      execute: () => runDiagnosisTool({ tool: 'load_macro_news' }),
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_macro_news', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_financial_news',
       description: '加载最新财经要闻，辅助判断外部风险偏好。',
-      execute: () => runDiagnosisTool({ tool: 'load_financial_news' }),
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_financial_news', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_fund_flow',
       description: '加载个股主力资金流和近期净流入趋势。',
-      execute: () => runDiagnosisTool({ tool: 'load_fund_flow' }),
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_fund_flow', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_sector_rank',
-      description: '加载行业板块热度，用于判断主线和拖累方向。',
-      execute: () => runDiagnosisTool({ tool: 'load_sector_rank' }),
+      description: '加载行业板块热度，作为行业强弱线索，不能直接把排行前列等同于主线。',
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_sector_rank', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_concept_rank',
-      description: '加载概念题材热度，用于观察情绪扩散和题材持续性。',
-      execute: () => runDiagnosisTool({ tool: 'load_concept_rank' }),
+      description: '加载概念题材热度，作为题材情绪线索，不能直接把热点排行等同于最终结论。',
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_concept_rank', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_market_indices',
       description: '加载核心指数表现，用于判断市场风险偏好。',
-      execute: () => runDiagnosisTool({ tool: 'load_market_indices' }),
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_market_indices', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_advance_decline',
       description: '加载全市场涨跌家数和赚钱效应，仅 A 股适用。',
-      execute: () => runDiagnosisTool({ tool: 'load_advance_decline' }),
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_advance_decline', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'load_finance_report',
       description: '加载最近四期财报摘要，补充营收、利润、现金流与资产负债结构。',
-      execute: () => runDiagnosisTool({ tool: 'load_finance_report' }),
+      inputSchema: { source: 'string，可选，指定数据源' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_finance_report', source: `${input.source || ''}` || undefined }),
     },
     {
       name: 'web_search',
@@ -1343,14 +1380,25 @@ export async function runDiagnosisAgent(options: {
       planInputSummary: selectedStrategy ? `本次按「${selectedStrategy.name}」评估。` : '本次按默认综合框架评估。',
       planQuery: toolCatalog.map((item) => `${item.tool}:${item.description}`).join(' / '),
       onProgress: (step) => emitProgress(step),
-      systemPrompt: `你是股票研究统一智能体。你的职责是围绕“先补齐证据，再形成结论”来决定下一步工具调用。${diagnosisTimingPrompt}
+      systemPrompt: (() => {
+        const defaultDiagnosisSystemPrompt = `你是股票研究统一智能体。你的职责是围绕"先补齐证据，再形成结论"来决定下一步工具调用。${diagnosisTimingPrompt}
 你只能使用内置工具，不能虚构行情、新闻、财报或资金数据。
 如果用户给了具体关注点，你要优先拉取能回答该关注点的证据。
 能用股票名称、代码或问题关键词直接查询的工具可以先执行；只有实时行情、K线、资金流、财报这类必须依赖股票代码的工具，才需要先进一步确定代码。
+接口返回的行业排行、概念排行、热点股、摘要字段、新闻标题、搜索摘要都只是证据线索，不是结论本身。
+你不能因为接口里"涨幅靠前""热点排行靠前""新闻反复提到某主题"就直接认定那就是主线、催化已经成立或股票一定该追。
+凡是涉及"当前主线是什么""未来是否延续""现在该不该追高/低吸""买卖价位和仓位怎么定"，都必须由你基于至少两类以上证据自行推导；优先交叉验证实时行情、K线结构、资金流、个股新闻、宏观/政策消息、市场环境。
+如果板块热度、新闻催化、资金流、量价结构之间互相冲突，必须主动降低置信度，并明确给出"观望/等确认"而不是硬下结论。
 在 finish 之前，至少要保证已经拿到实时行情和 K 线；如果问题明显依赖消息面、财报、资金面或市场环境，也要优先补齐对应工具。
-对于“现在怎么看、短线空间、能不能买/卖”这类单票问诊，如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就必须优先 finish，不要再为了补充可有可无的板块工具而拖延。
+对于"现在怎么看、短线空间、能不能买/卖"这类单票问诊，如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就必须优先 finish，不要再为了补充可有可无的板块工具而拖延。
 最终结论必须直接、明确，不能输出模糊空话。
-必须给出：1. 具体操作（买入/卖出/观望/分批/减仓/止损）；2. 明确价格区间或单价；3. 退出条件或止损位；4. 为什么这么做。`,
+必须给出：1. 具体操作（买入/卖出/观望/分批/减仓/止损）；2. 明确价格区间或单价；3. 退出条件或止损位；4. 为什么这么做。`
+        const strategyStore = useStrategyStore()
+        const tpl = strategyStore.getPromptTemplateByCategory('diagnosis_agent')?.content?.trim()
+        return tpl
+          ? `${tpl}${diagnosisTimingPrompt ? `\n\n${diagnosisTimingPrompt}` : ''}`
+          : defaultDiagnosisSystemPrompt
+      })(),
       userPrompt: JSON.stringify({
         task: '针对用户问题进行股票研究并直接输出最终诊断 JSON。',
         goal: '最终需要产出看多/看空/震荡判断、买卖区间、止损止盈、仓位建议，以及对用户关注点的明确回答。',
@@ -1361,6 +1409,11 @@ export async function runDiagnosisAgent(options: {
           focus: questionFocus || '默认围绕价格、资金、消息、板块、财报和风险收益比展开，且最终必须落到具体动作和价格区间',
           candidates: options.matchCandidates?.slice(0, 5) || [],
         },
+        reasoningRules: [
+          '行业排行、概念排行、热点股、新闻摘要都只是线索，不能直接把接口返回的前排内容当成主线结论。',
+          '主线判断、趋势延续、买卖区间、仓位和止损必须由模型基于多源证据自行推导。',
+          '若证据冲突或关键证据缺失，必须降低置信度并倾向观望，而不是强行给出激进结论。',
+        ],
         stock: stockInfo.code
           ? {
               code: stockInfo.code,
@@ -1380,7 +1433,7 @@ export async function runDiagnosisAgent(options: {
         tools: toolCatalog,
         conversationHistory: (options.conversationHistory || []).slice(-10),
       }, null, 2),
-      nextStepPrompt: '请判断当前已有数据是否足以完整回答用户问题；如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就应直接 finish 并返回最终诊断 JSON。最终 JSON 必须包含明确操作、具体价格区间、止损位/退出条件和理由；如果这些字段还不完整，继续只选择一个最必要的工具。注意同一个失败超过3次的工具不能再调用。',
+      nextStepPrompt: '请判断当前已有数据是否足以完整回答用户问题；注意行业/概念排行和新闻摘要只能作为线索，不能直接当结论。如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就应优先基于这些证据自行综合判断并直接 finish 返回最终诊断 JSON。最终 JSON 必须包含明确操作、具体价格区间、止损位/退出条件和理由；若证据冲突要降低置信度并说明等待确认的关键价位；如果这些字段还不完整，继续只选择一个最必要的工具。注意同一个失败超过3次的工具不能再调用。',
       toolMaxTokens: 2400,
       toolTimeoutMs: 210000,
     }), planningTimeoutMs, '统一智能体规划'), options.abortSignal)
@@ -1443,16 +1496,25 @@ export async function runDiagnosisAgent(options: {
         [
           {
             role: 'system',
-            content: `你是股票研究总结智能体。你只能基于用户提供的结构化证据输出最终诊股 JSON，不能虚构任何数据。${diagnosisTimingPrompt}
+            content: (() => {
+              const defaultSynthesisPrompt = `你是股票研究总结智能体。你只能基于用户提供的结构化证据输出最终诊股 JSON，不能虚构任何数据。${diagnosisTimingPrompt}
 最终必须输出一个合法 JSON 对象，字段包括：
 recommendation, prediction, confidence, riskLevel, summary, klineAnalysis, supportPrice, resistancePrice, buyLower, buyUpper, sellLower, sellUpper, positionAdvice, positionSize, entryAdvice, exitAdvice, stopLossPrice, takeProfitPrice, suggestedShares, catalysts, risks, socialSignals, policyImpact, internationalFactors, strategyFocus, evidence, scenarios。
 要求：
 1. 所有价位必须与实时价格、支撑压力或已提供证据一致，且必须能落成具体入场区间、止损位和退出区间。
 2. 结论必须直接回答用户问题，不要空话，必须包含具体操作：买入 / 卖出 / 观望 / 分批 / 减仓 / 止损。
 3. 信息不足时直接在对应字段说明证据不足，不要臆测；但 summary 里仍需明确给出当前建议动作和等待的关键价位。
-4. positionAdvice、entryAdvice、exitAdvice 不能写“看情况”“适当关注”这种模糊表述，必须写到数字。
+4. positionAdvice、entryAdvice、exitAdvice 不能写"看情况""适当关注"这种模糊表述，必须写到数字。
 5. 保持简洁，summary 不超过 120 字，evidence 和 scenarios 各不超过 3 条。
-不要输出 Markdown，不要解释。`,
+6. 行业排行、概念排行、热点股、新闻标题和搜索摘要都只是线索，不能被你直接当成主线结论；必须由你结合量价、资金、消息和市场环境自行判断。
+7. 如果证据冲突，就降低置信度并倾向等待确认，不要为了给出结论而强行把某个板块说成主线。
+不要输出 Markdown，不要解释。`
+              const strategyStore = useStrategyStore()
+              const tpl = strategyStore.getPromptTemplateByCategory('diagnosis_synthesis')?.content?.trim()
+              return tpl
+                ? `${tpl}${diagnosisTimingPrompt ? `\n\n${diagnosisTimingPrompt}` : ''}`
+                : defaultSynthesisPrompt
+            })(),
           },
           {
             role: 'user',

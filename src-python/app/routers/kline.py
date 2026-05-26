@@ -13,6 +13,7 @@ async def kline(
     end_date: Optional[str] = Query(default=None),
     adjust: str = Query(default="qfq"),
     limit: Optional[int] = Query(default=None),
+    source: Optional[str] = Query(default=None),
 ):
-    data = get_kline(code, period, start_date, end_date, adjust, limit)
+    data = get_kline(code, period, start_date, end_date, adjust, limit, preferred_source=source)
     return {"data": data}

@@ -11,8 +11,8 @@ _INDUSTRY_URL = "https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php"
 _CONCEPT_URL = "https://money.finance.sina.com.cn/q/view/newFLJK.php?param=class"
 
 
-def _http_get(url: str, referer: str = "https://finance.sina.com.cn", **kwargs):
-    return create_http_session(referer=referer, target_url=url).get(url, **kwargs)
+def _http_get(url: str, referer: str = "https://finance.sina.com.cn", proxy_id: str | None = None, **kwargs):
+    return create_http_session(referer=referer, target_url=url, proxy_id=proxy_id).get(url, **kwargs)
 
 
 def _cache_valid(cache: dict) -> bool:

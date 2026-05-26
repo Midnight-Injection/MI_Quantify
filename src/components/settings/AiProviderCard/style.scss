@@ -125,7 +125,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid $border-light;
+  margin-top: 4px;
+}
+
+.btn-save {
+  padding: 7px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba($color-accent, 0.15);
+}
+
+.input-error {
+  border-color: $color-danger !important;
+  box-shadow: 0 0 0 3px rgba($color-danger, 0.08) !important;
 }
 
 .text-success {
@@ -136,6 +151,17 @@
 .text-danger {
   color: $color-danger;
   border-color: $color-danger;
+}
+
+.btn-remove {
+  margin-left: auto;
+  color: $color-danger;
+  border-color: rgba($color-danger, 0.3);
+
+  &:hover {
+    background: rgba($color-danger, 0.08);
+    border-color: $color-danger;
+  }
 }
 
 .switch {

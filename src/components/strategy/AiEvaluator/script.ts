@@ -45,6 +45,7 @@ export default defineComponent({
           provider: settingsStore.activeProvider,
           searchProviders: settingsStore.enabledSearchProviders,
           activeSearchProvider: settingsStore.activeSearchProvider,
+          dataSources: settingsStore.enabledDataSources,
           maxSteps: settingsStore.settings.ai.diagnosis.maxSteps,
         })
         diagnosis.value = agentResult.diagnosis

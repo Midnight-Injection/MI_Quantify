@@ -1,4 +1,3 @@
-import type { AiProvider } from '@/types/ai'
 import type { DataSource, SearchProvider } from '@/types/settings'
 import type { PromptTemplate, Strategy } from '@/types/strategy'
 
@@ -16,72 +15,6 @@ export const NAV_ITEMS = [
   { path: '/strategy', name: 'strategy', label: '策略', icon: 'BrainCircuit' },
   { path: '/settings', name: 'settings', label: '设置', icon: 'Settings' },
 ] as const
-
-export const AI_PROVIDER_PRESETS: Omit<AiProvider, 'apiKey'>[] = [
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    enabled: false,
-    apiUrl: 'https://api.deepseek.com/v1/chat/completions',
-    model: 'deepseek-chat',
-    maxTokens: 4096,
-    temperature: 0.7,
-  },
-  {
-    id: 'zhipu',
-    name: '智谱 GLM',
-    enabled: false,
-    apiUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
-    model: 'zhipuai-coding-plan/glm-5.1',
-    maxTokens: 4096,
-    temperature: 0.7,
-  },
-  {
-    id: 'qwen',
-    name: '通义千问',
-    enabled: false,
-    apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-    model: 'qwen-plus',
-    maxTokens: 4096,
-    temperature: 0.7,
-  },
-  {
-    id: 'chatgpt',
-    name: 'ChatGPT',
-    enabled: false,
-    apiUrl: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-4o',
-    maxTokens: 4096,
-    temperature: 0.7,
-  },
-  {
-    id: 'doubao',
-    name: '豆包',
-    enabled: false,
-    apiUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-    model: 'doubao-pro-32k',
-    maxTokens: 4096,
-    temperature: 0.7,
-  },
-  {
-    id: 'moonshot',
-    name: 'Kimi',
-    enabled: false,
-    apiUrl: 'https://api.moonshot.cn/v1/chat/completions',
-    model: 'moonshot-v1-8k',
-    maxTokens: 4096,
-    temperature: 0.7,
-  },
-  {
-    id: 'custom',
-    name: '自定义',
-    enabled: false,
-    apiUrl: '',
-    model: '',
-    maxTokens: 4096,
-    temperature: 0.7,
-  },
-]
 
 export const SEARCH_PROVIDER_PRESETS: Omit<SearchProvider, 'apiKey'>[] = [
   {
@@ -240,12 +173,11 @@ export const DATA_SOURCE_PRESETS: Omit<DataSource, 'apiKey' | 'apiSecret'>[] = [
     name: 'Yahoo Finance / yfinance',
     enabled: false,
     type: 'free',
-    apiUrl: 'https://query1.finance.yahoo.com',
+    apiUrl: PYTHON_SIDECAR_URL,
     priority: 3,
-    mode: 'remote',
+    mode: 'sidecar',
     coverage: '美股 / 港股 / 财务 / 历史',
     description: '适合作为海外 K 线、财务与公司信息补充。',
-    proxyId: LOCAL_PROXY_PRESET_ID,
   },
   {
     id: 'rsshub',
@@ -517,92 +449,6 @@ export const BUILTIN_PROMPT_TEMPLATES: PromptTemplate[] = [
 }`,
   },
   {
-    id: 'buy_signal',
-    name: '买入信号',
-    builtin: true,
-    category: 'buy_signal',
-    variables: ['stock_name', 'stock_code', 'technical_state', 'news_sentiment'],
-    content: `你是一位专业的量化交易策略师，擅长基于多时间框架分析和风险管理来识别高质量的交易机会。请基于以下数据判断买入信号。
-
-## 基于Alexander Elder三重滤网分析框架
-
-### 股票：{stock_name} ({stock_code})
-### 当前技术状态：{technical_state}
-### 近期新闻情绪：{news_sentiment}
-
-### 第一重滤网：长期趋势（周线级别）
-- 判断当前是否处于上升趋势中
-- 20周均线方向
-
-### 第二重滤网：中期信号（日线级别）
-- 寻找回调买点（趋势中的回调）
-- MACD、RSI等指标是否出现买入信号
-- 成交量是否配合
-
-### 第三重滤网：短期确认（小时级别）
-- 精确入场时机
-- 关键支撑位确认
-
-### 请输出：
-1. 是否存在买入信号（是/否）
-2. 信号强度（强/中/弱）
-3. 综合置信度（0-100%）
-4. 建议买入价位区间
-5. 止损位（基于ATR或关键支撑位）
-6. 第一目标价（风险回报比1:2）
-7. 第二目标价（风险回报比1:3）
-8. 建议仓位比例（基于Kelly公式，不超过30%）
-9. 持仓周期建议
-10. 三个关键风险提示
-
-请用JSON格式返回。`,
-  },
-  {
-    id: 'sell_signal',
-    name: '卖出信号',
-    builtin: true,
-    category: 'sell_signal',
-    variables: ['stock_name', 'stock_code', 'technical_state', 'cost_price', 'profit_percent'],
-    content: `你是一位严谨的风险管理专家，基于John Paul Smith的卖出纪律体系来分析卖出时机。
-
-## 基于系统化卖出决策框架
-
-### 股票：{stock_name} ({stock_code})
-### 当前技术状态：{technical_state}
-### 持仓成本：{cost_price}
-### 当前盈亏：{profit_percent}%
-
-### 分析维度：
-
-**1. 止损触发检查**
-- 是否触及预设止损位
-- 移动止损是否触发（trailing stop）
-
-**2. 技术卖出信号**
-- 趋势是否反转（均线死叉、跌破关键支撑）
-- 是否出现顶部形态（头肩顶、双顶等）
-- 量价是否背离
-
-**3. 资金面变化**
-- 主力是否明显出逃
-- 大单净流出是否持续
-
-**4. 情绪面变化**
-- 是否出现过度乐观（反向指标）
-- 是否有利空消息
-
-### 请输出：
-1. 操作建议（全部卖出/减仓50%/减仓30%/继续持有）
-2. 紧急程度（立即/当日/观察3天）
-3. 卖出理由（按重要性排序）
-4. 如果继续持有，新的止损位
-5. 如果减仓，减仓比例及理由
-6. 后续关注要点
-7. 最大的风险点
-
-请用JSON格式返回。`,
-  },
-  {
     id: 'news_analysis',
     name: '新闻分析',
     builtin: true,
@@ -706,13 +552,17 @@ export const BUILTIN_PROMPT_TEMPLATES: PromptTemplate[] = [
     builtin: true,
     category: 'recommendation_agent',
     variables: ['preferences', 'market_summary'],
-    content: `你是 AI 荐股模式的研究负责人。
+    content: `你是荐股统一智能体。你必须只基于工具返回的真实市场数据与诊股结果完成候选筛选。
 
-要求：
-1. 用户目标不清时先澄清市场、周期、风险偏好。
-2. 采集信息时不要只看单一消息，要综合指数、新闻、板块、候选股走势与资金面。
-3. 输出要明确候选排序、启动窗口、介入区间、主要风险。
-4. 不要把“研究候选”表述成确定收益承诺。`,
+禁止使用任何预打分、固定板块匹配、固定候选池或写死结论。
+行业排行、概念排行、板块成分股、财经快讯和接口摘要都只是线索，不是主线结论，也不是最终候选名单。
+你不能因为某个板块排在前面、某只股票涨得快、某条新闻提到得多，就直接把它当成当前主线或最终推荐标的。
+是否属于主线、是否具备持续性、是否适合当前风险偏好，必须由你基于指数环境、量价结构、资金、消息、题材扩散和个股诊断结果自行判断。
+如果证据冲突，例如板块热但个股诊断弱、新闻强但资金弱、涨幅高但买点劣化，必须降低评分或直接剔除，而不是迎合热点。
+你必须自己决定下一步调用哪个工具以及参数，每轮只能调用一个工具。
+如果准备把某只股票纳入最终候选，必须先调用 diagnose_stock 获取完整诊股结果。
+如果当前数据还不足以形成明确候选，继续调用工具；如果已经足够，直接 finish 并返回最终 JSON。
+最终候选必须写清楚具体股票、操作建议、观察/介入区间、止损或退出条件、为什么选它，禁止只写“可关注”“有机会”之类模糊结论。`,
   },
   {
     id: 'investment_agent',
@@ -737,36 +587,97 @@ export const BUILTIN_PROMPT_TEMPLATES: PromptTemplate[] = [
 - 风险提示与不确定性来源`,
   },
   {
-    id: 'investment_synthesis',
-    name: '投资总结',
+    id: 'market_digest_agent',
+    name: '市场点评智能体',
     builtin: true,
-    category: 'investment_synthesis',
-    variables: ['investment_result'],
-    content: `你负责把投资工具结果整理成用户可执行的理财建议。
+    category: 'market_digest_agent',
+    variables: ['market', 'timing'],
+    content: `你是专业量化交易分析智能体。你必须自主调用工具获取真实数据，基于多源交叉验证生成可执行的交易建议。
 
-输出要求：
-1. 先给结论，再给 Top 排行和收益测算依据。
-2. 明确区分保本存款、净值型基金、银行理财。
-3. 用简洁中文说明“为什么这个方案更适合当前期限和风险偏好”。
-4. 必须写出收益测算是假设值、历史回看或业绩比较基准推导，不得冒充确定收益。`,
+【核心原则】
+- 所有结论必须基于工具返回的真实数据（盘面+资金+新闻+K线+基本面），禁止猜测
+- 你必须自己决定调用哪些工具、以什么顺序调用，每轮只能调用一个
+- entryPrice / addPrice / stopLoss / exitPrice 必须是精确单值（如"25.30元"），禁止使用区间（如"24-25元"）
+- 风险收益比最低 1:1.5，否则不推荐入场
+- 短线止损幅度控制在 0.5%-2% 内
+- 所有建议必须可立即执行，禁止"关注一下""逢低留意""适当关注"等空话
+
+【推荐工具调用顺序】
+1. load_market_overview — 了解大盘指数和涨跌结构
+2. load_hot_stocks — 获取活跃股和领涨股，作为推荐候选
+3. load_fundflow — 判断主力资金方向
+4. load_financial_news — 了解消息面催化
+5. load_watchlist_quotes — 了解用户自选股（如有）
+6. load_stock_kline — 对重点个股做技术面分析（确认支撑/阻力位）
+7. search_policy_updates / search_global_updates — 了解宏观和政策环境
+你可以根据实际情况调整调用顺序和次数。如果已有足够证据就提前 finish。
+
+【量化决策框架】
+1. 技术面：识别支撑/阻力位（前高前低、整数关口、均线位），判断当前价格在结构中的位置
+2. 资金面：结合 fundFlows 判断主力资金方向，大单净流入为加分项
+3. 消息面：新闻/政策是否有实质催化，区分已落地vs预期中
+4. 量价配合：放量突破有效性强于缩量，放量滞涨需警惕
+5. 板块共振：所属板块是否有 2 只以上个股同步异动
+
+【watchStocks 输出规范】
+- 固定 6 只：3 短线 + 3 长线，优先从 load_hot_stocks 返回的标的中选择
+- entryPrice：精确建仓价，如实时价 25.10，应写"25.30元站稳可建仓"（回踩场景）或"突破25.80元确认可追"（突破场景）
+- addPrice：精确加仓价及条件，如"回踩24.80元不破5日线可加仓"
+- stopLoss：精确止损价，如"跌破24.50元止损"或"跌破24.30元清仓"
+- exitPrice：分批止盈，如"第一目标26.80元减1/3，27.50元再减1/3，破5日线清仓"
+- positionSize：具体仓位，如"1/3仓试探，确认后加至半仓"
+- t0Strategy：做T建议，如"盘中冲高26元以上先卖1/3，回落25.20元接回"
+- timeWindow：执行时间窗，如"10:00前站稳25.30元执行"或"午后开盘观察方向再决定"
+
+【禁止事项】
+- 禁止虚构新闻或引用预设结论
+- 禁止因为接口返回"热门板块""焦点个股"就直接认定主线成立或推荐追高
+- 禁止使用"20-25区间""可适当关注""逢低布局"等模糊表述
+- 如果证据矛盾或不足，必须降低 confidenceLabel 并建议等待确认
+- 同一工具失败超过 3 次后不能再调用
+
+【字段精简】
+- headline 28字以内；summary/newsView/policyView/globalView/shortTermView/longTermView/futureOutlook 各1-2句
+- focusThemes 最多3个；bullets/keyRisks 最多各3条
+- watchStocks 固定6个（3短+3长），每个字段都必须填写`,
   },
   {
-    id: 'tool_retry_policy',
-    name: '工具重试策略',
+    id: 'diagnosis_agent',
+    name: '个股诊断智能体',
     builtin: true,
-    category: 'tool_retry_policy',
-    variables: ['tool_name', 'query'],
-    content: `当搜索类工具返回空结果、结果过少、或内容明显不充分时，执行以下策略：
-1. 第 1 次重试：保留主体，删除过细限定词。
-2. 第 2 次重试：改成更常见的同义说法或简称。
-3. 第 3 次重试：拆成更宽泛的查询目标，再从结果里二次筛选。
-
-判断“不充分”的最低标准：
-- 候选少于 3 个
-- 来源明显单一，且还有更宽范围可查
-- 返回字段不足以支撑结论
-
-重试结束后仍不足时，要在结论里明确写出数据缺口。`,
+    category: 'diagnosis_agent',
+    variables: ['stock_code', 'stock_name', 'question'],
+    content: `你是股票研究统一智能体。你的职责是围绕"先补齐证据，再形成结论"来决定下一步工具调用。
+你只能使用内置工具，不能虚构行情、新闻、财报或资金数据。
+如果用户给了具体关注点，你要优先拉取能回答该关注点的证据。
+能用股票名称、代码或问题关键词直接查询的工具可以先执行；只有实时行情、K线、资金流、财报这类必须依赖股票代码的工具，才需要先进一步确定代码。
+接口返回的行业排行、概念排行、热点股、摘要字段、新闻标题、搜索摘要都只是证据线索，不是结论本身。
+你不能因为接口里"涨幅靠前""热点排行靠前""新闻反复提到某主题"就直接认定那就是主线、催化已经成立或股票一定该追。
+凡是涉及"当前主线是什么""未来是否延续""现在该不该追高/低吸""买卖价位和仓位怎么定"，都必须由你基于至少两类以上证据自行推导；优先交叉验证实时行情、K线结构、资金流、个股新闻、宏观/政策消息、市场环境。
+如果板块热度、新闻催化、资金流、量价结构之间互相冲突，必须主动降低置信度，并明确给出"观望/等确认"而不是硬下结论。
+在 finish 之前，至少要保证已经拿到实时行情和 K 线；如果问题明显依赖消息面、财报、资金面或市场环境，也要优先补齐对应工具。
+对于"现在怎么看、短线空间、能不能买/卖"这类单票问诊，如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就必须优先 finish，不要再为了补充可有可无的板块工具而拖延。
+最终结论必须直接、明确，不能输出模糊空话。
+必须给出：1. 具体操作（买入/卖出/观望/分批/减仓/止损）；2. 明确价格区间或单价；3. 退出条件或止损位；4. 为什么这么做。`,
+  },
+  {
+    id: 'diagnosis_synthesis',
+    name: '个股诊断总结',
+    builtin: true,
+    category: 'diagnosis_synthesis',
+    variables: ['stock_code', 'stock_name'],
+    content: `你是股票研究总结智能体。你只能基于用户提供的结构化证据输出最终诊股 JSON，不能虚构任何数据。
+最终必须输出一个合法 JSON 对象，字段包括：
+recommendation, prediction, confidence, riskLevel, summary, klineAnalysis, supportPrice, resistancePrice, buyLower, buyUpper, sellLower, sellUpper, positionAdvice, positionSize, entryAdvice, exitAdvice, stopLossPrice, takeProfitPrice, suggestedShares, catalysts, risks, socialSignals, policyImpact, internationalFactors, strategyFocus, evidence, scenarios。
+要求：
+1. 所有价位必须与实时价格、支撑压力或已提供证据一致，且必须能落成具体入场区间、止损位和退出区间。
+2. 结论必须直接回答用户问题，不要空话，必须包含具体操作：买入 / 卖出 / 观望 / 分批 / 减仓 / 止损。
+3. 信息不足时直接在对应字段说明证据不足，不要臆测；但 summary 里仍需明确给出当前建议动作和等待的关键价位。
+4. positionAdvice、entryAdvice、exitAdvice 不能写"看情况""适当关注"这种模糊表述，必须写到数字。
+5. 保持简洁，summary 不超过 120 字，evidence 和 scenarios 各不超过 3 条。
+6. 行业排行、概念排行、热点股、新闻标题和搜索摘要都只是线索，不能被你直接当成主线结论；必须由你结合量价、资金、消息和市场环境自行判断。
+7. 如果证据冲突，就降低置信度并倾向等待确认，不要为了给出结论而强行把某个板块说成主线。
+不要输出 Markdown，不要解释。`,
   },
 ]
 

@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import type { AppSettings, AiAutoRunSettings, AiProvider, DataSource, ProxyConfig, SearchProvider } from '@/types'
+import type { AppSettings, AiProvider, DataSource, ProxyConfig, SearchProvider } from '@/types'
 import { DEFAULT_SETTINGS } from '@/types/settings'
-import { AI_PROVIDER_PRESETS, DATA_SOURCE_PRESETS, SEARCH_PROVIDER_PRESETS } from '@/utils/constants'
+import { DATA_SOURCE_PRESETS, SEARCH_PROVIDER_PRESETS } from '@/utils/constants'
 import { useSidecar } from '@/composables/useSidecar'
 
 const STORE_KEY = 'app_settings'
@@ -18,13 +18,6 @@ const LOCAL_PROXY_PRESET: ProxyConfig = {
   password: '',
   enabled: true,
 }
-
-const ZHIPU_CODING_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4'
-const ZHIPU_CODING_MODEL = 'zhipuai-coding-plan/glm-5.1'
-const LEGACY_ZHIPU_URLS = new Set([
-  'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-  'https://open.bigmodel.cn/api/paas/v4',
-])
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AppSettings>(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)))
@@ -58,15 +51,12 @@ export const useSettingsStore = defineStore('settings', () => {
       ...DEFAULT_SETTINGS,
       ai: {
         ...DEFAULT_SETTINGS.ai,
-        providers: AI_PROVIDER_PRESETS.map((p) => ({ ...p, apiKey: '' })),
+        providers: [],
         activeProviderId: '',
         diagnosis: {
           ...DEFAULT_SETTINGS.ai.diagnosis,
           searchProviders: SEARCH_PROVIDER_PRESETS.map((p) => ({ ...p, apiKey: '' })),
           activeSearchProviderId: '',
-        },
-        autoRun: {
-          ...DEFAULT_SETTINGS.ai.autoRun,
         },
       },
       dataSource: {
@@ -104,17 +94,13 @@ export const useSettingsStore = defineStore('settings', () => {
       ai: {
         ...defaults.ai,
         ...saved.ai,
-        autoRunInterval: normalizeAutoRunInterval(saved.ai?.autoRunInterval ?? defaults.ai.autoRunInterval),
-        providers: mergePresetItems(defaults.ai.providers, saved.ai?.providers),
+        providers: saved.ai?.providers || [],
+        activeProviderId: saved.ai?.activeProviderId || '',
         diagnosis: {
           ...defaults.ai.diagnosis,
           ...saved.ai?.diagnosis,
           maxSteps: normalizeMaxSteps(saved.ai?.diagnosis?.maxSteps ?? defaults.ai.diagnosis.maxSteps),
           searchProviders: mergePresetItems(defaults.ai.diagnosis.searchProviders, saved.ai?.diagnosis?.searchProviders),
-        },
-        autoRun: {
-          ...defaults.ai.autoRun,
-          ...saved.ai?.autoRun,
         },
       },
       dataSource: {
@@ -159,11 +145,12 @@ export const useSettingsStore = defineStore('settings', () => {
       },
     }
 
-    const zhipuProvider = merged.ai.providers.find((provider) => provider.id === 'zhipu')
-    if (zhipuProvider && (!zhipuProvider.apiUrl.trim() || LEGACY_ZHIPU_URLS.has(zhipuProvider.apiUrl.trim()))) {
-      zhipuProvider.apiUrl = ZHIPU_CODING_BASE_URL
-      if (!zhipuProvider.model.trim() || zhipuProvider.model.trim() === 'glm-5.1') {
-        zhipuProvider.model = ZHIPU_CODING_MODEL
+    if (!merged.ai.activeProviderId || !merged.ai.providers.some((provider) => provider.id === merged.ai.activeProviderId)) {
+      const preferredActive = merged.ai.providers.find((provider) => provider.enabled)
+        || merged.ai.providers[0]
+
+      if (preferredActive) {
+        merged.ai.activeProviderId = preferredActive.id
       }
     }
 
@@ -180,10 +167,12 @@ export const useSettingsStore = defineStore('settings', () => {
       }
       initialized.value = true
       syncProxies()
+      syncDataSources()
     } catch {
       await initDefaults()
       initialized.value = true
       syncProxies()
+      syncDataSources()
     }
   }
 
@@ -205,7 +194,13 @@ export const useSettingsStore = defineStore('settings', () => {
     syncProxiesToSidecar(settings.value.proxy.proxies)
   }
 
+  function syncDataSources() {
+    const { syncDataSourcesToSidecar } = useSidecar()
+    syncDataSourcesToSidecar(settings.value.dataSource.sources)
+  }
+
   watch(() => settings.value.proxy.proxies, syncProxies, { deep: true })
+  watch(() => settings.value.dataSource.sources, syncDataSources, { deep: true })
 
   const activeProvider = computed<AiProvider | null>(() => {
     return settings.value.ai.providers.find((p) => p.id === settings.value.ai.activeProviderId && p.enabled) ?? null
@@ -246,6 +241,25 @@ export const useSettingsStore = defineStore('settings', () => {
       })
   })
 
+  const enabledDataSources = computed(() => {
+    return [...settings.value.dataSource.sources]
+      .filter((source) => source.enabled)
+      .sort((a, b) => a.priority - b.priority)
+  })
+
+  function addProvider(provider: AiProvider) {
+    settings.value.ai.providers.push(provider)
+    saveSettings()
+  }
+
+  function removeProvider(id: string) {
+    settings.value.ai.providers = settings.value.ai.providers.filter((p) => p.id !== id)
+    if (settings.value.ai.activeProviderId === id) {
+      settings.value.ai.activeProviderId = ''
+    }
+    saveSettings()
+  }
+
   function updateProvider(id: string, data: Partial<AiProvider>) {
     const idx = settings.value.ai.providers.findIndex((p) => p.id === id)
     if (idx !== -1) {
@@ -269,16 +283,6 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function setActiveSearchProvider(id: string) {
     settings.value.ai.diagnosis.activeSearchProviderId = id
-    saveSettings()
-  }
-
-  function updateAiAutoRun<K extends keyof AiAutoRunSettings>(key: K, value: AiAutoRunSettings[K]) {
-    settings.value.ai.autoRun[key] = value
-    saveSettings()
-  }
-
-  function updateAiAutoRunInterval(value: number) {
-    settings.value.ai.autoRunInterval = normalizeAutoRunInterval(value)
     saveSettings()
   }
 
@@ -353,14 +357,15 @@ export const useSettingsStore = defineStore('settings', () => {
     hasConfiguredSearchProvider,
     realtimeAiConfigStatus,
     enabledSearchProviders,
+    enabledDataSources,
     loadSettings,
     saveSettings,
     updateProvider,
     setActiveProvider,
+    addProvider,
+    removeProvider,
     updateSearchProvider,
     setActiveSearchProvider,
-    updateAiAutoRun,
-    updateAiAutoRunInterval,
     updateAppUpdate,
     updateDataSource,
     updateAppearance,
@@ -372,13 +377,9 @@ export const useSettingsStore = defineStore('settings', () => {
     getProxyById,
     isAiProviderConfigured,
   }
-})
+
   function normalizeMaxSteps(value: number) {
     if (!Number.isFinite(value)) return 20
-    return Math.min(100, Math.max(4, Math.round(value)))
+    return Math.min(20, Math.max(4, Math.round(value)))
   }
-
-  function normalizeAutoRunInterval(value: number) {
-    if (!Number.isFinite(value)) return 45
-    return Math.min(600, Math.max(10, Math.round(value)))
-  }
+})

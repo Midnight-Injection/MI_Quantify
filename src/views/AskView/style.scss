@@ -381,7 +381,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  width: 50%;
+  max-width: 50%;
   min-width: 280px;
 }
 
@@ -455,15 +455,6 @@
   color: $text-primary;
 }
 
-.thinking-count {
-  font-size: 10px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(14, 165, 233, 0.1);
-  color: #0284c7;
-  font-family: $font-mono;
-}
-
 .thinking-toggle {
   margin-left: auto;
   font-size: 11px;
@@ -479,14 +470,17 @@
   border-top: 1px solid rgba(14, 165, 233, 0.1);
   padding: 8px 12px;
   max-height: 180px;
+  width: 0;
+  min-width: 100%;
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   @include custom-scrollbar;
 }
 
 .thinking-merged-text {
   margin: 0;
   white-space: pre-wrap;
+  word-break: break-word;
   font-family: inherit;
   color: $text-primary;
   font-size: 12px;
@@ -610,6 +604,8 @@
   border-top: 1px solid rgba(245, 158, 11, 0.1);
   padding: 6px 10px;
   max-height: 300px;
+  width: 0;
+  min-width: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;

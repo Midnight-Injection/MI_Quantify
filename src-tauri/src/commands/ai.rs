@@ -81,38 +81,61 @@ fn build_client_with_proxy(
         .map_err(|e| format!("创建请求客户端失败: {}", e))
 }
 
-fn requires_disabled_thinking(api_url: &str) -> bool {
-    api_url.contains("/api/coding/paas/")
-}
-
-fn normalize_api_url(api_url: &str) -> String {
+/// 将用户填写的 base URL 解析为完整的 chat completions 端点
+fn resolve_api_url(api_url: &str) -> String {
     let trimmed = api_url.trim().trim_end_matches('/');
-    if requires_disabled_thinking(trimmed) && !trimmed.ends_with("/chat/completions") {
-        return format!("{}/chat/completions", trimmed);
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.ends_with("/chat/completions") {
+        trimmed.to_string()
+    } else {
+        format!("{}/chat/completions", trimmed)
     }
-    trimmed.to_string()
 }
 
-fn normalize_model_name(api_url: &str, model: &str) -> String {
-    let trimmed = model.trim();
-    if requires_disabled_thinking(api_url) && trimmed.starts_with("zhipuai-coding-plan/") {
-        return trimmed.rsplit('/').next().unwrap_or(trimmed).to_string();
+fn build_chat_body(
+    model: &str,
+    messages: &[AiMessage],
+    temperature: f32,
+    max_tokens: u32,
+    stream: bool,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    });
+    if stream {
+        body["stream"] = serde_json::json!(true);
     }
-    trimmed.to_string()
+    body
 }
 
-fn extract_response_content(data: &serde_json::Value) -> String {
-    data["choices"][0]["message"]["content"]
+fn extract_chat_content(data: &serde_json::Value) -> String {
+    let message = &data["choices"][0]["message"];
+    if let Some(content) = message["content"]
         .as_str()
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| value.to_string())
-        .or_else(|| {
-            data["choices"][0]["message"]["reasoning_content"]
-                .as_str()
-                .filter(|value| !value.trim().is_empty())
-                .map(|value| value.to_string())
-        })
-        .unwrap_or_default()
+        .filter(|v| !v.trim().is_empty())
+    {
+        return content.to_string();
+    }
+    if let Some(reasoning) = message["reasoning_content"]
+        .as_str()
+        .filter(|v| !v.trim().is_empty())
+    {
+        return reasoning.to_string();
+    }
+    String::new()
+}
+
+fn preview_response_body(text: &str, limit: usize) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let preview = normalized.chars().take(limit).collect::<String>();
+    if normalized.chars().count() > limit {
+        format!("{}...", preview)
+    } else {
+        preview
+    }
 }
 
 #[tauri::command]
@@ -125,25 +148,16 @@ pub async fn ai_chat(
     max_tokens: u32,
     proxy: Option<ProxyConfig>,
 ) -> Result<String, String> {
-    let normalized_api_url = normalize_api_url(&api_url);
-    let normalized_model = normalize_model_name(&normalized_api_url, &model);
+    let url = resolve_api_url(&api_url);
     let proxy_url = proxy
         .as_ref()
         .and_then(|p| if p.enabled { build_proxy_url(p) } else { None });
     let client = build_client_with_proxy(proxy_url.as_deref(), 180)?;
-    let mut body = serde_json::json!({
-        "model": normalized_model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    });
-    if requires_disabled_thinking(&normalized_api_url) {
-        body["thinking"] = serde_json::json!({ "type": "disabled" });
-    }
+    let body = build_chat_body(&model, &messages, temperature, max_tokens, false);
 
     for attempt in 0..3 {
         let resp = client
-            .post(&normalized_api_url)
+            .post(&url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&body)
@@ -152,11 +166,27 @@ pub async fn ai_chat(
             .map_err(|e| format!("请求失败: {}", e))?;
 
         if resp.status().is_success() {
-            let data: serde_json::Value = resp
-                .json()
+            let status = resp.status();
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+            let raw_body = resp
+                .text()
                 .await
-                .map_err(|e| format!("解析响应失败: {}", e))?;
-            let content = extract_response_content(&data);
+                .map_err(|e| format!("读取响应失败: {}", e))?;
+            let data: serde_json::Value = serde_json::from_str(&raw_body).map_err(|e| {
+                format!(
+                    "解析响应失败: {}，状态: {}，内容类型: {}，响应前缀: {}",
+                    e,
+                    status,
+                    content_type,
+                    preview_response_body(&raw_body, 320)
+                )
+            })?;
+            let content = extract_chat_content(&data);
             if content.trim().is_empty() {
                 return Err("模型返回为空，请检查当前模型是否支持文本输出。".to_string());
             }
@@ -164,12 +194,23 @@ pub async fn ai_chat(
         }
 
         let status = resp.status();
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
         let text = resp.text().await.unwrap_or_default();
         if (status.as_u16() == 429 || status.is_server_error()) && attempt < 2 {
             sleep(Duration::from_secs(attempt + 1)).await;
             continue;
         }
-        return Err(format!("API 返回错误 {}: {}", status, text));
+        return Err(format!(
+            "API 返回错误 {} [{}]: {}",
+            status,
+            content_type,
+            preview_response_body(&text, 320)
+        ));
     }
 
     Err("模型请求失败".to_string())
@@ -187,23 +228,13 @@ pub async fn ai_chat_stream(
     max_tokens: u32,
     proxy: Option<ProxyConfig>,
 ) -> Result<String, String> {
-    let normalized_api_url = normalize_api_url(&api_url);
-    let normalized_model = normalize_model_name(&normalized_api_url, &model);
+    let url = resolve_api_url(&api_url);
     let proxy_url = proxy
         .as_ref()
         .and_then(|p| if p.enabled { build_proxy_url(p) } else { None });
     let client = build_client_with_proxy(proxy_url.as_deref(), 180)?;
 
-    let mut body = serde_json::json!({
-        "model": normalized_model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": true,
-    });
-    if requires_disabled_thinking(&normalized_api_url) {
-        body["thinking"] = serde_json::json!({ "type": "disabled" });
-    }
+    let body = build_chat_body(&model, &messages, temperature, max_tokens, true);
 
     let mut full_content = String::new();
     let rid = request_id.clone();
@@ -211,7 +242,7 @@ pub async fn ai_chat_stream(
 
     for attempt in 0..3u32 {
         let resp = match client
-            .post(&normalized_api_url)
+            .post(&url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&body)
@@ -331,11 +362,21 @@ pub async fn ai_chat_stream(
                 }
             }
         } else {
-            let data: serde_json::Value = resp
-                .json()
+            let status = resp.status();
+            let raw_body = resp
+                .text()
                 .await
-                .map_err(|e| format!("解析响应失败: {}", e))?;
-            let content = extract_response_content(&data);
+                .map_err(|e| format!("读取响应失败: {}", e))?;
+            let data: serde_json::Value = serde_json::from_str(&raw_body).map_err(|e| {
+                format!(
+                    "解析响应失败: {}，状态: {}，内容类型: {}，响应前缀: {}",
+                    e,
+                    status,
+                    content_type,
+                    preview_response_body(&raw_body, 320)
+                )
+            })?;
+            let content = extract_chat_content(&data);
             if content.trim().is_empty() {
                 let chunk = StreamChunk::Error {
                     request_id: rid.clone(),
@@ -369,6 +410,7 @@ pub async fn ai_chat_stream(
         message: "模型请求失败".to_string(),
     };
     let _ = app.emit(event_name, &err_chunk);
+
     Err("模型请求失败".to_string())
 }
 

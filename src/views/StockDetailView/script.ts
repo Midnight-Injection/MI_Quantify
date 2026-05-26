@@ -123,7 +123,6 @@ export default defineComponent({
     const profile = computed(() => getStockProfile(code.value))
     const realtimeMarket = computed(() => (profile.value.market === 'hk' ? 'hk' : profile.value.market === 'us' ? 'us' : 'a'))
     const isTradingSession = computed(() => getMarketSessionContext(realtimeMarket.value).phase === 'trading')
-    const stockDiagnosisAutoEnabled = computed(() => settingsStore.settings.ai.autoRun.stockDetailDiagnosis)
     const strategyOptions = computed(() =>
       [...strategyStore.strategies].sort(
         (a, b) => Number(b.enabled) - Number(a.enabled) || Number(b.builtin) - Number(a.builtin) || a.name.localeCompare(b.name),
@@ -459,6 +458,7 @@ export default defineComponent({
           provider: settingsStore.activeProvider,
           searchProviders: settingsStore.enabledSearchProviders,
           activeSearchProvider: settingsStore.activeSearchProvider,
+          dataSources: settingsStore.enabledDataSources,
           maxSteps: settingsStore.settings.ai.diagnosis.maxSteps,
           period: period.value,
           adjust: adjust.value,
@@ -496,12 +496,10 @@ export default defineComponent({
     }
 
     async function requestDiagnosis(force = false) {
-      if (!force && !stockDiagnosisAutoEnabled.value) return
+      if (!force) return
       if (!stockInfo.value || !klineData.value.length) return
       if (diagnosisLoading.value) return
-      const now = Date.now()
-      if (!force && now - lastDiagnosisAt.value < settingsStore.settings.ai.autoRunInterval * 1000) return
-      lastDiagnosisAt.value = now
+      lastDiagnosisAt.value = Date.now()
       await runDiagnosis()
     }
 
@@ -696,19 +694,6 @@ export default defineComponent({
       market: () => realtimeMarket.value,
       skipWhenMarketClosed: true,
     })
-    const diagnosisRealtime = useRealtimeTask(async () => {
-      if (!isTradingSession.value) return
-      await requestDiagnosis()
-    }, {
-      enabled: () => stockDiagnosisAutoEnabled.value,
-      immediate: false,
-      intervalSource: 'ai',
-      intervalMultiplier: 1,
-      minimumMs: 10000,
-      pauseWhenHidden: true,
-      market: () => realtimeMarket.value,
-      skipWhenMarketClosed: true,
-    })
 
     async function loadDeferredData(seq: number) {
       const targetCode = code.value
@@ -765,14 +750,12 @@ export default defineComponent({
       quoteRealtime.start(false)
       newsRealtime.start(false)
       klineRealtime.start(false)
-      diagnosisRealtime.start(false)
     }
 
     function stopRealtimeTasks() {
       quoteRealtime.stop()
       newsRealtime.stop()
       klineRealtime.stop()
-      diagnosisRealtime.stop()
     }
 
     onMounted(async () => {
@@ -861,7 +844,6 @@ export default defineComponent({
       diagnosisError,
       agentTrace,
       diagnosisEvidence,
-      stockDiagnosisAutoEnabled,
       klineChartKey,
       volumeSignal,
       trendSignal,

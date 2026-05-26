@@ -148,6 +148,7 @@ export default defineComponent({
           provider: settingsStore.activeProvider,
           searchProviders: settingsStore.enabledSearchProviders,
           activeSearchProvider: settingsStore.activeSearchProvider,
+          dataSources: settingsStore.enabledDataSources,
           maxSteps: settingsStore.settings.ai.diagnosis.maxSteps,
           period: 'daily',
           adjust: 'qfq',

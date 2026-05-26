@@ -6,7 +6,6 @@ interface RealtimeTaskOptions {
   enabled?: () => boolean
   immediate?: boolean
   intervalMultiplier?: number
-  intervalSource?: 'data' | 'ai'
   minimumMs?: number
   pauseWhenHidden?: boolean
   market?: () => MarketCode | MarketCode[] | ''
@@ -38,9 +37,7 @@ export function useRealtimeTask(
   }
 
   const resolvedInterval = computed(() => {
-    const baseSeconds = options.intervalSource === 'ai'
-      ? Math.max(10, settingsStore.settings.ai.autoRunInterval || 45)
-      : Math.max(3, settingsStore.settings.dataSource.refreshInterval || 5)
+    const baseSeconds = Math.max(3, settingsStore.settings.dataSource.refreshInterval || 5)
     const multiplier = options.intervalMultiplier ?? 1
     const closedMultiplier = isMarketClosed() ? (options.closedIntervalMultiplier ?? 20) : 1
     return Math.max(options.minimumMs ?? 3000, baseSeconds * 1000 * multiplier * closedMultiplier)

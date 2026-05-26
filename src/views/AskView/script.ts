@@ -551,6 +551,7 @@ export default defineComponent({
           provider: settingsStore.activeProvider,
           searchProviders: settingsStore.enabledSearchProviders,
           activeSearchProvider: settingsStore.activeSearchProvider,
+          dataSources: settingsStore.enabledDataSources,
           selectedStrategy: selectedStrategy.value,
           maxSteps: settingsStore.settings.ai.diagnosis.maxSteps,
           abortSignal: task.abortController?.signal,
@@ -719,6 +720,7 @@ export default defineComponent({
           provider: settingsStore.activeProvider,
           searchProviders: settingsStore.enabledSearchProviders,
           activeSearchProvider: settingsStore.activeSearchProvider,
+          dataSources: settingsStore.enabledDataSources,
           maxSteps: settingsStore.settings.ai.diagnosis.maxSteps,
           period: 'daily',
           adjust: 'qfq',
@@ -867,6 +869,7 @@ export default defineComponent({
           provider: settingsStore.activeProvider,
           searchProviders: settingsStore.enabledSearchProviders,
           activeSearchProvider: settingsStore.activeSearchProvider,
+          dataSources: settingsStore.enabledDataSources,
           maxSteps: settingsStore.settings.ai.diagnosis.maxSteps,
           period: 'daily',
           adjust: 'qfq',
@@ -978,8 +981,7 @@ export default defineComponent({
         .filter(Boolean)
 
       if (!parts.length) {
-        if (message.loading || message.streaming) return '智能体已启动，正在分析用户问题并整理研究路径...'
-        return '当前没有额外思考内容。'
+        return ''
       }
 
       return parts.join('\n\n')
@@ -1013,9 +1015,6 @@ export default defineComponent({
     }
 
     function shouldShowAssistantLiveStack(message: ChatMessage) {
-      if (hasStructuredResult(message) && !isMessageTaskRunning(message)) {
-        return false
-      }
       return Boolean(
         message.loading
         || message.streaming
@@ -1227,14 +1226,18 @@ export default defineComponent({
     }
 
     async function removeConversation(id: string) {
-      if (sending.value) return
+      if (sending.value) {
+        stopCurrentAskTask()
+      }
       try {
         await deleteConversation(id)
         if (activeConversationId.value === id) {
           await resetConversationPanel()
         }
         await loadConversationList()
-      } catch {}
+      } catch (error) {
+        console.error('[AskView] 删除会话失败:', error)
+      }
     }
 
     async function ensureConversationCreated(firstUserMessage: string) {

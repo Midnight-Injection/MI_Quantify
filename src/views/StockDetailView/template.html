@@ -30,7 +30,7 @@
 
       <div class="hero-actions">
         <button class="btn-ghost" @click="toggleWatchlist">{{ isWatched ? '取消关注' : '加入关注' }}</button>
-        <button v-if="!stockDiagnosisAutoEnabled && !diagnosisLoading" class="btn-primary ai-trigger-btn" @click="requestDiagnosis(true)">
+        <button v-if="!diagnosisLoading" class="btn-primary ai-trigger-btn" @click="requestDiagnosis(true)">
           AI评估
         </button>
         <button v-if="diagnosisLoading" class="btn-primary ai-trigger-btn ai-cancel-btn" @click="cancelDiagnosis">
@@ -627,7 +627,7 @@
             </div>
           </div>
           <div v-else class="panel-empty">
-            <span>{{ diagnosisError || `当前处于${stockDiagnosisAutoEnabled ? '自动' : '手动'}模式，${stockDiagnosisAutoEnabled ? '系统会按设置自动执行AI评估。' : '点击上方“AI评估”后会展示研究路径、工具调用和买卖区间。'}` }}</span>
+            <span>{{ diagnosisError || '点击上方"AI评估"后会展示研究路径、工具调用和买卖区间。' }}</span>
           </div>
         </article>
     </div>

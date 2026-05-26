@@ -1,123 +1,108 @@
 <div class="page home-page">
-  <header class="top-bar" :class="marketMood">
-    <div class="top-bar__intro">
-      <div class="top-bar__heading">
-        <div>
-          <span class="top-bar__eyebrow">Workbench</span>
-          <h1 class="top-bar__title">市场总览工作台</h1>
-        </div>
-        <div class="market-tabs">
-          <button
-            v-for="tab in marketTabs"
-            :key="tab.value"
-            class="market-tab"
-            :class="{ active: currentMarket === tab.value }"
-            @click="switchMarket(tab.value)"
-          >{{ tab.label }}</button>
-        </div>
+  <header class="home-hero">
+    <div class="hero-topbar">
+      <div class="market-pills">
+        <button
+          v-for="tab in marketTabs"
+          :key="tab.value"
+          class="market-pills__btn"
+          :class="{ active: currentMarket === tab.value }"
+          @click="switchMarket(tab.value)"
+        >{{ tab.label }}</button>
       </div>
       <div class="live-badge" :class="{ active: heroRealtimeActive }">
-        <span class="live-dot"></span>
-        <span>{{ heroRealtimeActive ? '实时刷新' : '最近快照' }}</span>
+        <span class="live-badge__dot"></span>
+        <span>{{ heroRealtimeActive ? 'LIVE' : 'SNAPSHOT' }}</span>
       </div>
     </div>
-    <div class="top-bar__stats">
-      <article v-for="card in pulseCards" :key="card.label" class="stat-pill" :class="card.tone">
-        <span class="stat-pill__label">{{ card.label }}</span>
-        <strong class="stat-pill__value" :class="{ 'stat-pill__value--pulse': isTurnoverPulseCard(card) }">
+
+    <div class="hero-indices">
+      <template v-if="visibleIndices.length">
+        <article
+          v-for="(index, idx) in visibleIndices"
+          :key="index.code"
+          class="index-card"
+          :class="index.changePercent >= 0 ? 'up' : 'down'"
+          :style="{ '--i': idx }"
+        >
+          <span class="index-card__name">{{ index.name }}</span>
+          <strong class="index-card__price">{{ formatPrice(index.price) }}</strong>
+          <span class="index-card__pct">{{ index.changePercent >= 0 ? '+' : '' }}{{ formatPercent(index.changePercent) }}%</span>
+        </article>
+      </template>
+      <template v-else>
+        <div v-for="i in visibleIndices.length || 4" :key="i" class="index-card">
+          <span class="skel skel--xs skel--w60"></span>
+          <span class="skel skel--lg skel--w80"></span>
+          <span class="skel skel--xs skel--w48"></span>
+        </div>
+      </template>
+    </div>
+
+    <div v-if="pulseCards.length && currentMarket === 'a'" class="hero-kpi">
+      <div
+        v-for="(card, idx) in pulseCards"
+        :key="card.label"
+        class="kpi-chip"
+        :class="'kpi-chip--' + card.tone"
+        :style="{ '--i': idx }"
+      >
+        <span class="kpi-chip__label">{{ card.label }}</span>
+        <strong class="kpi-chip__value">
           <template v-if="isTurnoverPulseCard(card)">
-            <span>{{ formatTurnoverPulse(card.value).compact }}</span>
-            <small v-if="formatTurnoverPulse(card.value).compressed">{{ formatTurnoverPulse(card.value).full }}</small>
+            {{ formatTurnoverPulse(card.value).compact }}
           </template>
           <template v-else>{{ card.value }}</template>
         </strong>
-        <span class="stat-pill__detail">{{ isTurnoverPulseCard(card) ? currentBreadthSourceLabel : card.detail }}</span>
-      </article>
+        <span class="kpi-chip__detail">{{ card.detail }}</span>
+      </div>
     </div>
   </header>
 
-  <section class="index-strip">
-    <div class="index-strip__scroll">
-      <article
-        v-for="index in visibleIndices"
-        :key="index.code"
-        class="index-pill"
-        :class="index.changePercent >= 0 ? 'up' : 'down'"
-      >
-        <span class="index-pill__name">{{ index.name }}</span>
-        <strong class="index-pill__price">{{ formatPrice(index.price) }}</strong>
-        <span class="index-pill__change">{{ index.changePercent >= 0 ? '+' : '' }}{{ formatPercent(index.changePercent) }}%</span>
-      </article>
-    </div>
-  </section>
-
-  <nav class="pill-tabs">
-    <div class="pill-tabs__list">
-      <button
-        v-for="tab in homeTabs"
-        :key="tab.key"
-        class="pill-tab"
-        :class="{ active: activeTab === tab.key }"
-        @click="activeTab = tab.key"
-      >{{ tab.label }}</button>
-    </div>
-  </nav>
-
-  <section v-if="isInitialLoading" class="home-loading-shell">
-    <span class="spinner"></span>
-    <span>正在构建首页工作台...</span>
-  </section>
-
-  <section v-else class="tab-body">
-    <HomeOverviewTab
-      v-show="activeTab === 'overview'"
-      :loading="tabs.overview.loading"
-      :data="tabs.overview.data"
-      @navigate-stock="navigateToStock"
-      @select-sector="selectSector"
-    />
-    <HomeFundflowTab
-      v-show="activeTab === 'fundflow'"
-      :loading="tabs.fundflow.loading"
-      :data="tabs.fundflow.data"
-      @navigate-stock="navigateToStock"
-    />
-    <HomeSectorTab
-      v-show="activeTab === 'sector'"
-      :loading="tabs.sector.loading"
-      :data="tabs.sector.data"
-      :selected-sector-code="selectedSectorCode"
-      :members-loading="sectorMembersLoading"
-      :members="sectorMembers"
-      @select-sector="selectSector"
-      @navigate-stock="navigateToStock"
-    />
-    <HomeStocksTab
-      v-show="activeTab === 'stocks'"
-      :loading="tabs.stocks.loading"
-      :data="tabs.stocks.data"
-      :selected-stock-code="selectedStockCode"
-      :detail-loading="stockDetailLoading"
-      :stock-detail="stockDetail"
-      @select-stock="selectStock"
-      @navigate-stock="navigateToStock"
-    />
-    <HomeNewsTab
-      v-show="activeTab === 'news'"
-      :loading="tabs.news.loading"
-      :data="tabs.news.data"
-    />
+  <section class="home-body">
     <HomeAiTab
-      v-show="activeTab === 'ai'"
+      mode="strip"
       :digest="aiDigest"
       :digest-loading="aiDigestLoading"
       :digest-error="aiDigestError"
       :context="aiContext"
       :market-mood="marketMood"
-      :can-request-digest="homeDigestAutoEnabled"
       @navigate-stock="navigateToStock"
       @request-digest="requestDigest(true)"
       @cancel-digest="cancelHomeAiDigest"
     />
+
+    <div class="home-news">
+      <div class="home-news__bar">
+        <span class="home-news__tag">NEWS</span>
+        <span class="home-news__title">社会面消息</span>
+        <span v-if="newsItems.length" class="home-news__count">{{ newsItems.length }}条</span>
+      </div>
+      <div v-if="tabs.news.loading && !newsItems.length" class="home-news__skel">
+        <div v-for="i in 6" :key="i" class="skel-news">
+          <span class="skel skel--sm skel--wfull"></span>
+          <span class="skel skel--xs skel--w80"></span>
+        </div>
+      </div>
+      <div v-else-if="newsItems.length" class="home-news__grid">
+        <article
+          v-for="(item, idx) in newsItems"
+          :key="item.id"
+          class="news-card"
+          :class="{ 'news-card--hot': idx < 3 }"
+          @click="navigateToStock(item.stockCode || '')"
+        >
+          <div class="news-card__rank" v-if="idx < 3">{{ idx + 1 }}</div>
+          <div class="news-card__body">
+            <strong class="news-card__title">{{ item.title }}</strong>
+            <span class="news-card__meta">
+              <em>{{ item.source || '快讯' }}</em>
+              <span>{{ item.publishTime || '--' }}</span>
+            </span>
+          </div>
+        </article>
+      </div>
+      <div v-else class="home-news__empty">暂无新闻数据</div>
+    </div>
   </section>
 </div>

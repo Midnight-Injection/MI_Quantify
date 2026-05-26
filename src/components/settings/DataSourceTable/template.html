@@ -2,30 +2,32 @@
   <table>
     <thead>
       <tr>
-        <th>数据源</th>
-        <th>覆盖</th>
-        <th>类型</th>
-        <th>状态</th>
-        <th>优先级</th>
-        <th>接入方式</th>
-        <th>配置</th>
+        <th class="col-source">数据源</th>
+        <th class="col-coverage">覆盖</th>
+        <th class="col-type">类型</th>
+        <th class="col-status">状态</th>
+        <th class="col-priority">优先级</th>
+        <th class="col-mode">接入方式</th>
+        <th class="col-action">配置</th>
       </tr>
     </thead>
     <tbody>
       <template v-for="source in sources" :key="source.id">
       <tr>
         <td>
-          <label class="switch-sm">
-            <input type="checkbox" :checked="source.enabled" @change="$emit('toggle', source.id, $event.target.checked)" />
-            <span class="slider-sm"></span>
-          </label>
-          <div class="source-copy">
-            <span class="source-name">{{ source.name }}</span>
-            <small v-if="source.description" class="source-desc">{{ source.description }}</small>
+          <div class="cell-source">
+            <label class="switch-sm">
+              <input type="checkbox" :checked="source.enabled" @change="$emit('toggle', source.id, $event.target.checked)" />
+              <span class="slider-sm"></span>
+            </label>
+            <div class="source-copy">
+              <span class="source-name" :title="source.name">{{ source.name }}</span>
+              <span v-if="source.description" class="source-desc" :title="source.description">{{ source.description }}</span>
+            </div>
           </div>
         </td>
         <td>
-          <span class="tag tag-neutral">{{ source.coverage || '通用' }}</span>
+          <span class="tag tag-neutral" :title="source.coverage || '通用'">{{ source.coverage || '通用' }}</span>
         </td>
         <td>
           <span class="tag" :class="source.type === 'free' ? 'tag-positive' : 'tag-neutral'">
@@ -45,9 +47,9 @@
             {{ source.mode === 'remote' ? '远程 API' : '本地聚合' }}
           </span>
         </td>
-        <td class="config-toggle-cell">
+        <td>
           <button class="config-toggle-btn" type="button" @click="toggleExpanded(source.id)">
-            <span>{{ isExpanded(source.id) ? '收起配置' : '打开配置' }}</span>
+            <span>{{ isExpanded(source.id) ? '收起' : '配置' }}</span>
             <span class="config-toggle-arrow">{{ isExpanded(source.id) ? '▴' : '▾' }}</span>
           </button>
         </td>

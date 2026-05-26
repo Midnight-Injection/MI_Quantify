@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Query
+from typing import Optional
 from app.services.market_service import (
     get_realtime_quotes,
     get_market_indices,
@@ -14,15 +15,15 @@ router = APIRouter()
 
 
 @router.get("/quotes")
-async def quotes(codes: str = Query(default="")):
+async def quotes(codes: str = Query(default=""), source: Optional[str] = Query(default=None)):
     code_list = codes.split(",") if codes else []
-    data = get_realtime_quotes(code_list)
+    data = get_realtime_quotes(code_list, preferred_source=source)
     return {"data": data}
 
 
 @router.get("/indices")
-async def indices(market: str = Query(default="a")):
-    data = get_market_indices(market)
+async def indices(market: str = Query(default="a"), source: Optional[str] = Query(default=None)):
+    data = get_market_indices(market, preferred_source=source)
     return {"data": data}
 
 
@@ -61,6 +62,6 @@ async def stock_info(code: str):
 
 
 @router.get("/stock/{code}/news")
-async def stock_news(code: str):
-    data = get_stock_news_feed(code, 15)
+async def stock_news(code: str, source: Optional[str] = Query(default=None)):
+    data = get_stock_news_feed(code, 15, preferred_source=source)
     return {"data": data}

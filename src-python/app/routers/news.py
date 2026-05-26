@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Body, Query
+from typing import Optional
 from app.services.news_service import (
     get_context_news,
     get_financial_news,
@@ -11,24 +12,26 @@ router = APIRouter()
 
 
 @router.get("/financial")
-async def financial_news(limit: int = Query(default=50)):
-    data = get_financial_news(limit)
+async def financial_news(limit: int = Query(default=50), source: Optional[str] = Query(default=None)):
+    data = get_financial_news(limit, preferred_source=source)
     return {"data": data}
 
 
 @router.get("/stock/{code}")
 async def stock_news(
-    code: str, limit: int = Query(default=20), name: str = Query(default="")
+    code: str, limit: int = Query(default=20), name: str = Query(default=""),
+    source: Optional[str] = Query(default=None),
 ):
-    data = get_stock_news(code, limit, name)
+    data = get_stock_news(code, limit, name, preferred_source=source)
     return {"data": data}
 
 
 @router.get("/context/{code}")
 async def context_news(
-    code: str, limit: int = Query(default=20), name: str = Query(default="")
+    code: str, limit: int = Query(default=20), name: str = Query(default=""),
+    source: Optional[str] = Query(default=None),
 ):
-    data = get_context_news(code, limit, name)
+    data = get_context_news(code, limit, name, preferred_source=source)
     return {"data": data}
 
 

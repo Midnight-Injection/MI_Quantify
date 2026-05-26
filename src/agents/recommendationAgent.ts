@@ -1,8 +1,10 @@
 import { normalizeAgentMaxSteps, runReActLoop, type ReActTool, type ReActToolResult } from '@/agents/core/reactAgent'
 import { runDiagnosisAgent } from '@/agents/diagnosisAgent'
 import { useSidecar } from '@/composables/useSidecar'
+import { useStrategyStore } from '@/stores/strategy'
 import type {
   AiProvider,
+  DataSource,
   DiagnosisAgentStep,
   MarketIndex,
   NewsItem,
@@ -37,6 +39,7 @@ interface RecommendationToolContext {
   question: string
   searchProviders?: SearchProvider[] | null
   activeSearchProvider?: SearchProvider | null
+  dataSources?: DataSource[]
   selectedStrategy?: Strategy | null
   maxSteps?: number
   onProgress?: (step: DiagnosisAgentStep) => void
@@ -167,6 +170,7 @@ export async function runRecommendationAgent(options: {
   provider: AiProvider | null
   searchProviders?: SearchProvider[] | null
   activeSearchProvider?: SearchProvider | null
+  dataSources?: DataSource[]
   selectedStrategy?: Strategy | null
   maxSteps?: number
   onProgress?: (step: DiagnosisAgentStep) => void
@@ -186,6 +190,7 @@ export async function runRecommendationAgent(options: {
     question: preferences.lastUserMessage || preferences.originalPrompt || '',
     searchProviders: options.searchProviders,
     activeSearchProvider: options.activeSearchProvider,
+    dataSources: options.dataSources,
     selectedStrategy: options.selectedStrategy,
     maxSteps: options.maxSteps,
     onProgress: options.onProgress,
@@ -281,7 +286,7 @@ export async function runRecommendationAgent(options: {
     },
     {
       name: 'load_industry_rank',
-      description: '读取 A 股行业板块强弱排名，用于识别当前主线行业。',
+      description: '读取 A 股行业板块强弱排名，作为行业强弱线索，不能直接把前排行业等同于主线。',
       inputSchema: { limit: '返回数量，默认 20' },
       execute: async (input) => {
         throwIfAborted(options.abortSignal)
@@ -303,7 +308,7 @@ export async function runRecommendationAgent(options: {
     },
     {
       name: 'load_concept_rank',
-      description: '读取 A 股概念题材强弱排名，用于识别当前热点概念。',
+      description: '读取 A 股概念题材强弱排名，作为题材热度线索，不能直接把热点排行等同于最终方向。',
       inputSchema: { limit: '返回数量，默认 20' },
       execute: async (input) => {
         throwIfAborted(options.abortSignal)
@@ -325,7 +330,7 @@ export async function runRecommendationAgent(options: {
     },
     {
       name: 'load_sector_members',
-      description: '按板块代码读取成分股，用于围绕主线板块继续缩小候选范围。',
+      description: '按板块代码读取成分股，用于围绕潜在线索缩小候选范围，但不能仅因属于热门板块就直接入选。',
       inputSchema: { codes: ['板块代码'], pageSize: '返回数量，默认 80' },
       execute: async (input) => {
         throwIfAborted(options.abortSignal)
@@ -391,6 +396,7 @@ export async function runRecommendationAgent(options: {
           provider: toolContext.provider,
           searchProviders: toolContext.searchProviders,
           activeSearchProvider: toolContext.activeSearchProvider,
+          dataSources: toolContext.dataSources,
           selectedStrategy: toolContext.selectedStrategy,
           resolvedName: name || undefined,
           matchedKeyword: name || code,
@@ -462,13 +468,22 @@ export async function runRecommendationAgent(options: {
     planInputSummary: buildRecommendationBasisSummary(preferences).join(' / '),
     planQuery: context.question,
     onProgress: options.onProgress,
-    systemPrompt: `你是荐股统一智能体。你必须只基于工具返回的真实市场数据与诊股结果完成候选筛选。
+    systemPrompt: (() => {
+      const defaultRecommendationPrompt = `你是荐股统一智能体。你必须只基于工具返回的真实市场数据与诊股结果完成候选筛选。
 
 禁止使用任何预打分、固定板块匹配、固定候选池或写死结论。
+行业排行、概念排行、板块成分股、财经快讯和接口摘要都只是线索，不是主线结论，也不是最终候选名单。
+你不能因为某个板块排在前面、某只股票涨得快、某条新闻提到得多，就直接把它当成当前主线或最终推荐标的。
+是否属于主线、是否具备持续性、是否适合当前风险偏好，必须由你基于指数环境、量价结构、资金、消息、题材扩散和个股诊断结果自行判断。
+如果证据冲突，例如板块热但个股诊断弱、新闻强但资金弱、涨幅高但买点劣化，必须降低评分或直接剔除，而不是迎合热点。
 你必须自己决定下一步调用哪个工具以及参数，每轮只能调用一个工具。
 如果准备把某只股票纳入最终候选，必须先调用 diagnose_stock 获取完整诊股结果。
 如果当前数据还不足以形成明确候选，继续调用工具；如果已经足够，直接 finish 并返回最终 JSON。
-最终候选必须写清楚具体股票、操作建议、观察/介入区间、止损或退出条件、为什么选它，禁止只写“可关注”“有机会”之类模糊结论。`,
+最终候选必须写清楚具体股票、操作建议、观察/介入区间、止损或退出条件、为什么选它，禁止只写"可关注""有机会"之类模糊结论。`
+      const strategyStore = useStrategyStore()
+      const tpl = strategyStore.getPromptTemplateByCategory('recommendation_agent')?.content?.trim()
+      return tpl || defaultRecommendationPrompt
+    })(),
     userPrompt: JSON.stringify({
       task: '根据用户偏好生成荐股候选列表。',
       preferences,
@@ -477,9 +492,11 @@ export async function runRecommendationAgent(options: {
         '只允许依据工具返回的真实市场、板块、新闻和诊股数据做判断。',
         '最终候选必须是已经调用 diagnose_stock 研究过的股票。',
         '需要明确给出市场总结、候选原因、观察点、预计启动窗口、具体入场价位和退出条件。',
+        '不能把行业/概念排行、热点股列表或新闻热度直接当作主线结论，必须自行完成交叉验证。',
+        '如果候选只是跟风热点但买点、盈亏比、持续性或风险收益比不成立，就不要推荐。',
       ],
     }, null, 2),
-    nextStepPrompt: '请判断当前数据是否已足够完成荐股候选列表；如果还不够，继续只调用一个最必要的工具；如果已经足够，直接 finish 并返回最终 JSON。注意候选股票必须先诊股后才能写入最终结果，且每只候选都要写出明确的操作、价位区间和退出条件。',
+    nextStepPrompt: '请判断当前数据是否已足够完成荐股候选列表；注意行业/概念排行、板块成分股、涨幅榜和新闻热度都只是线索，不能直接等同于主线或推荐结果。只有当你已经基于市场环境与 diagnose_stock 的证据确认某只股票在当前周期、风险偏好和盈亏比下都成立时，才能写入最终结果；如果还不够，继续只调用一个最必要的工具；如果已经足够，直接 finish 并返回最终 JSON。注意候选股票必须先诊股后才能写入最终结果，且每只候选都要写出明确的操作、价位区间和退出条件。',
     toolMaxTokens: 2200,
     toolTimeoutMs: 180000,
   })

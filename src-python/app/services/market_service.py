@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlencode
 from app.services.network_env import clear_proxy_env, create_http_session, get_original_proxy_env
+from app.services.datasource_registry import get_sources_for_tool
+from app.services.market_remote_fetchers import QUOTE_REMOTE_FETCHERS, INDEX_REMOTE_FETCHERS
 
 clear_proxy_env()
 from typing import Optional
@@ -33,8 +35,8 @@ _EASTMONEY_A_LIST_FIELDS = "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17,f18,f8,f9,f23,f20
 _EASTMONEY_UT = "b2884a393a59ad64002292a3e90d46a5"
 
 
-def _http_get(url: str, **kwargs):
-    return create_http_session(target_url=url).get(url, **kwargs)
+def _http_get(url: str, proxy_id: str | None = None, **kwargs):
+    return create_http_session(target_url=url, proxy_id=proxy_id).get(url, **kwargs)
 
 
 def _curl_text(url: str, timeout: int = 15) -> str:
@@ -52,10 +54,11 @@ def _curl_text(url: str, timeout: int = 15) -> str:
     return result.stdout
 
 
-def _make_eastmoney_session(url: str):
+def _make_eastmoney_session(url: str, proxy_id: str | None = None):
     session = create_http_session(
         referer="https://data.eastmoney.com/",
         target_url=url,
+        proxy_id=proxy_id,
     )
     session.headers.update(
         {
@@ -279,24 +282,91 @@ US_INDEX_CODES = {
 }
 
 
-def get_market_indices(market: str = "a") -> list[dict]:
+def get_market_indices(market: str = "a", preferred_source: Optional[str] = None) -> list[dict]:
     try:
-        if market == "a":
-            return _get_a_indices()
-        elif market == "hk":
-            return _get_hk_indices()
-        elif market == "us":
-            return _get_us_indices()
-        return []
+        sources = get_sources_for_tool("load_market_indices", preferred_source)
+        for source in sources:
+            source_id = source.get("id", "")
+            proxy_id = source.get("proxyId")
+            api_key = source.get("apiKey")
+            try:
+                if source_id == "sina":
+                    return _get_indices_by_market(market, proxy_id=proxy_id)
+                elif source_id == "eastmoney":
+                    result = _get_indices_eastmoney(market, proxy_id=proxy_id)
+                    if result:
+                        return result
+                else:
+                    remote_fn = INDEX_REMOTE_FETCHERS.get(source_id)
+                    if remote_fn:
+                        result = remote_fn(market, proxy_id=proxy_id, api_key=api_key)
+                        if result:
+                            return result
+            except Exception as e:
+                print(f"[market] {source_id} indices failed: {e}")
+                continue
+        return _get_indices_by_market(market)
     except Exception as e:
         print(f"[market] error fetching indices: {e}")
         return []
 
 
-def _get_a_indices() -> list[dict]:
+def _get_indices_by_market(market: str, proxy_id: str | None = None) -> list[dict]:
+    if market == "a":
+        return _get_a_indices(proxy_id=proxy_id)
+    elif market == "hk":
+        return _get_hk_indices(proxy_id=proxy_id)
+    elif market == "us":
+        return _get_us_indices(proxy_id=proxy_id)
+    return []
+
+
+def _get_indices_eastmoney(market: str, proxy_id: str | None = None) -> list[dict]:
+    if market != "a":
+        return []
+    fields = "f12,f14,f2,f3,f4,f5,f6"
+    fs_map = {
+        "000001": ("上证指数", "1.000001"),
+        "399001": ("深证成指", "0.399001"),
+        "399006": ("创业板指", "0.399006"),
+        "000688": ("科创50", "1.000688"),
+        "000300": ("沪深300", "1.000300"),
+        "000016": ("上证50", "1.000016"),
+    }
+    secids = ",".join(v[1] for v in fs_map.values())
+    url = f"https://push2.eastmoney.com/api/qt/ulist.np/get?fields={fields}&secids={secids}"
+    session = _make_eastmoney_session(url, proxy_id=proxy_id)
+    try:
+        response = session.get(url, timeout=10)
+        payload = response.json()
+        items = payload.get("data", {}).get("diff", [])
+        if not items:
+            return []
+        result = []
+        for item in items:
+            raw_code = str(item.get("f12", ""))
+            name = str(item.get("f14", ""))
+            price = _safe_float(item.get("f2"))
+            change_percent = _safe_float(item.get("f3"))
+            change = _safe_float(item.get("f4"))
+            result.append({
+                "code": raw_code,
+                "name": name,
+                "price": price,
+                "change": change,
+                "changePercent": change_percent,
+                "volume": _safe_float(item.get("f5")),
+                "amount": _safe_float(item.get("f6")),
+            })
+        return result
+    finally:
+        session.close()
+
+
+def _get_a_indices(proxy_id: str | None = None) -> list[dict]:
     keys = list(A_INDEX_CODES.keys())
     url = f"https://hq.sinajs.cn/list={','.join(keys)}"
-    r = _http_get(url, timeout=10)
+    r = _http_get(url, timeout=10, proxy_id=proxy_id)
     result = []
     for line in r.text.strip().split("\n"):
         m = re.search(r"var hq_str_(\S+?)=", line)
@@ -323,9 +393,9 @@ def _get_a_indices() -> list[dict]:
     return result
 
 
-def _get_hk_indices() -> list[dict]:
+def _get_hk_indices(proxy_id: str | None = None) -> list[dict]:
     url = f"https://hq.sinajs.cn/list={','.join(HK_INDEX_CODES.keys())}"
-    r = _http_get(url, timeout=10)
+    r = _http_get(url, timeout=10, proxy_id=proxy_id)
     result = []
     for line in r.text.strip().split("\n"):
         for key, (code, name) in HK_INDEX_CODES.items():
@@ -351,9 +421,9 @@ def _get_hk_indices() -> list[dict]:
     return result
 
 
-def _get_us_indices() -> list[dict]:
+def _get_us_indices(proxy_id: str | None = None) -> list[dict]:
     url = f"https://hq.sinajs.cn/list={','.join(US_INDEX_CODES.keys())}"
-    r = _http_get(url, timeout=10)
+    r = _http_get(url, timeout=10, proxy_id=proxy_id)
     result = []
     for line in r.text.strip().split("\n"):
         for key, (code, name) in US_INDEX_CODES.items():
@@ -543,11 +613,11 @@ def _parse_tencent_a_line(line: str) -> Optional[dict]:
     }
 
 
-def _fetch_tencent_a_quotes(codes: list[str]) -> list[dict]:
+def _fetch_tencent_a_quotes(codes: list[str], proxy_id: str | None = None) -> list[dict]:
     if not codes:
         return []
     url = f"http://qt.gtimg.cn/q={','.join(codes)}"
-    response = create_http_session(referer="http://gu.qq.com", target_url=url).get(url, timeout=20)
+    response = create_http_session(referer="http://gu.qq.com", target_url=url, proxy_id=proxy_id).get(url, timeout=20)
     rows = []
     for line in response.text.strip().split("\n"):
         item = _parse_tencent_a_line(line.strip())
@@ -556,7 +626,7 @@ def _fetch_tencent_a_quotes(codes: list[str]) -> list[dict]:
     return rows
 
 
-def _build_a_share_snapshot() -> list[dict]:
+def _build_a_share_snapshot(proxy_id: str | None = None) -> list[dict]:
     now = time.time()
     with _a_share_snapshot_lock:
         cached_data = list(_a_share_snapshot_cache["data"])
@@ -576,7 +646,7 @@ def _build_a_share_snapshot() -> list[dict]:
         results: list[dict] = []
 
         with ThreadPoolExecutor(max_workers=min(12, max(1, len(chunks)))) as executor:
-            futures = {executor.submit(_fetch_tencent_a_quotes, chunk): index for index, chunk in enumerate(chunks)}
+            futures = {executor.submit(_fetch_tencent_a_quotes, chunk, proxy_id): index for index, chunk in enumerate(chunks)}
             for future in as_completed(futures):
                 results.extend(future.result())
 
@@ -634,42 +704,120 @@ def _compute_advance_decline() -> dict:
 # ─── Realtime Stock Quotes ───
 
 
-def get_realtime_quotes(codes: list[str]) -> list[dict]:
+def get_realtime_quotes(codes: list[str], preferred_source: Optional[str] = None) -> list[dict]:
     if not codes:
         return []
     try:
-        fetched_at = int(time.time() * 1000)
-        sina_codes = []
-        code_map = {}
-        has_hk_codes = False
-        for c in codes:
-            sc = _to_sina_symbol(c)
-            sina_codes.append(sc)
-            code_map[sc] = c
-            if _infer_market_from_code(c) == "hk":
-                has_hk_codes = True
-
-        url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
-        r = _http_get(url, timeout=10)
-        result = []
-        for line in r.text.strip().split("\n"):
-            m = re.search(r"var hq_str_(\S+?)=", line)
-            if not m:
+        sources = get_sources_for_tool("load_quote", preferred_source)
+        for source in sources:
+            source_id = source.get("id", "")
+            proxy_id = source.get("proxyId")
+            api_key = source.get("apiKey")
+            try:
+                if source_id == "sina":
+                    result = _fetch_quotes_sina(codes, proxy_id=proxy_id)
+                    if result:
+                        return result
+                elif source_id == "eastmoney":
+                    result = _fetch_quotes_eastmoney(codes, proxy_id=proxy_id)
+                    if result:
+                        return result
+                elif source_id == "easyquotation":
+                    result = _fetch_quotes_easyquotation(codes)
+                    if result:
+                        return result
+                else:
+                    remote_fn = QUOTE_REMOTE_FETCHERS.get(source_id)
+                    if remote_fn:
+                        market = _infer_market_from_code(codes[0]) if codes else "a"
+                        result = remote_fn(codes, market=market, proxy_id=proxy_id, api_key=api_key)
+                        if result:
+                            return result
+            except Exception as e:
+                print(f"[market] {source_id} quotes failed: {e}")
                 continue
-            sc = m.group(1)
-            parts = _parse_sina_line(line)
-            if not parts:
-                continue
-            code = code_map.get(sc, sc)
-            market = _infer_market_from_code(code)
-            quote = _parse_quote_line(sc, code, parts, market, fetched_at)
-            if quote:
-                result.append(quote)
-        if has_hk_codes:
-            result = _enrich_hk_quotes(result)
-        return result
+        return _fetch_quotes_sina(codes)
     except Exception as e:
         print(f"[market] error fetching quotes: {e}")
+        return []
+
+
+def _fetch_quotes_sina(codes: list[str], proxy_id: str | None = None) -> list[dict]:
+    fetched_at = int(time.time() * 1000)
+    sina_codes = []
+    code_map = {}
+    has_hk_codes = False
+    for c in codes:
+        sc = _to_sina_symbol(c)
+        sina_codes.append(sc)
+        code_map[sc] = c
+        if _infer_market_from_code(c) == "hk":
+            has_hk_codes = True
+
+    url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
+    r = _http_get(url, timeout=10, proxy_id=proxy_id)
+    result = []
+    for line in r.text.strip().split("\n"):
+        m = re.search(r"var hq_str_(\S+?)=", line)
+        if not m:
+            continue
+        sc = m.group(1)
+        parts = _parse_sina_line(line)
+        if not parts:
+            continue
+        code = code_map.get(sc, sc)
+        market = _infer_market_from_code(code)
+        quote = _parse_quote_line(sc, code, parts, market, fetched_at)
+        if quote:
+            result.append(quote)
+    if has_hk_codes:
+        result = _enrich_hk_quotes(result)
+    return result
+
+
+def _fetch_quotes_eastmoney(codes: list[str], proxy_id: str | None = None) -> list[dict]:
+    a_codes = [c for c in codes if _infer_market_from_code(c) == "a"]
+    if not a_codes:
+        return []
+    snapshot = _build_a_share_snapshot(proxy_id=proxy_id)
+    code_set = set(str(c).strip() for c in a_codes)
+    return [item for item in snapshot if str(item.get("code", "")) in code_set]
+
+
+def _fetch_quotes_easyquotation(codes: list[str]) -> list[dict]:
+    try:
+        import easyquotation
+        quotation = easyquotation.use("sina")
+        result = []
+        for code in codes:
+            try:
+                market = _infer_market_from_code(code)
+                if market != "a":
+                    continue
+                prefix = "sh" if code.startswith("6") else "sz" if code.startswith(("0", "3")) else "bj"
+                q = quotation.real(f"{prefix}{code}")
+                if not q:
+                    continue
+                for item in q.values() if isinstance(q, dict) else q:
+                    if isinstance(item, dict):
+                        result.append({
+                            "code": code,
+                            "name": item.get("name", ""),
+                            "price": _safe_float(item.get("now", 0)),
+                            "close": _safe_float(item.get("now", 0)),
+                            "open": _safe_float(item.get("open", 0)),
+                            "high": _safe_float(item.get("high", 0)),
+                            "low": _safe_float(item.get("low", 0)),
+                            "volume": _safe_float(item.get("volume", 0)),
+                            "amount": _safe_float(item.get("turnover", 0)),
+                            "change": 0,
+                            "changePercent": 0,
+                            "preClose": _safe_float(item.get("close", 0)),
+                        })
+            except Exception:
+                continue
+        return result
+    except ImportError:
         return []
 
 

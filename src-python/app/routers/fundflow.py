@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Query
+from typing import Optional
 from app.services.fundflow_service import get_fund_flow, get_stock_fund_flow
 
 router = APIRouter()
@@ -11,6 +12,10 @@ async def fund_flow_rank(limit: int = Query(default=50)):
 
 
 @router.get("/stock/{code}")
-async def stock_fund_flow(code: str, days: int = Query(default=10)):
-    data = get_stock_fund_flow(code, days)
+async def stock_fund_flow(
+    code: str,
+    days: int = Query(default=10),
+    source: Optional[str] = Query(default=None),
+):
+    data = get_stock_fund_flow(code, days, preferred_source=source)
     return {"data": data}

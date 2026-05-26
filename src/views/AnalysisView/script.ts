@@ -8,7 +8,6 @@ import { useAiTaskLogger } from '@/composables/useAiTaskLogger'
 import { buildTechnicalSnapshot, getStockProfile } from '@/utils/marketMetrics'
 import { resolveStockFromInput } from '@/utils/aiQuestion'
 import { formatAmount, formatPercent, formatPrice, formatVolume } from '@/utils/format'
-import { getMarketSessionContext } from '@/utils/marketSession'
 import {
   runDiagnosisAgent,
   type DiagnosisAgentPartialResult,
@@ -135,8 +134,6 @@ export default defineComponent({
       if (profile.value.market === 'us') return 'us'
       return 'a'
     })
-    const isTradingSession = computed(() => getMarketSessionContext(realtimeMarket.value).phase === 'trading')
-    const analysisAutoEnabled = computed(() => settingsStore.settings.ai.autoRun.analysisDigest)
     const strategyOptions = computed(() =>
       [...strategyStore.strategies].sort(
         (a, b) => Number(b.enabled) - Number(a.enabled) || Number(b.builtin) - Number(a.builtin) || a.name.localeCompare(b.name),
@@ -305,11 +302,7 @@ export default defineComponent({
       stockQuery.value = `${item.name} ${item.code}`
       currentStock.value = { name: item.name, code: item.code }
       hydrateAnalysisFromCache(item.code, item.name, item)
-      if (analysisAutoEnabled.value) {
-        void runQuery(item.code, item.name)
-      } else {
-        analysisError.value = ''
-      }
+      void runQuery(item.code, item.name)
     }
 
     async function executeAnalysis(code: string, preferredName?: string, silent = false) {
@@ -369,6 +362,7 @@ export default defineComponent({
           provider: settingsStore.activeProvider,
           searchProviders: settingsStore.enabledSearchProviders,
           activeSearchProvider: settingsStore.activeSearchProvider,
+          dataSources: settingsStore.enabledDataSources,
           maxSteps: settingsStore.settings.ai.diagnosis.maxSteps,
           period: period.value,
           adjust: adjust.value,
@@ -463,39 +457,11 @@ export default defineComponent({
       return value ? new Date(value).toLocaleTimeString('zh-CN', { hour12: false }) : '--'
     }
 
-    const analysisRealtime = useRealtimeTask(async () => {
-      if (!isTradingSession.value) return
-      if (!analysisAutoEnabled.value) return
-      const targetCode = resolvedStockCode.value || currentStock.value?.code || ''
-      if (!targetCode || diagnosisLoading.value || loading.value) return
-      const now = Date.now()
-      if (now - lastAnalysisAt.value < settingsStore.settings.ai.autoRunInterval * 1000) return
-      await executeAnalysis(targetCode, currentStock.value?.name, true)
-    }, {
-      enabled: () => analysisAutoEnabled.value,
-      immediate: false,
-      intervalSource: 'ai',
-      intervalMultiplier: 1,
-      minimumMs: 10000,
-      pauseWhenHidden: true,
-      market: () => realtimeMarket.value,
-      skipWhenMarketClosed: true,
-    })
-
     onMounted(async () => {
       if (!marketStore.stockList.length) {
         void marketStore.fetchStockList('a', 1, 80)
       }
       ensureSelectedStrategy()
-      analysisRealtime.start(false)
-    })
-
-    onActivated(() => {
-      analysisRealtime.start(false)
-    })
-
-    onDeactivated(() => {
-      analysisRealtime.stop()
     })
 
     return {
@@ -526,7 +492,6 @@ export default defineComponent({
       impactBullets,
       profile,
       technical,
-      analysisAutoEnabled,
       lastAnalysisAt,
       formatPrice,
       formatPercent,

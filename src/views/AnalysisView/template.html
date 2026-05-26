@@ -21,7 +21,7 @@
             {{ item.name }}
           </option>
         </select>
-        <button v-if="!analysisAutoEnabled && !(loading || diagnosisLoading)" class="btn-primary ai-trigger-btn" @click="runQuery()">
+        <button v-if="!(loading || diagnosisLoading)" class="btn-primary ai-trigger-btn" @click="runQuery()">
           AI评估
         </button>
         <button v-if="loading || diagnosisLoading" class="btn-primary ai-trigger-btn ai-cancel-btn" @click="cancelAnalysis">
@@ -99,7 +99,7 @@
       </div>
 
       <div v-else class="panel-empty">
-        {{ analysisAutoEnabled ? '输入并选择股票后，页面会自动执行AI评估。' : '输入并选择股票后，点击“AI评估”开始。' }}
+        输入并选择股票后，点击"AI评估"开始。
       </div>
     </section>
 

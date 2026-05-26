@@ -15,8 +15,8 @@ _eastmoney_quote_cache = {}
 _eastmoney_quote_cache_time = {}
 
 
-def _http_get(url: str, referer: str = "https://finance.sina.com.cn", **kwargs):
-    return create_http_session(referer=referer, target_url=url).get(url, **kwargs)
+def _http_get(url: str, referer: str = "https://finance.sina.com.cn", proxy_id: str | None = None, **kwargs):
+    return create_http_session(referer=referer, target_url=url, proxy_id=proxy_id).get(url, **kwargs)
 
 
 def _safe_float(v):

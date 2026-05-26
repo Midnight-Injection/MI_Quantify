@@ -16,9 +16,14 @@ export interface AiInsightDigest {
     code: string
     style: '短线' | '长线'
     entryPrice: string
+    addPrice?: string
+    stopLoss?: string
     exitPrice: string
+    positionSize?: string
     reason: string
     riskTip: string
+    t0Strategy?: string
+    timeWindow?: string
   }>
   bullets: string[]
   confidenceLabel: string

@@ -53,15 +53,6 @@ export interface AiSettings {
   providers: AiProvider[]
   activeProviderId: string
   diagnosis: DiagnosisAgentSettings
-  autoRun: AiAutoRunSettings
-  autoRunInterval: number
-}
-
-export interface AiAutoRunSettings {
-  homeDigest: boolean
-  marketDigest: boolean
-  analysisDigest: boolean
-  stockDetailDiagnosis: boolean
 }
 
 export interface SearchProvider {
@@ -139,18 +130,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
     providers: [],
     activeProviderId: '',
-    autoRunInterval: 45,
     diagnosis: {
       maxSteps: 20,
       traceVerbose: true,
       activeSearchProviderId: '',
       searchProviders: [],
-    },
-    autoRun: {
-      homeDigest: false,
-      marketDigest: false,
-      analysisDigest: false,
-      stockDetailDiagnosis: false,
     },
   },
   appUpdate: {

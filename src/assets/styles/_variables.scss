@@ -38,9 +38,27 @@ $gradient-down: linear-gradient(135deg, #2ebd6e, #4fd98a);
 $gradient-glass: linear-gradient(135deg, rgba(9, 93, 149, 0.03), rgba(183, 149, 95, 0.06));
 $gradient-sidebar: linear-gradient(180deg, #101a26, #0f141d);
 
-$font-family: 'IBM Plex Sans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-$font-display: 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
-$font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
+$font-family: 'Inter', 'IBM Plex Sans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+$font-display: 'DM Sans', 'Inter', 'PingFang SC', sans-serif;
+$font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+
+$text-2xs: 10px;
+$text-xs: 11px;
+$text-sm: 12px;
+$text-base: 13px;
+$text-md: 14px;
+$text-lg: 16px;
+$text-xl: 18px;
+$text-2xl: 22px;
+
+$leading-tight: 1.25;
+$leading-normal: 1.45;
+$leading-relaxed: 1.6;
+
+$weight-normal: 400;
+$weight-label: 500;
+$weight-medium: 600;
+$weight-bold: 700;
 
 $radius-xs: 6px;
 $radius-sm: 8px;

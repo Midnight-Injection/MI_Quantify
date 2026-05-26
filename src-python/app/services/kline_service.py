@@ -2,6 +2,8 @@ import re
 import json
 from typing import Optional
 from app.services.network_env import create_http_session
+from app.services.datasource_registry import get_sources_for_tool
+from app.services.kline_remote_fetchers import KLINE_REMOTE_FETCHERS
 
 _PERIOD_MAP = {
     "daily": "240",
@@ -14,8 +16,8 @@ _PERIOD_MAP = {
 }
 
 
-def _http_get(url: str, referer: str = "https://finance.sina.com.cn", **kwargs):
-    return create_http_session(referer=referer, target_url=url).get(url, **kwargs)
+def _http_get(url: str, referer: str = "https://finance.sina.com.cn", proxy_id: str | None = None, **kwargs):
+    return create_http_session(referer=referer, target_url=url, proxy_id=proxy_id).get(url, **kwargs)
 
 
 def get_kline(
@@ -25,15 +27,12 @@ def get_kline(
     end_date: Optional[str] = None,
     adjust: str = "qfq",
     limit: Optional[int] = None,
+    preferred_source: Optional[str] = None,
 ) -> list[dict]:
     try:
         market = _infer_market(code)
-        if market == "a":
-            data = _get_kline_sina(code, period)
-        elif market == "hk":
-            data = _get_kline_hk(code, period, adjust)
-        else:
-            data = _get_kline_us(code, period, adjust)
+        sources = get_sources_for_tool("load_kline", preferred_source)
+        data = _fetch_kline_multi_source(code, period, adjust, market, sources)
         if start_date:
             start_ts = _parse_date_str(start_date)
             if start_ts:
@@ -50,6 +49,49 @@ def get_kline(
         return []
 
 
+def _fetch_kline_multi_source(code: str, period: str, adjust: str, market: str, sources: list[dict]) -> list[dict]:
+    fetchers = []
+    for source in sources:
+        source_id = source.get("id", "")
+        proxy_id = source.get("proxyId")
+        api_key = source.get("apiKey")
+        if market == "a":
+            if source_id == "sina":
+                fetchers.append(("sina", lambda pid=proxy_id: _get_kline_sina(code, period, proxy_id=pid)))
+            elif source_id == "akshare":
+                fetchers.append(("akshare", lambda pid=proxy_id: _get_kline_akshare_a(code, period, adjust)))
+            elif source_id == "baostock":
+                fetchers.append(("baostock", lambda pid=proxy_id: _get_kline_baostock(code, period, adjust)))
+        elif market == "hk":
+            if source_id == "akshare":
+                fetchers.append(("akshare", lambda pid=proxy_id: _get_kline_hk(code, period, adjust)))
+        elif market == "us":
+            if source_id == "akshare":
+                fetchers.append(("akshare", lambda pid=proxy_id: _get_kline_us(code, period, adjust)))
+
+        remote_fn = KLINE_REMOTE_FETCHERS.get(source_id)
+        if remote_fn:
+            fetchers.append((source_id, lambda fn=remote_fn, pid=proxy_id, ak=api_key: fn(code, period=period, adjust=adjust, market=market, proxy_id=pid, api_key=ak)))
+
+    if not fetchers:
+        if market == "a":
+            return _get_kline_sina(code, period)
+        elif market == "hk":
+            return _get_kline_hk(code, period, adjust)
+        else:
+            return _get_kline_us(code, period, adjust)
+
+    for name, fetcher in fetchers:
+        try:
+            data = fetcher()
+            if data:
+                return data
+            print(f"[kline] {name} returned empty for {code}")
+        except Exception as e:
+            print(f"[kline] {name} failed for {code}: {e}")
+    return []
+
+
 def _infer_market(code: str) -> str:
     raw = str(code or "").strip().upper()
     if re.fullmatch(r"\d{5}", raw):
@@ -61,7 +103,7 @@ def _infer_market(code: str) -> str:
     return "us"
 
 
-def _get_kline_sina(code: str, period: str) -> list[dict]:
+def _get_kline_sina(code: str, period: str, proxy_id: str | None = None) -> list[dict]:
     if code.startswith("6"):
         sc = f"sh{code}"
     elif code.startswith(("0", "3")):
@@ -75,7 +117,7 @@ def _get_kline_sina(code: str, period: str) -> list[dict]:
     datalen = "250" if period == "daily" else "120"
 
     url = f"https://quotes.sina.cn/cn/api/jsonp_v2.php/=/CN_MarketDataService.getKLineData?symbol={sc}&scale={scale}&ma=no&datalen={datalen}"
-    r = _http_get(url, timeout=15)
+    r = _http_get(url, timeout=15, proxy_id=proxy_id)
     m = re.search(r"\((.+)\)", r.text, re.DOTALL)
     if not m:
         return []
@@ -207,6 +249,92 @@ def _get_kline_us(code: str, period: str, adjust: str) -> list[dict]:
         return _aggregate_kline(data, period)
     except Exception as e:
         print(f"[kline] us error for {code}: {e}")
+        return []
+
+
+def _get_kline_akshare_a(code: str, period: str, adjust: str) -> list[dict]:
+    try:
+        import akshare as ak
+
+        symbol = str(code).strip()
+        if symbol.startswith("6"):
+            ak_symbol = f"sh{symbol}"
+        elif symbol.startswith(("0", "3")):
+            ak_symbol = f"sz{symbol}"
+        elif symbol.startswith(("4", "8")):
+            ak_symbol = f"bj{symbol}"
+        else:
+            ak_symbol = symbol
+
+        ak_period = period if period in ("daily", "weekly", "monthly") else "daily"
+        df = ak.stock_zh_a_hist(
+            symbol=ak_symbol,
+            period=ak_period,
+            adjust=_normalize_adjust(adjust),
+        )
+        if df is None or df.empty:
+            return []
+        return _rows_to_kline(df.to_dict("records"))
+    except Exception as e:
+        print(f"[kline] akshare A error for {code}: {e}")
+        return []
+
+
+def _get_kline_baostock(code: str, period: str, adjust: str) -> list[dict]:
+    try:
+        import baostock as bs
+        from datetime import datetime, timedelta
+
+        raw = str(code).strip()
+        if raw.startswith("6"):
+            bs_code = f"sh.{raw}"
+        elif raw.startswith(("0", "3")):
+            bs_code = f"sz.{raw}"
+        else:
+            bs_code = f"bj.{raw}"
+
+        login = bs.login()
+        if str(login.error_code) != "0":
+            return []
+        try:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+
+            bs_period = {"daily": "d", "weekly": "w", "monthly": "m"}.get(period, "d")
+            bs_adjust = {"qfq": "2", "hfq": "1", "": "3"}.get(adjust, "3")
+
+            rs = bs.query_history_k_data_plus(
+                bs_code,
+                "date,open,high,low,close,volume,amount",
+                start_date=start_date,
+                end_date=end_date,
+                frequency=bs_period,
+                adjustflag=bs_adjust,
+            )
+            if str(rs.error_code) != "0":
+                return []
+
+            rows = []
+            while rs.next():
+                row = rs.get_row_data()
+                if row and row[0]:
+                    rows.append({
+                        "date": row[0],
+                        "open": row[1],
+                        "high": row[2],
+                        "low": row[3],
+                        "close": row[4],
+                        "volume": row[5],
+                        "amount": row[6],
+                    })
+            return _rows_to_kline(rows)
+        finally:
+            try:
+                bs.logout()
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[kline] baostock error for {code}: {e}")
         return []
 
 

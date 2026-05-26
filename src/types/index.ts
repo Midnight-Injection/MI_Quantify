@@ -26,7 +26,7 @@ export {
   type InvestmentCandidate,
   type InvestmentResult,
 } from './investment'
-export { type DataSource, type AppSettings, type AiSettings, type AiAutoRunSettings, type DataSourceSettings, type WatchListSettings, type NotificationSettings, type AppearanceSettings, type SearchProvider, type DiagnosisAgentSettings, type IntegrationSettings, type OpenClawSettings, type OpenClawChannelSettings, type OpenClawChannelType, type ProxyConfig, type ProxySettings, DEFAULT_SETTINGS } from './settings'
+export { type DataSource, type AppSettings, type AiSettings, type DataSourceSettings, type WatchListSettings, type NotificationSettings, type AppearanceSettings, type SearchProvider, type DiagnosisAgentSettings, type IntegrationSettings, type OpenClawSettings, type OpenClawChannelSettings, type OpenClawChannelType, type ProxyConfig, type ProxySettings, DEFAULT_SETTINGS } from './settings'
 export { type NotificationAlert, type NotificationAlertType, type NotificationEntry } from './notification'
 export {
   type HomeMetricCard,

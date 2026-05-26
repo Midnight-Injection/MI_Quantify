@@ -6,6 +6,7 @@ const running = ref(false)
 const requestTimeoutMs = 25000
 const inflightGetRequests = new Map<string, Promise<any>>()
 let _registeredProxySignature = ''
+let _registeredDataSourceSignature = ''
 
 function buildProxySignature(proxies: {
   id: string
@@ -33,12 +34,45 @@ function buildProxySignature(proxies: {
   )
 }
 
+function buildDataSourceSignature(sources: {
+  id: string
+  name: string
+  enabled: boolean
+  priority: number
+  apiUrl: string
+  apiKey: string
+  proxyId?: string
+}[]) {
+  return JSON.stringify(
+    [...sources]
+      .map((source) => ({
+        id: source.id,
+        name: source.name,
+        enabled: source.enabled,
+        priority: source.priority,
+        apiUrl: source.apiUrl.trim(),
+        apiKey: source.apiKey ? '***' : '',
+        proxyId: source.proxyId || '',
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  )
+}
+
 async function syncProxiesToSidecar(proxies: { id: string; name: string; host: string; port: number; protocol: string; username: string; password: string; enabled: boolean }[]) {
   const currentSignature = buildProxySignature(proxies)
   if (currentSignature === _registeredProxySignature) return
   try {
     await post('/api/proxy/register', { proxies })
     _registeredProxySignature = currentSignature
+  } catch {}
+}
+
+async function syncDataSourcesToSidecar(sources: { id: string; name: string; enabled: boolean; type: string; priority: number; apiUrl: string; apiKey: string; apiSecret: string; mode?: string; coverage?: string; proxyId?: string }[]) {
+  const currentSignature = buildDataSourceSignature(sources)
+  if (currentSignature === _registeredDataSourceSignature) return
+  try {
+    await post('/api/datasource/register', { sources })
+    _registeredDataSourceSignature = currentSignature
   } catch {}
 }
 
@@ -205,5 +239,5 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export function useSidecar() {
-  return { running, start, stop, status, ensureRunning, get, post, syncProxiesToSidecar }
+  return { running, start, stop, status, ensureRunning, get, post, syncProxiesToSidecar, syncDataSourcesToSidecar }
 }

@@ -3,6 +3,7 @@ from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import market, kline, sector, fundflow, news, openclaw, finance, investment, home
 from app.services.network_env import register_proxies
+from app.services.datasource_registry import register_sources
 
 for k in [
     "HTTP_PROXY",
@@ -46,3 +47,10 @@ async def proxy_register(payload: dict = Body(default={})):
     proxies = payload.get("proxies", []) or []
     register_proxies(proxies)
     return {"status": "ok", "count": len(proxies)}
+
+
+@app.post("/api/datasource/register")
+async def datasource_register(payload: dict = Body(default={})):
+    sources = payload.get("sources", []) or []
+    register_sources(sources)
+    return {"status": "ok", "count": len(sources)}

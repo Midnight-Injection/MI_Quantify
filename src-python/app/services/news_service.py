@@ -1,11 +1,14 @@
 import json
 import re
+from typing import Optional
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta
 from urllib.parse import quote
 from xml.etree import ElementTree as ET
 
 from app.services.network_env import create_http_session
+from app.services.datasource_registry import get_sources_for_tool
+from app.services.news_remote_fetchers import STOCK_NEWS_REMOTE_FETCHERS, FINANCIAL_NEWS_REMOTE_FETCHERS
 
 TOPIC_NEWS_KEYWORDS = [
     "国务院",
@@ -50,15 +53,19 @@ RSS_TOPIC_NEWS_KEYWORDS = [
 ]
 
 
-def _http_get(url: str, referer: str = "https://finance.sina.com.cn", **kwargs):
-    return create_http_session(referer=referer, target_url=url).get(url, **kwargs)
+def _http_get(url: str, referer: str = "https://finance.sina.com.cn", proxy_id: str | None = None, **kwargs):
+    return create_http_session(referer=referer, target_url=url, proxy_id=proxy_id).get(url, **kwargs)
 
 
-def get_context_news(code: str, limit: int = 20, stock_name: str = "") -> list[dict]:
+def get_context_news(code: str, limit: int = 20, stock_name: str = "", preferred_source: Optional[str] = None) -> list[dict]:
     try:
         stock_name = str(stock_name or "").strip() or _fetch_stock_name(code)
-        stock_items = get_stock_news(code, max(limit, 8), stock_name)
+        stock_items = get_stock_news(code, max(limit, 8), stock_name, preferred_source=preferred_source)
         related_market_items = []
+        sources_list = get_sources_for_tool("load_stock_news", preferred_source)
+        proxy_map: dict[str, str | None] = {s.get("id", ""): s.get("proxyId") for s in sources_list}
+        em_proxy = proxy_map.get("eastmoney")
+        goog_proxy = proxy_map.get("google-news-rss")
 
         if stock_name:
             query_terms = [
@@ -67,16 +74,16 @@ def get_context_news(code: str, limit: int = 20, stock_name: str = "") -> list[d
                 f"{stock_name} 行业",
             ]
             for term in query_terms:
-                related_market_items.extend(_search_topic_news(term, max(4, limit // 2)))
+                related_market_items.extend(_search_topic_news(term, max(4, limit // 2), proxy_id=em_proxy))
                 if len(_dedupe_news_items(related_market_items)) < max(4, limit):
-                    related_market_items.extend(_search_google_news_rss(term, 3))
+                    related_market_items.extend(_search_google_news_rss(term, 3, proxy_id=goog_proxy))
                 if len(_dedupe_news_items(related_market_items)) >= max(6, limit + 2):
                     break
 
         if len(_dedupe_news_items(related_market_items)) < max(4, limit):
             related_market_items.extend(
                 item
-                for item in get_financial_news(max(20, limit * 2))
+                for item in get_financial_news(max(20, limit * 2), preferred_source=preferred_source)
                 if _is_stock_related(item, code, stock_name)
             )
 
@@ -98,14 +105,35 @@ def get_context_news(code: str, limit: int = 20, stock_name: str = "") -> list[d
         return get_stock_news(code, limit)
 
 
-def get_financial_news(limit: int = 50) -> list[dict]:
+def get_financial_news(limit: int = 50, preferred_source: Optional[str] = None) -> list[dict]:
     try:
+        sources_list = get_sources_for_tool("load_financial_news", preferred_source)
+        source_ids = [s.get("id", "") for s in sources_list]
+        proxy_map: dict[str, str | None] = {s.get("id", ""): s.get("proxyId") for s in sources_list}
+        api_key_map: dict[str, str | None] = {s.get("id", ""): s.get("apiKey") for s in sources_list}
         merged = []
-        merged.extend(_get_sina_roll_news(max(limit * 2, 120)))
-        for keyword in TOPIC_NEWS_KEYWORDS:
-            merged.extend(_search_topic_news(keyword, 8))
-        for keyword in RSS_TOPIC_NEWS_KEYWORDS:
-            merged.extend(_search_google_news_rss(keyword, 6))
+        for source_id in source_ids:
+            try:
+                pid = proxy_map.get(source_id)
+                ak = api_key_map.get(source_id)
+                if source_id in ("eastmoney",):
+                    merged.extend(_get_sina_roll_news(max(limit * 2, 120), proxy_id=pid))
+                    for keyword in TOPIC_NEWS_KEYWORDS:
+                        merged.extend(_search_topic_news(keyword, 8, proxy_id=pid))
+                if source_id in ("google-news-rss",):
+                    for keyword in RSS_TOPIC_NEWS_KEYWORDS:
+                        merged.extend(_search_google_news_rss(keyword, 6, proxy_id=pid))
+                remote_fn = FINANCIAL_NEWS_REMOTE_FETCHERS.get(source_id)
+                if remote_fn:
+                    merged.extend(remote_fn(limit=limit, api_key=ak, proxy_id=pid))
+            except Exception as e:
+                print(f"[news] {source_id} financial news failed: {e}")
+        if not source_ids:
+            merged.extend(_get_sina_roll_news(max(limit * 2, 120)))
+            for keyword in TOPIC_NEWS_KEYWORDS:
+                merged.extend(_search_topic_news(keyword, 8))
+            for keyword in RSS_TOPIC_NEWS_KEYWORDS:
+                merged.extend(_search_google_news_rss(keyword, 6))
 
         deduped = _dedupe_news_items(merged)
         today_items = [item for item in deduped if _is_recent_news(item, 2)]
@@ -116,31 +144,56 @@ def get_financial_news(limit: int = 50) -> list[dict]:
         return []
 
 
-def get_stock_news(code: str, limit: int = 20, stock_name: str = "") -> list[dict]:
+def get_stock_news(code: str, limit: int = 20, stock_name: str = "", preferred_source: Optional[str] = None) -> list[dict]:
     try:
         stock_name = str(stock_name or "").strip() or _fetch_stock_name(code)
+        sources_list = get_sources_for_tool("load_stock_news", preferred_source)
+        source_ids = [s.get("id", "") for s in sources_list]
+        proxy_map: dict[str, str | None] = {s.get("id", ""): s.get("proxyId") for s in sources_list}
+        api_key_map: dict[str, str | None] = {s.get("id", ""): s.get("apiKey") for s in sources_list}
+        use_eastmoney = not source_ids or "eastmoney" in source_ids
+        use_google_rss = not source_ids or "google-news-rss" in source_ids
+        use_yahoo = not source_ids or "yahoo-finance-rss" in source_ids
         sources: list[dict] = []
+        em_proxy = proxy_map.get("eastmoney")
+        goog_proxy = proxy_map.get("google-news-rss")
+        yh_proxy = proxy_map.get("yahoo-finance-rss")
 
-        announce_items = _fetch_stock_announcements(code, min(max(limit, 8), 12))
-        sources.extend(announce_items)
+        if use_eastmoney:
+            announce_items = _fetch_stock_announcements(code, min(max(limit, 8), 12), proxy_id=em_proxy)
+            sources.extend(announce_items)
 
         def enough_items() -> bool:
             current = _prefer_recent_news(_dedupe_news_items(sources), limit)
             return len(current) >= max(6, min(limit, 10))
 
-        if stock_name:
-            sources.extend(_search_topic_news(stock_name, max(limit, 12)))
-            if not enough_items():
-                sources.extend(_search_google_news_rss(stock_name, max(4, min(6, limit // 2 or 4))))
+        if stock_name and use_eastmoney:
+            sources.extend(_search_topic_news(stock_name, max(limit, 12), proxy_id=em_proxy))
+            if not enough_items() and use_google_rss:
+                sources.extend(_search_google_news_rss(stock_name, max(4, min(6, limit // 2 or 4)), proxy_id=goog_proxy))
             for suffix in ("公告", "财报", "订单"):
                 if enough_items():
                     break
-                sources.extend(_search_topic_news(f"{stock_name} {suffix}", max(4, limit // 3)))
+                if use_eastmoney:
+                    sources.extend(_search_topic_news(f"{stock_name} {suffix}", max(4, limit // 3), proxy_id=em_proxy))
 
         if code and code.isdigit() and not enough_items():
-            sources.extend(_search_topic_news(code, max(4, min(limit, 8))))
-            if not enough_items():
-                sources.extend(_fetch_yahoo_finance_symbol_news(code, stock_name, max(3, min(5, limit // 2 or 3))))
+            if use_eastmoney:
+                sources.extend(_search_topic_news(code, max(4, min(limit, 8)), proxy_id=em_proxy))
+            if not enough_items() and use_yahoo:
+                sources.extend(_fetch_yahoo_finance_symbol_news(code, stock_name, max(3, min(5, limit // 2 or 3)), proxy_id=yh_proxy))
+
+        if not enough_items():
+            for source_id in source_ids:
+                remote_fn = STOCK_NEWS_REMOTE_FETCHERS.get(source_id)
+                if remote_fn:
+                    try:
+                        items = remote_fn(code=code, limit=limit, stock_name=stock_name, api_key=api_key_map.get(source_id), proxy_id=proxy_map.get(source_id))
+                        sources.extend(items)
+                        if enough_items():
+                            break
+                    except Exception as e:
+                        print(f"[news] remote {source_id} stock news failed: {e}")
 
         merged = _dedupe_news_items(sources)
         if stock_name or code:
@@ -179,27 +232,27 @@ def _extract_stocks(text: str) -> list[str]:
     return codes
 
 
-def _search_google_news_rss(keyword: str, limit: int = 6) -> list[dict]:
+def _search_google_news_rss(keyword: str, limit: int = 6, proxy_id: str | None = None) -> list[dict]:
     normalized_keyword = str(keyword or "").strip()
     if not normalized_keyword:
         return []
     encoded_query = quote(f"{normalized_keyword} when:7d")
     url = f"https://news.google.com/rss/search?q={encoded_query}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
-    return _fetch_rss_items(url, "Google News", limit)
+    return _fetch_rss_items(url, "Google News", limit, proxy_id=proxy_id)
 
 
-def _fetch_yahoo_finance_symbol_news(code: str, stock_name: str = "", limit: int = 6) -> list[dict]:
+def _fetch_yahoo_finance_symbol_news(code: str, stock_name: str = "", limit: int = 6, proxy_id: str | None = None) -> list[dict]:
     symbol = _to_yahoo_symbol(code)
     if not symbol:
         return []
     query_symbol = quote(symbol)
     url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={query_symbol}&region=US&lang=en-US"
-    return _fetch_rss_items(url, "Yahoo Finance", limit)
+    return _fetch_rss_items(url, "Yahoo Finance", limit, proxy_id=proxy_id)
 
 
-def _fetch_rss_items(url: str, source_name: str, limit: int = 6) -> list[dict]:
+def _fetch_rss_items(url: str, source_name: str, limit: int = 6, proxy_id: str | None = None) -> list[dict]:
     try:
-        response = _http_get(url, timeout=12)
+        response = _http_get(url, timeout=12, proxy_id=proxy_id)
         response.raise_for_status()
         root = ET.fromstring(response.content)
         result = []
@@ -263,9 +316,9 @@ def _to_yahoo_symbol(code: str) -> str:
     return ""
 
 
-def _get_sina_roll_news(limit: int) -> list[dict]:
+def _get_sina_roll_news(limit: int, proxy_id: str | None = None) -> list[dict]:
     url = f"https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&num={limit}&versionNumber=1.2.4"
-    response = _http_get(url, timeout=10)
+    response = _http_get(url, timeout=10, proxy_id=proxy_id)
     payload = response.json()
     items = payload.get("result", {}).get("data", [])
     result = []
@@ -293,9 +346,9 @@ def _get_sina_roll_news(limit: int) -> list[dict]:
     return result
 
 
-def _search_topic_news(keyword: str, limit: int = 6) -> list[dict]:
+def _search_topic_news(keyword: str, limit: int = 6, proxy_id: str | None = None) -> list[dict]:
     url = _build_eastmoney_search_url(keyword, max(limit * 4, 36))
-    response = _http_get(url, referer="https://so.eastmoney.com/", timeout=12)
+    response = _http_get(url, referer="https://so.eastmoney.com/", timeout=12, proxy_id=proxy_id)
     payload = _parse_eastmoney_jsonp(response.text)
     groups = payload.get("result", {})
     items = [
@@ -357,7 +410,7 @@ def _fetch_stock_name(code: str) -> str:
         return ""
 
 
-def _fetch_stock_announcements(code: str, limit: int = 10) -> list[dict]:
+def _fetch_stock_announcements(code: str, limit: int = 10, proxy_id: str | None = None) -> list[dict]:
     raw = str(code or "").strip()
     if not raw or not raw.isdigit():
         return []
@@ -366,7 +419,7 @@ def _fetch_stock_announcements(code: str, limit: int = 10) -> list[dict]:
     )
     try:
         url = f"https://np-anotice-stock.eastmoney.com/api/security/ann?page_size={min(limit, 20)}&page_index=1&ann_type={ann_type}&stock_list={raw}&f_node=0&s_node=0"
-        response = _http_get(url, referer="https://data.eastmoney.com/", timeout=10)
+        response = _http_get(url, referer="https://data.eastmoney.com/", timeout=10, proxy_id=proxy_id)
         payload = response.json()
         items = payload.get("data", {}).get("list", [])
         result = []
@@ -411,7 +464,7 @@ def _fetch_stock_announcements(code: str, limit: int = 10) -> list[dict]:
         market = "0"
     try:
         url = f"https://guba.eastmoney.com/interface/GetData.aspx?path=guba/newlist&param=ps%3D{min(limit, 20)}%26p%3D1%26code%3D{raw}%26market%3D{market}%26type%3D0"
-        response = _http_get(url, referer="https://guba.eastmoney.com/", timeout=10)
+        response = _http_get(url, referer="https://guba.eastmoney.com/", timeout=10, proxy_id=proxy_id)
         payload = response.json()
         items = payload.get("Data", []) or payload.get("data", []) or []
         if isinstance(items, dict):

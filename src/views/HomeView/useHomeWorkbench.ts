@@ -104,9 +104,9 @@ export function useHomeWorkbench() {
       loadStructuredTab('sector', tabs.sector, nextMarket),
       loadStructuredTab('stocks', tabs.stocks, nextMarket),
       loadStructuredTab('news', tabs.news, nextMarket),
-      loadAiContext(nextMarket),
     ])
     if (currentSeq !== loadSeq.value) return
+    await loadAiContext(nextMarket)
   }
 
   const isInitialLoading = computed(() =>
