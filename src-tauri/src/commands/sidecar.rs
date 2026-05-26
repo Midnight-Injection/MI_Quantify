@@ -1,4 +1,5 @@
-use std::process::Command as StdCommand;
+use std::io::Read;
+use std::process::{Command as StdCommand, Stdio};
 use std::sync::Mutex;
 use tauri::{Manager, State};
 
@@ -18,13 +19,22 @@ pub async fn sidecar_start(
 
     let launch = resolve_sidecar_launch(&app)?;
 
+    #[cfg(target_os = "macos")]
+    {
+        let _ = StdCommand::new("xattr")
+            .args(["-c"])
+            .arg(&launch.program)
+            .output();
+    }
+
     let mut command = StdCommand::new(&launch.program);
     if !launch.args.is_empty() {
         command.args(&launch.args);
     }
 
-    let child = command
+    let mut child = command
         .current_dir(&launch.current_dir)
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| {
             format!(
@@ -34,6 +44,42 @@ pub async fn sidecar_start(
         })?;
 
     let pid = child.id();
+
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            let mut stderr_output = String::new();
+            if let Some(mut stderr) = child.stderr.take() {
+                let _ = stderr.read_to_string(&mut stderr_output);
+            }
+            return Err(format!(
+                "sidecar 进程启动后立即退出 (pid {}, status: {}){}",
+                pid,
+                status,
+                if stderr_output.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "\n错误输出:\n{}",
+                        stderr_output.chars().take(3000).collect::<String>()
+                    )
+                }
+            ));
+        }
+        Ok(None) => {
+            if let Some(stderr) = child.stderr.take() {
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader};
+                    let _ = BufReader::new(stderr).lines().count();
+                });
+            }
+        }
+        Err(e) => {
+            return Err(format!("无法检查 sidecar 进程状态: {}", e));
+        }
+    }
+
     *guard = Some(pid);
     std::mem::forget(child);
 

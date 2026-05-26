@@ -91,6 +91,8 @@ jobs:
           echo "=== Verify ==="
           ls -la "$DEST"
           file "$DEST" || true
+          echo "=== Smoke test ==="
+          timeout 5 "$DEST" 2>&1 | head -20 || true
           echo "Sidecar binary ready: $DEST"
 
       - name: install pnpm
