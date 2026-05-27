@@ -1528,7 +1528,7 @@ export async function runDiagnosisAgent(options: {
         conversationHistory: (options.conversationHistory || []).slice(-10),
       }, null, 2),
       nextStepPrompt: '请判断当前已有数据是否足以完整回答用户问题；注意行业/概念排行和新闻摘要只能作为线索，不能直接当结论。如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就应优先基于这些证据自行综合判断并直接 finish 返回最终诊断 JSON。最终 JSON 必须包含明确操作、具体价格区间、止损位/退出条件和理由；若证据冲突要降低置信度并说明等待确认的关键价位；如果这些字段还不完整，继续只选择一个最必要的工具。注意同一个失败超过3次的工具不能再调用。',
-      toolMaxTokens: 2400,
+      toolMaxTokens: 4000,
       toolTimeoutMs: 300000,
     }), planningTimeoutMs, '统一智能体规划'), options.abortSignal)
     trace.push(...reactResult.trace)
@@ -1545,8 +1545,8 @@ export async function runDiagnosisAgent(options: {
       )
     }
     const reactErrorMessage = error instanceof Error ? error.message : String(error)
-    const canFallbackToSynthesis = Boolean(stockInfo.code && klineData.length)
-    const shouldFallbackToSynthesis = canFallbackToSynthesis && /超时|JSON|finalAnswer|模型决策解析失败|模型未返回合法 JSON/i.test(reactErrorMessage)
+    const hasPartialData = Boolean(stockInfo.code || klineData.length)
+    const shouldFallbackToSynthesis = hasPartialData
     if (!shouldFallbackToSynthesis) {
       throw error
     }

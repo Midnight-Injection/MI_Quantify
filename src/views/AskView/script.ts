@@ -937,14 +937,18 @@ export default defineComponent({
           }
           return
         }
+        const rawErrorMessage = error instanceof Error ? error.message : 'AI 问股过程中出现错误，请稍后重试。'
+        const isJsonParseError = /模型未返回合法 JSON|模型决策解析失败|模型最终综合无效/i.test(rawErrorMessage)
+        const displayMessage = isJsonParseError
+          ? '本轮分析证据已采集完成，但结构化总结生成时失败。建议直接重试，通常第二次即可成功。'
+          : rawErrorMessage
         if (taskId) {
-          const message = error instanceof Error ? error.message : 'AI 问股过程中出现错误，请稍后重试。'
-          aiTaskLogger.addLog(taskId, `任务失败：${message}`, 'error')
-          aiTaskLogger.completeTask(taskId, false, message)
+          aiTaskLogger.addLog(taskId, `任务失败：${rawErrorMessage}`, 'error')
+          aiTaskLogger.completeTask(taskId, false, rawErrorMessage)
         }
         patchMessage(assistantMessageId, (message) => ({
           ...message,
-          content: error instanceof Error ? error.message : 'AI 问股过程中出现错误，请稍后重试。',
+          content: displayMessage,
           streaming: false,
           streamingText: undefined,
           loading: false,

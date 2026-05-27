@@ -67,13 +67,72 @@ export function normalizeAgentMaxSteps(
   return Math.min(max, Math.max(min, normalized))
 }
 
+function repairTruncatedJson(raw: string): string {
+  const start = raw.indexOf('{')
+  if (start === -1) return ''
+  const body = raw.slice(start)
+  let depth = 0
+  let inString = false
+  let escaped = false
+  let lastCompletePos = -1
+  for (let i = 0; i < body.length; i += 1) {
+    const char = body[i]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === '{') {
+      depth += 1
+      continue
+    }
+    if (char === '}') {
+      depth -= 1
+      if (depth === 0) {
+        return body.slice(0, i + 1)
+      }
+      if (depth === 1) {
+        lastCompletePos = i
+      }
+      continue
+    }
+    if (char === ',' && depth === 1) {
+      lastCompletePos = i
+    }
+  }
+  if (lastCompletePos > 0) {
+    const trimmed = body.slice(0, lastCompletePos + 1).replace(/,\s*$/, '')
+    const openBraces = (trimmed.match(/{/g) || []).length
+    const closeBraces = (trimmed.match(/}/g) || []).length
+    return trimmed + '}'.repeat(openBraces - closeBraces)
+  }
+  return ''
+}
+
 function parseJsonBlock<T>(raw: string): T {
   const fenced = raw.match(/```json\s*([\s\S]*?)\s*```/i)
   const candidate = fenced?.[1] || extractFirstJsonObject(raw)
-  if (!candidate) {
-    throw new Error('模型未返回合法 JSON')
+  if (candidate) {
+    return JSON.parse(candidate) as T
   }
-  return JSON.parse(candidate) as T
+  const repaired = repairTruncatedJson(raw)
+  if (repaired) {
+    try {
+      return JSON.parse(repaired) as T
+    } catch {
+      // fall through to throw below
+    }
+  }
+  throw new Error('模型未返回合法 JSON')
 }
 
 function extractFirstJsonObject(raw: string) {
@@ -291,7 +350,7 @@ export async function runReActLoop<TContext, TFinal = unknown>(
 7. 同一个工具如果已经失败 3 次，不要再继续调用它。
 8. 所有输出必须是合法 JSON，不要输出解释、Markdown 或代码块外文本。${finalAnswerSchemaText}`
   const nextStepPrompt = options.nextStepPrompt?.trim() || '请判断当前已拿到的数据是否足以完整回答用户需求；如果还不够，继续只选择一个最有必要的工具并给出准确参数；如果已经足够，立即 finish 并返回 finalAnswer。'
-  const jsonRepairPrompt = '你上一条回复没有严格遵守 ReAct JSON 协议。请基于同一轮决策，只重发一个合法 JSON 对象，不要输出解释、Markdown、代码块或额外文本。'
+  const jsonRepairPrompt = '你上一条回复没有严格遵守 ReAct JSON 协议，输出可能被截断了。请精简内容（缩短字符串、减少字段），只重发一个完整且合法的 JSON 对象，确保 JSON 能正确闭合。不要输出解释、Markdown、代码块或额外文本。'
 
   if (!hasHistory && options.systemPrompt?.trim()) {
     messages.push({
@@ -350,13 +409,17 @@ export async function runReActLoop<TContext, TFinal = unknown>(
     throwIfAborted(options.abortSignal)
     let decision: ReActDecision<TFinal> | null = null
     let lastRaw = ''
+    const baseMaxTokens = options.toolMaxTokens ?? 900
     for (let repairAttempt = 0; repairAttempt < 3; repairAttempt += 1) {
+      const repairMaxTokens = repairAttempt > 0
+        ? Math.min(baseMaxTokens + Math.ceil(baseMaxTokens * 0.5 * repairAttempt), 8192)
+        : baseMaxTokens
       const raw = await chat(
         options.provider,
         messages,
         {
           temperature: options.toolTemperature ?? 0.1,
-          maxTokens: options.toolMaxTokens ?? 900,
+          maxTokens: repairMaxTokens,
           signal: options.abortSignal,
           timeoutMs: options.toolTimeoutMs,
         },
@@ -519,6 +582,7 @@ export async function runReActLoop<TContext, TFinal = unknown>(
 不要再调用工具，不要输出 Markdown 或解释。${finalAnswerSchemaText}`,
     })
 
+    const forceMaxTokens = Math.min(Math.ceil((options.toolMaxTokens ?? 900) * 1.5), 8192)
     for (let repairAttempt = 0; repairAttempt < 3; repairAttempt += 1) {
       throwIfAborted(options.abortSignal)
       const raw = await chat(
@@ -526,7 +590,7 @@ export async function runReActLoop<TContext, TFinal = unknown>(
         messages,
         {
           temperature: options.toolTemperature ?? 0.1,
-          maxTokens: options.toolMaxTokens ?? 900,
+          maxTokens: forceMaxTokens,
           signal: options.abortSignal,
           timeoutMs: options.toolTimeoutMs,
         },
