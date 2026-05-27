@@ -91,9 +91,33 @@ jobs:
           echo "=== Verify ==="
           ls -la "$DEST"
           file "$DEST" || true
-          echo "=== Smoke test ==="
-          timeout 5 "$DEST" 2>&1 | head -20 || true
-          echo "Sidecar binary ready: $DEST"
+          echo "=== Smoke test: HTTP endpoint check ==="
+          "$DEST" &
+          SIDECAR_PID=$!
+          sleep 4
+          HEALTH=$(curl -sf http://127.0.0.1:18911/health && echo "OK" || echo "FAIL")
+          if [ "$HEALTH" != "OK" ]; then
+            echo "FAIL: /health endpoint not responding"
+            kill $SIDECAR_PID 2>/dev/null || true
+            exit 1
+          fi
+          echo "PASS: /health"
+          SECTOR=$(curl -sf "http://127.0.0.1:18911/api/sector/industry/kline?name=test" && echo "OK" || echo "FAIL")
+          if [ "$SECTOR" != "OK" ]; then
+            echo "FAIL: /api/sector/industry/kline not responding"
+            kill $SIDECAR_PID 2>/dev/null || true
+            exit 1
+          fi
+          echo "PASS: sector kline route"
+          ETF=$(curl -sf "http://127.0.0.1:18911/api/etf/spot" && echo "OK" || echo "FAIL")
+          if [ "$ETF" != "OK" ]; then
+            echo "FAIL: /api/etf/spot not responding"
+            kill $SIDECAR_PID 2>/dev/null || true
+            exit 1
+          fi
+          echo "PASS: etf spot route"
+          kill $SIDECAR_PID 2>/dev/null || true
+          echo "All endpoint checks passed"
 
       - name: install pnpm
         uses: pnpm/action-setup@v4

@@ -75,6 +75,9 @@ interface AgentPlanStep {
     | 'load_market_indices'
     | 'load_advance_decline'
     | 'load_finance_report'
+    | 'load_etf_kline'
+    | 'load_sector_kline'
+    | 'load_sector_fund_flow'
     | 'web_search'
   reason: string
   query?: string
@@ -209,6 +212,12 @@ function describeToolFocus(tool: AgentPlanStep['tool'], strategy?: Strategy | nu
       return '相关概念题材热度、情绪扩散、活跃龙头'
     case 'load_finance_report':
       return '近4期三大财报（资产负债表、利润表、现金流量表）核心指标与趋势'
+    case 'load_etf_kline':
+      return 'ETF K线结构、均线、MACD、成交量，用于判断板块或指数趋势'
+    case 'load_sector_kline':
+      return '行业或概念板块K线、均线、量能，用于判断板块整体趋势'
+    case 'load_sector_fund_flow':
+      return '行业或概念板块资金流排名，判断板块资金偏好与强弱'
     case 'web_search':
       return strategy ? `${strategy.name} 相关外部舆情、政策和市场讨论` : '外部舆情、政策导向、公司战略与市场讨论'
   }
@@ -293,6 +302,9 @@ const TOOL_DATA_SOURCES: Record<string, string[]> = {
   load_sector_rank: ['eastmoney'],
   load_concept_rank: ['eastmoney'],
   load_finance_report: ['akshare'],
+  load_etf_kline: ['akshare'],
+  load_sector_kline: ['akshare'],
+  load_sector_fund_flow: ['akshare'],
 }
 
 function buildToolSourceLabel(toolName: string, dataSources: DataSource[]): string {
@@ -305,7 +317,7 @@ function buildToolSourceLabel(toolName: string, dataSources: DataSource[]): stri
 
 function buildToolCatalog(searchProviders: SearchProvider[], dataSources: DataSource[] = []): AgentToolDescriptor[] {
   const tools: AgentToolDescriptor[] = [
-    { tool: 'search_stock', module: 'stock.search', description: `根据用户问题中的股票名称或代码搜索匹配的股票，返回代码和名称。仅在后续工具必须依赖股票代码时再使用。${buildToolSourceLabel('search_stock', dataSources)}` },
+    { tool: 'search_stock', module: 'stock.search', description: `根据关键词搜索股票和板块。返回匹配的股票列表和板块列表。如果匹配到板块（用户问板块/行业/概念），用返回的板块名称调用 load_sector_kline 和 load_sector_fund_flow；如果匹配到个股，用返回的股票代码调用 load_quote 和 load_kline。可多次调用以搜索不同关键词。${buildToolSourceLabel('search_stock', dataSources)}` },
     { tool: 'load_quote', module: 'stock.quote', description: `读取实时价格、涨跌、估值、五档盘口和涨跌停位置。${buildToolSourceLabel('load_quote', dataSources)}` },
     { tool: 'load_market_indices', module: 'market.indices', description: `读取上证、深证、创业板等大盘指数与市场风格。${buildToolSourceLabel('load_market_indices', dataSources)}` },
     { tool: 'load_advance_decline', module: 'market.advance_decline', description: `读取涨跌家数、总量能，判断市场整体情绪和赚钱效应。${buildToolSourceLabel('load_advance_decline', dataSources)}` },
@@ -317,6 +329,9 @@ function buildToolCatalog(searchProviders: SearchProvider[], dataSources: DataSo
     { tool: 'load_sector_rank', module: 'sector.industry', description: `读取行业热度、行业涨跌幅和龙头表现。${buildToolSourceLabel('load_sector_rank', dataSources)}` },
     { tool: 'load_concept_rank', module: 'sector.concept', description: `读取概念题材热度、情绪扩散和活跃龙头。${buildToolSourceLabel('load_concept_rank', dataSources)}` },
     { tool: 'load_finance_report', module: 'stock.finance', description: `读取近4期资产负债表、利润表、现金流量表，分析营收增速、利润率、现金流健康度、负债率等基本面趋势。${buildToolSourceLabel('load_finance_report', dataSources)}` },
+    { tool: 'load_etf_kline', module: 'etf.kline', description: `读取ETF（如沪深300ETF、科创50ETF等）的K线、均线、MACD和成交量，用于判断板块或指数整体趋势。需在 query 字段提供ETF代码。${buildToolSourceLabel('load_etf_kline', dataSources)}` },
+    { tool: 'load_sector_kline', module: 'sector.kline', description: `读取行业或概念板块K线、均线和量能，用于判断板块整体走势。需在 query 字段提供板块名称（如"小金属""人工智能"）。${buildToolSourceLabel('load_sector_kline', dataSources)}` },
+    { tool: 'load_sector_fund_flow', module: 'sector.fund_flow', description: `读取行业或概念板块资金流排名，判断板块资金偏好与强弱。可在 query 字段指定类型：行业资金流/概念资金流。${buildToolSourceLabel('load_sector_fund_flow', dataSources)}` },
   ]
 
   tools.push({
@@ -379,6 +394,12 @@ function buildToolInputSummary(step: AgentPlanStep, stockInfo: DiagnosisStockInf
       return `读取 ${stockInfo.name} 相关概念题材与题材热度榜，作为情绪扩散线索，后续仍需自行判断持续性。`
     case 'load_finance_report':
       return `读取 ${stockInfo.name} 近4期资产负债表、利润表和现金流量表，评估基本面趋势。`
+    case 'load_etf_kline':
+      return `读取ETF ${step.query || '关联ETF'} 的 ${period} K线，关注趋势、均线和量能。`
+    case 'load_sector_kline':
+      return `读取板块「${step.query || '相关板块'}」的K线走势，判断板块整体趋势。`
+    case 'load_sector_fund_flow':
+      return `读取${step.query === '概念资金流' ? '概念' : '行业'}板块资金流排名，判断资金偏好。`
     case 'web_search':
       return `检索方向：${step.query || pickSearchQuery(strategy)}。${step.providers?.length ? ` 搜索源：${step.providers.join('、')}。` : ''}`
   }
@@ -399,6 +420,9 @@ function buildToolResultSummary(
   advanceDecline: { advance: number; decline: number; flat: number; total: number; totalAmount: number } | null,
   searchEvidence: SearchResultItem[],
   financeReport: any,
+  etfKline?: KlineData[],
+  sectorKline?: any[],
+  sectorFundFlow?: any[],
 ) {
   switch (step.tool) {
     case 'load_quote':
@@ -436,6 +460,12 @@ function buildToolResultSummary(
         return `近${financeReport.incomeStatement.length}期财报：最新营收 ${(latest.totalRevenue / 1e8).toFixed(2)}亿，同比增速 ${revenueGrowth}%，净利润 ${(latest.netProfit / 1e8).toFixed(2)}亿`
       }
       return '财报数据暂无'
+    case 'load_etf_kline':
+      return `读取 ${(etfKline || []).length} 根ETF K线，最近收盘 ${(etfKline || [])[((etfKline || []).length - 1)]?.close?.toFixed(2) || '--'}`
+    case 'load_sector_kline':
+      return `读取 ${(sectorKline || []).length} 根板块K线，最近收盘 ${(sectorKline || [])[((sectorKline || []).length - 1)]?.close?.toFixed(2) || '--'}`
+    case 'load_sector_fund_flow':
+      return `读取 ${(sectorFundFlow || []).length} 个板块资金流，前排：${(sectorFundFlow || []).slice(0, 3).map((item: any) => item.name).join('、') || '暂无'}`
   }
 }
 
@@ -652,6 +682,7 @@ async function runWebSearch(
   post: ReturnType<typeof useSidecar>['post'],
   searchProviders: SearchProvider[],
   query: string,
+  signal?: AbortSignal,
 ) {
   const payload = await post<{ data: SearchResultItem[] }>('/api/news/search', {
     query,
@@ -665,7 +696,7 @@ async function runWebSearch(
       enabled: provider.enabled,
       proxyId: provider.proxyId || '',
     })),
-  })
+  }, signal)
   return payload.data || []
 }
 
@@ -712,7 +743,7 @@ export async function runDiagnosisAgent(options: {
   const period = options.period || 'daily'
   const adjust = options.adjust || 'qfq'
   const maxSteps = normalizeAgentMaxSteps(options.maxSteps, { min: 3, fallback: 12 })
-  const planningTimeoutMs = 240000
+  const planningTimeoutMs = 1800000
   let normalizedCode = options.code ? normalizeSecurityCode(options.code) : ''
 
   let stockInfo: DiagnosisStockInfo = { code: '', name: '', price: 0, open: 0, high: 0, low: 0, preClose: 0, change: 0, changePercent: 0, volume: 0, amount: 0, turnover: 0, date: '', time: '', bids: [], asks: [] }
@@ -733,6 +764,9 @@ export async function runDiagnosisAgent(options: {
   let marketIndices: Array<{ code: string; name: string; price: number; changePercent: number }> = []
   let advanceDecline: MarketBreadthSnapshot | null = null
   let searchEvidence: SearchResultItem[] = []
+  let etfKline: KlineData[] = []
+  let sectorKline: any[] = []
+  let sectorFundFlow: any[] = []
 
   function buildLookupKeyword() {
     return `${options.resolvedName || options.matchedKeyword || questionFocus || options.question || normalizedCode || ''}`.trim()
@@ -764,7 +798,7 @@ export async function runDiagnosisAgent(options: {
       throw new Error('缺少股票代码或名称，无法定位个股')
     }
     const searchResp = await withAbort(
-      get<{ data: Array<{ code: string; name: string }> }>(`/api/market/search?keyword=${encodeURIComponent(keyword)}&limit=5&lite=1`),
+      get<{ data: Array<{ code: string; name: string }> }>(`/api/market/search?keyword=${encodeURIComponent(keyword)}&limit=5&lite=1`, options.abortSignal),
       options.abortSignal,
     )
     const candidates = searchResp.data || []
@@ -783,7 +817,7 @@ export async function runDiagnosisAgent(options: {
       throw new Error('缺少股票代码，无法加载实时行情')
     }
     const quoteRes = await withAbort(
-      get<{ info: DiagnosisStockInfo; finance: DiagnosisFinanceInfo }>(`/api/market/stock/${code}/info`),
+      get<{ info: DiagnosisStockInfo; finance: DiagnosisFinanceInfo }>(`/api/market/stock/${code}/info`, options.abortSignal),
       options.abortSignal,
     )
     stockInfo = { ...quoteRes.info, code: normalizeSecurityCode(quoteRes.info.code || code) }
@@ -943,25 +977,26 @@ export async function runDiagnosisAgent(options: {
         }
       }
       const searchResp = await withAbort(
-        get<{ data: Array<{ code: string; name: string }> }>(`/api/market/search?keyword=${encodeURIComponent(keyword)}&limit=5&lite=1${sourceParam}`),
+        get<{ data: Array<{ code: string; name: string }>; sectors?: Array<{ code: string; name: string; type: string; changePercent: number; companyCount: number; leadingStock: string }> }>(`/api/market/search?keyword=${encodeURIComponent(keyword)}&limit=5&lite=1&include_sectors=1${sourceParam}`, options.abortSignal),
         options.abortSignal,
       )
       const candidates = searchResp.data || []
-      if (candidates.length) {
-        normalizedCode = normalizeSecurityCode(candidates[0].code)
-        options.resolvedName = candidates[0].name
-        await ensureQuoteLoaded(normalizedCode)
-      }
+      const sectorMatches = searchResp.sectors || []
       emitPartial()
+      const parts: string[] = []
+      if (candidates.length) {
+        parts.push(`股票候选: ${candidates.map((c) => `${c.name}(${c.code})`).join('、')}`)
+      }
+      if (sectorMatches.length) {
+        parts.push(`板块候选: ${sectorMatches.map((s) => `${s.name}[${s.type}]`).join('、')}`)
+      }
       return {
         observation: {
           keyword,
-          selected: normalizedCode ? { code: normalizedCode, name: stockInfo.name || options.resolvedName || normalizedCode } : null,
           candidates,
+          sector_matches: sectorMatches,
         },
-        summary: candidates.length
-          ? `已识别 ${candidates[0].name}（${normalizeSecurityCode(candidates[0].code)}）`
-          : '未检索到匹配股票',
+        summary: parts.length ? parts.join('；') : '未检索到匹配结果',
       }
     }
 
@@ -986,7 +1021,7 @@ export async function runDiagnosisAgent(options: {
 
     if (step.tool === 'load_market_indices') {
       const response = await withAbort(
-        get<{ data: Array<any> }>(`/api/market/indices?market=${marketQuery}${sourceParam}`),
+        get<{ data: Array<any> }>(`/api/market/indices?market=${marketQuery}${sourceParam}`, options.abortSignal),
         options.abortSignal,
       )
       marketIndices = response.data || []
@@ -1004,7 +1039,7 @@ export async function runDiagnosisAgent(options: {
           summary: '当前市场不适用全市场涨跌家数',
         }
       }
-      const response = await withAbort(get<{ data: any }>('/api/market/advance-decline'), options.abortSignal)
+      const response = await withAbort(get<{ data: any }>('/api/market/advance-decline', options.abortSignal), options.abortSignal)
       advanceDecline = response.data || null
       emitPartial()
       return {
@@ -1016,7 +1051,7 @@ export async function runDiagnosisAgent(options: {
     if (step.tool === 'load_kline') {
       await resolveCodeIfNeeded()
       const response = await withAbort(
-        get<{ data: KlineData[] }>(`/api/kline/${normalizedCode}?period=${period}&adjust=${adjust}${sourceParam}`),
+        get<{ data: KlineData[] }>(`/api/kline/${normalizedCode}?period=${period}&adjust=${adjust}${sourceParam}`, options.abortSignal),
         options.abortSignal,
       )
       klineData = response.data || []
@@ -1032,7 +1067,7 @@ export async function runDiagnosisAgent(options: {
         const lookupCode = buildNewsLookupCode()
         const lookupName = buildDisplayName()
         const response = await withAbort(
-          get<{ data: DiagnosisNewsItem[] }>(`/api/news/stock/${encodeURIComponent(lookupCode)}?limit=16&name=${encodeURIComponent(lookupName)}${sourceParam}`),
+          get<{ data: DiagnosisNewsItem[] }>(`/api/news/stock/${encodeURIComponent(lookupCode)}?limit=16&name=${encodeURIComponent(lookupName)}${sourceParam}`, options.abortSignal),
           options.abortSignal,
         )
         stockNews = response.data || []
@@ -1054,7 +1089,7 @@ export async function runDiagnosisAgent(options: {
         const lookupCode = buildNewsLookupCode()
         const lookupName = buildDisplayName()
         const response = await withAbort(
-          get<{ data: DiagnosisNewsItem[] }>(`/api/news/context/${encodeURIComponent(lookupCode)}?limit=18&name=${encodeURIComponent(lookupName)}${sourceParam}`),
+          get<{ data: DiagnosisNewsItem[] }>(`/api/news/context/${encodeURIComponent(lookupCode)}?limit=18&name=${encodeURIComponent(lookupName)}${sourceParam}`, options.abortSignal),
           options.abortSignal,
         )
         macroNews = response.data || []
@@ -1073,7 +1108,7 @@ export async function runDiagnosisAgent(options: {
 
     if (step.tool === 'load_financial_news') {
       const response = await withAbort(
-        get<{ data: DiagnosisNewsItem[] }>(`/api/news/financial?limit=60${sourceParam}`),
+        get<{ data: DiagnosisNewsItem[] }>(`/api/news/financial?limit=60${sourceParam}`, options.abortSignal),
         options.abortSignal,
       )
       financialNews = response.data || []
@@ -1088,7 +1123,7 @@ export async function runDiagnosisAgent(options: {
       await resolveCodeIfNeeded()
       try {
         const stockResponse = await withAbort(
-          get<{ data: Array<any> }>(`/api/fundflow/stock/${normalizedCode}?days=10${sourceParam}`),
+          get<{ data: Array<any> }>(`/api/fundflow/stock/${normalizedCode}?days=10${sourceParam}`, options.abortSignal),
           options.abortSignal,
         )
         const recentFlows = stockResponse.data || []
@@ -1107,7 +1142,7 @@ export async function runDiagnosisAgent(options: {
           throw error
         }
         const rankResponse = await withAbort(
-          get<{ data: Array<any> }>(`/api/fundflow/rank?limit=80${sourceParam}`),
+          get<{ data: Array<any> }>(`/api/fundflow/rank?limit=80${sourceParam}`, options.abortSignal),
           options.abortSignal,
         )
         fundFlow = (rankResponse.data || []).find((item) => normalizeSecurityCode(item.code || '') === normalizedCode) || null
@@ -1126,7 +1161,7 @@ export async function runDiagnosisAgent(options: {
           summary: '当前市场不提供行业板块排行',
         }
       }
-      const response = await withAbort(get<{ data: Array<any> }>('/api/sector/industry'), options.abortSignal)
+      const response = await withAbort(get<{ data: Array<any> }>('/api/sector/industry', options.abortSignal), options.abortSignal)
       sectorRank = response.data || []
       emitPartial()
       return {
@@ -1142,7 +1177,7 @@ export async function runDiagnosisAgent(options: {
           summary: '当前市场不提供概念板块排行',
         }
       }
-      const response = await withAbort(get<{ data: Array<any> }>('/api/sector/concept'), options.abortSignal)
+      const response = await withAbort(get<{ data: Array<any> }>('/api/sector/concept', options.abortSignal), options.abortSignal)
       conceptRank = response.data || []
       emitPartial()
       return {
@@ -1154,7 +1189,7 @@ export async function runDiagnosisAgent(options: {
     if (step.tool === 'web_search') {
       if (!availableSearchProviders.length) {
         searchEvidence = await withAbort(
-          runWebSearch(post, [], `${describeMarketScope(marketQuery)} ${buildDisplayName()} ${step.query || pickSearchQuery(selectedStrategy, questionFocus)}`),
+          runWebSearch(post, [], `${describeMarketScope(marketQuery)} ${buildDisplayName()} ${step.query || pickSearchQuery(selectedStrategy, questionFocus)}`, options.abortSignal),
           options.abortSignal,
         )
         emitPartial()
@@ -1173,7 +1208,7 @@ export async function runDiagnosisAgent(options: {
         : availableSearchProviders
       const query = `${describeMarketScope(marketQuery)} ${stockInfo.name || options.resolvedName || normalizedCode} ${normalizedCode} ${step.query || pickSearchQuery(selectedStrategy, questionFocus)}`
       searchEvidence = await withAbort(
-        runWebSearch(post, selectedProviders.length ? selectedProviders : availableSearchProviders, query),
+        runWebSearch(post, selectedProviders.length ? selectedProviders : availableSearchProviders, query, options.abortSignal),
         options.abortSignal,
       )
       emitPartial()
@@ -1191,13 +1226,65 @@ export async function runDiagnosisAgent(options: {
     if (step.tool === 'load_finance_report') {
       await resolveCodeIfNeeded()
       const response = await withAbort(
-        get<{ data: any }>(`/api/finance/summary/${normalizedCode}`),
+        get<{ data: any }>(`/api/finance/summary/${normalizedCode}`, options.abortSignal),
         options.abortSignal,
       )
       financeReport = response.data || null
       emitPartial()
       return {
         observation: compactFinanceReportData(),
+        summary: buildToolResultSummary(step as AgentPlanStep, stockInfo, finance, klineData, stockNews, macroNews, financialNews, fundFlow, sectorRank, conceptRank, marketIndices, advanceDecline, searchEvidence, financeReport),
+      }
+    }
+
+    if (step.tool === 'load_etf_kline') {
+      const etfCode = step.query?.trim()
+      if (!etfCode) {
+        return { observation: null, summary: '未指定ETF代码，跳过ETF K线加载' }
+      }
+      const response = await withAbort(
+        get<{ data: KlineData[] }>(`/api/etf/kline/${etfCode}?period=${period}&adjust=${adjust}`, options.abortSignal),
+        options.abortSignal,
+      )
+      etfKline = response.data || []
+      return {
+        observation: etfKline.slice(-60),
+        summary: buildToolResultSummary(step as AgentPlanStep, stockInfo, finance, klineData, stockNews, macroNews, financialNews, fundFlow, sectorRank, conceptRank, marketIndices, advanceDecline, searchEvidence, financeReport),
+      }
+    }
+
+    if (step.tool === 'load_sector_kline') {
+      if (marketQuery !== 'a') {
+        return { observation: { skipped: true, market: marketQuery }, summary: '当前市场不提供板块K线' }
+      }
+      const sectorName = step.query?.trim()
+      if (!sectorName) {
+        return { observation: null, summary: '未指定板块名称，跳过板块K线加载' }
+      }
+      const sectorTypeParam = step.source === 'concept' ? 'concept' : 'industry'
+      const response = await withAbort(
+        get<{ data: any[] }>(`/api/sector/${sectorTypeParam}/kline?name=${encodeURIComponent(sectorName)}&period=${period}&adjust=${adjust}`, options.abortSignal),
+        options.abortSignal,
+      )
+      sectorKline = response.data || []
+      return {
+        observation: sectorKline.slice(-60),
+        summary: buildToolResultSummary(step as AgentPlanStep, stockInfo, finance, klineData, stockNews, macroNews, financialNews, fundFlow, sectorRank, conceptRank, marketIndices, advanceDecline, searchEvidence, financeReport),
+      }
+    }
+
+    if (step.tool === 'load_sector_fund_flow') {
+      if (marketQuery !== 'a') {
+        return { observation: { skipped: true, market: marketQuery }, summary: '当前市场不提供板块资金流' }
+      }
+      const sectorType = step.query === '概念资金流' ? '概念资金流' : '行业资金流'
+      const response = await withAbort(
+        get<{ data: Array<any> }>(`/api/sector/fund-flow?indicator=今日&sectorType=${encodeURIComponent(sectorType)}`, options.abortSignal),
+        options.abortSignal,
+      )
+      sectorFundFlow = response.data || []
+      return {
+        observation: sectorFundFlow.slice(0, 10),
         summary: buildToolResultSummary(step as AgentPlanStep, stockInfo, finance, klineData, stockNews, macroNews, financialNews, fundFlow, sectorRank, conceptRank, marketIndices, advanceDecline, searchEvidence, financeReport),
       }
     }
@@ -1223,17 +1310,6 @@ export async function runDiagnosisAgent(options: {
       normalizedCode = candidateCode
       options.resolvedName = topCandidate.name
       await ensureQuoteLoaded(normalizedCode)
-    }
-  } else if (!normalizedCode && (options.resolvedName || options.matchedKeyword)) {
-    try {
-      await resolveCodeIfNeeded()
-      if (normalizedCode) {
-        await ensureQuoteLoaded(normalizedCode)
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw error
-      }
     }
   }
 
@@ -1309,6 +1385,24 @@ export async function runDiagnosisAgent(options: {
       description: '加载最近四期财报摘要，补充营收、利润、现金流与资产负债结构。',
       inputSchema: { source: 'string，可选，指定数据源' },
       execute: (input) => runDiagnosisTool({ tool: 'load_finance_report', source: `${input.source || ''}` || undefined }),
+    },
+    {
+      name: 'load_etf_kline',
+      description: '加载ETF K线、均线和量能，用于判断板块或指数整体趋势。仅A股适用。',
+      inputSchema: { query: 'string，ETF代码（如510300、159915）', source: 'string，可选，concept则查概念板块K线' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_etf_kline', query: `${input.query || ''}`, source: `${input.source || ''}` || undefined }),
+    },
+    {
+      name: 'load_sector_kline',
+      description: '加载行业或概念板块K线，用于判断板块整体走势。仅A股适用。',
+      inputSchema: { query: 'string，板块名称（如"小金属""人工智能"）', source: 'string，可选，concept则查概念板块K线' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_sector_kline', query: `${input.query || ''}`, source: `${input.source || ''}` || undefined }),
+    },
+    {
+      name: 'load_sector_fund_flow',
+      description: '加载行业或概念板块资金流排名，判断板块资金偏好。仅A股适用。',
+      inputSchema: { query: 'string，可选，"概念资金流"查概念板块，默认行业板块' },
+      execute: (input) => runDiagnosisTool({ tool: 'load_sector_fund_flow', query: `${input.query || ''}` || undefined }),
     },
     {
       name: 'web_search',
@@ -1435,7 +1529,7 @@ export async function runDiagnosisAgent(options: {
       }, null, 2),
       nextStepPrompt: '请判断当前已有数据是否足以完整回答用户问题；注意行业/概念排行和新闻摘要只能作为线索，不能直接当结论。如果已经拿到实时行情、K线、资金流、个股新闻，以及宏观消息或市场指数中的任一类市场环境证据，就应优先基于这些证据自行综合判断并直接 finish 返回最终诊断 JSON。最终 JSON 必须包含明确操作、具体价格区间、止损位/退出条件和理由；若证据冲突要降低置信度并说明等待确认的关键价位；如果这些字段还不完整，继续只选择一个最必要的工具。注意同一个失败超过3次的工具不能再调用。',
       toolMaxTokens: 2400,
-      toolTimeoutMs: 210000,
+      toolTimeoutMs: 300000,
     }), planningTimeoutMs, '统一智能体规划'), options.abortSignal)
     trace.push(...reactResult.trace)
     agentDiagnosis = reactResult.finalAnswer || null
@@ -1525,7 +1619,7 @@ recommendation, prediction, confidence, riskLevel, summary, klineAnalysis, suppo
           temperature: 0.15,
           maxTokens: Math.min(Math.max(options.provider.maxTokens || 1100, 900), 1400),
           signal: options.abortSignal,
-          timeoutMs: 210000,
+          timeoutMs: 300000,
         },
       ), options.abortSignal)
       agentDiagnosis = parseJsonBlock<AiDiagnosis>(synthesisRaw)

@@ -498,7 +498,7 @@ export async function runRecommendationAgent(options: {
     }, null, 2),
     nextStepPrompt: '请判断当前数据是否已足够完成荐股候选列表；注意行业/概念排行、板块成分股、涨幅榜和新闻热度都只是线索，不能直接等同于主线或推荐结果。只有当你已经基于市场环境与 diagnose_stock 的证据确认某只股票在当前周期、风险偏好和盈亏比下都成立时，才能写入最终结果；如果还不够，继续只调用一个最必要的工具；如果已经足够，直接 finish 并返回最终 JSON。注意候选股票必须先诊股后才能写入最终结果，且每只候选都要写出明确的操作、价位区间和退出条件。',
     toolMaxTokens: 2200,
-    toolTimeoutMs: 180000,
+    toolTimeoutMs: 300000,
   })
 
   const finalAnswer = reactResult.finalAnswer

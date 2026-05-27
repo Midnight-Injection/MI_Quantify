@@ -454,7 +454,7 @@ export async function runInvestmentAgent(options: {
     }, null, 2),
     nextStepPrompt: '请判断当前数据是否已经足以完成投资方案；注意工具里的货架顺序、热销标签和阶段收益都只能作为线索，不能直接等同于适配性结论。只有当你已经核对收益来源、风险等级、期限匹配、流动性与退出条件后，才能 finish 并返回最终 JSON；如果还不够，继续只调用一个最必要的工具。最终方案必须写清楚收益区间、适合动作、退出/赎回条件和风险来源，注意同一工具失败超过 3 次后不能再调用。',
     toolMaxTokens: 2200,
-    toolTimeoutMs: 180000,
+    toolTimeoutMs: 300000,
   })
 
   const finalAnswer = reactResult.finalAnswer

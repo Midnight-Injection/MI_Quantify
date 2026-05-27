@@ -330,7 +330,11 @@ export default defineComponent({
       if (currentAssistantMessageId.value === assistantMessageId) currentAssistantMessageId.value = null
     }
 
+    const stoppedMessageIds = new Set<string>()
+
     function markAssistantStopped(messageId: string, content = '已停止当前 AI 任务。') {
+      if (stoppedMessageIds.has(messageId)) return
+      stoppedMessageIds.add(messageId)
       patchMessage(messageId, (message) => {
         if ((message.diagnosis || message.recommendationResult || message.investmentResult)
           && !message.streaming
@@ -793,6 +797,7 @@ export default defineComponent({
     async function sendMessage(override?: string | Event) {
       const question = (typeof override === 'string' ? override : input.value).trim()
       if (!question || sending.value) return
+      stoppedMessageIds.clear()
       if (!settingsStore.isAiProviderConfigured(settingsStore.activeProvider)) {
         messages.value.push(
           { id: createId('user'), role: 'user', content: question },
@@ -1128,6 +1133,7 @@ export default defineComponent({
     async function resetConversationPanel() {
       activeConversationId.value = null
       await setAppStoreValue(ACTIVE_CONV_KEY, null)
+      stoppedMessageIds.clear()
       openThinkingIds.value = new Set<string>()
       openToolIds.value = new Set<string>()
       openToolStepIds.value = new Set<string>()

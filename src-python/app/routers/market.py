@@ -10,6 +10,7 @@ from app.services.market_service import (
 )
 from app.services.stock_service import get_stock_info, get_stock_finance
 from app.services.news_service import get_stock_news as get_stock_news_feed
+from app.services.sector_service import search_sectors
 
 router = APIRouter()
 
@@ -49,9 +50,13 @@ async def search(
     keyword: str = Query(default=""),
     limit: int = Query(default=8),
     lite: bool = Query(default=False),
+    include_sectors: bool = Query(default=False),
 ):
     data = search_stocks(keyword, limit=limit, with_quotes=not lite)
-    return {"data": data}
+    result: dict = {"data": data}
+    if include_sectors and keyword:
+        result["sectors"] = search_sectors(keyword, limit=5)
+    return result
 
 
 @router.get("/stock/{code}/info")

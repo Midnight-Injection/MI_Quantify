@@ -117,21 +117,32 @@ async function status() {
   }
 }
 
-async function ensureRunning() {
+async function ensureRunning(signal?: AbortSignal) {
+  if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError')
   const isRunning = await status()
   if (!isRunning) {
     await start()
-    await waitForHealth()
+    await waitForHealth(signal)
   }
 }
 
-async function waitForHealth(maxRetries = 10, interval = 1000) {
+async function waitForHealth(signal?: AbortSignal, maxRetries = 10, interval = 1000) {
   for (let i = 0; i < maxRetries; i++) {
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError')
     if (await checkHealth()) {
       running.value = true
       return true
     }
-    await new Promise((r) => setTimeout(r, interval))
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, interval)
+      if (signal) {
+        const onAbort = () => {
+          clearTimeout(timer)
+          reject(signal.reason || new DOMException('Aborted', 'AbortError'))
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+      }
+    })
   }
   throw new Error('sidecar health check failed: 请检查本地 Python sidecar 是否已启动、src-python 依赖是否安装完成，以及系统代理 / 网络是否能访问新浪和东方财富接口')
 }
@@ -145,13 +156,23 @@ async function checkHealth() {
   }
 }
 
-async function request(input: string, init?: RequestInit) {
+async function request(input: string, init?: RequestInit, signal?: AbortSignal) {
   const controller = new AbortController()
   let timedOut = false
   const timeoutId = setTimeout(() => {
     timedOut = true
     controller.abort()
   }, requestTimeoutMs)
+
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(timeoutId)
+      throw signal.reason || new DOMException('Aborted', 'AbortError')
+    }
+    const onExternalAbort = () => controller.abort()
+    signal.addEventListener('abort', onExternalAbort, { once: true })
+  }
+
   try {
     try {
       return await fetch(input, {
@@ -164,6 +185,10 @@ async function request(input: string, init?: RequestInit) {
         timeoutError.name = 'TimeoutError'
         throw timeoutError
       }
+      if (signal?.aborted && !timedOut) {
+        const abortError = new DOMException('Aborted', 'AbortError')
+        throw abortError
+      }
       throw error
     }
   } finally {
@@ -173,13 +198,14 @@ async function request(input: string, init?: RequestInit) {
 
 function shouldRetrySidecarRequest(error: unknown) {
   if (!(error instanceof Error)) return false
+  if (error instanceof DOMException && error.name === 'AbortError') return false
   return error.name === 'AbortError'
     || error.name === 'TimeoutError'
     || /Failed to fetch|NetworkError|Load failed|fetch/i.test(error.message)
 }
 
-async function get<T>(path: string): Promise<T> {
-  await ensureRunning()
+async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  await ensureRunning(signal)
   const key = `${baseUrl}${path}`
   if (inflightGetRequests.has(key)) {
     return inflightGetRequests.get(key) as Promise<T>
@@ -187,15 +213,15 @@ async function get<T>(path: string): Promise<T> {
 
   const promise = (async () => {
     try {
-      const res = await request(key)
+      const res = await request(key, undefined, signal)
       if (!res.ok) throw new Error(`sidecar request failed: ${res.status}`)
       return res.json()
     } catch (error) {
       if (!shouldRetrySidecarRequest(error)) {
         throw error
       }
-      await waitForHealth()
-      const retryRes = await request(key)
+      await waitForHealth(signal)
+      const retryRes = await request(key, undefined, signal)
       if (!retryRes.ok) throw new Error(`sidecar request failed: ${retryRes.status}`)
       return retryRes.json()
     }
@@ -210,15 +236,15 @@ async function get<T>(path: string): Promise<T> {
   }
 }
 
-async function post<T>(path: string, body?: unknown): Promise<T> {
-  await ensureRunning()
+async function post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  await ensureRunning(signal)
   const doPost = () => request(`${baseUrl}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  }, signal)
 
   let res: Response
   try {
@@ -227,7 +253,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     if (!shouldRetrySidecarRequest(error)) {
       throw error
     }
-    await waitForHealth()
+    await waitForHealth(signal)
     res = await doPost()
   }
 

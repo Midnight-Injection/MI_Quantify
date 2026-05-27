@@ -581,7 +581,7 @@ export async function runMarketDigestAgent(options: {
     }, null, 2),
     nextStepPrompt: '请判断当前证据是否足以给出精确价位、仓位、做T策略和时间窗口。建议至少调用：load_market_overview（大盘状态）→ load_hot_stocks（候选标的）→ load_fundflow（资金方向）→ load_financial_news（消息面）。对重点个股可用 load_stock_kline 确认技术位。所有推荐股票的价格必须来自工具返回的真实数据。每只股票的 entryPrice/addPrice/stopLoss/exitPrice 必须是精确单值（禁止区间）。如果证据不足就继续调用工具，如果已充分则 finish 返回最终 JSON。同一工具失败超过 3 次后不能再调用。',
     toolMaxTokens: 2800,
-    toolTimeoutMs: 180000,
+    toolTimeoutMs: 300000,
   })
 
   if (!reactResult.finalAnswer) {
