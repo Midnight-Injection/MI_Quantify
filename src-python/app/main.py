@@ -17,7 +17,7 @@ for k in [
 os.environ["no_proxy"] = "*"
 os.environ["NO_PROXY"] = "*"
 
-app = FastAPI(title="MI Quantify Sidecar", version="0.1.1")
+app = FastAPI(title="MI Quantify Sidecar", version="0.2.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,7 +40,7 @@ app.include_router(etf.router, prefix="/api/etf", tags=["etf"])
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "mi-quantify-sidecar"}
+    return {"status": "ok", "service": "mi-quantify-sidecar", "version": "0.2.1"}
 
 
 @app.post("/api/proxy/register")

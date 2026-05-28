@@ -41,6 +41,7 @@ pub fn run() {
             commands::sidecar::sidecar_start,
             commands::sidecar::sidecar_stop,
             commands::sidecar::sidecar_status,
+            commands::sidecar::sidecar_kill_port,
             commands::sidecar::set_proxy_env,
             commands::scheduler::scheduler_list,
             commands::scheduler::scheduler_toggle,

@@ -18,6 +18,17 @@ type TabState<T> = {
   updatedAt: number
 }
 
+/**
+ * 批量响应中除 ai 以外的五面板数据结构
+ */
+type HomeBatchData = {
+  overview: HomeOverviewData
+  fundflow: HomeFundflowData
+  sectors: HomeSectorData
+  stocks: HomeStocksData
+  news: HomeNewsData
+}
+
 const HOME_TAB_PATHS: Record<Exclude<HomeTabKey, 'ai'>, string> = {
   overview: '/api/home/overview',
   fundflow: '/api/home/fundflow',
@@ -90,21 +101,72 @@ export function useHomeWorkbench() {
     }
   }
 
+  const BATCH_TIMEOUT_MS = 12_000
+
   /**
-   * 全量刷新首页工作台
-   * @param nextMarket - 切换后的市场
+   * 降级到分散 5 GET 拉取
    */
-  async function refreshAll(nextMarket = market.value) {
-    loadSeq.value += 1
-    const currentSeq = loadSeq.value
-    market.value = nextMarket
-    await Promise.all([
+  async function fallbackToIndividual(nextMarket: MarketType, _currentSeq: number) {
+    await Promise.allSettled([
       loadStructuredTab('overview', tabs.overview, nextMarket),
       loadStructuredTab('fundflow', tabs.fundflow, nextMarket),
       loadStructuredTab('sector', tabs.sector, nextMarket),
       loadStructuredTab('stocks', tabs.stocks, nextMarket),
       loadStructuredTab('news', tabs.news, nextMarket),
     ])
+  }
+
+  /**
+   * 全量刷新首页工作台
+   *
+   * 使用 batch API 一次取回 5 面板数据，再分发到各 tab。
+   * batch 超时或失败时降级为分散 5 GET。
+   *
+   * @param nextMarket - 切换后的市场
+   */
+  async function refreshAll(nextMarket = market.value) {
+    loadSeq.value += 1
+    const currentSeq = loadSeq.value
+    market.value = nextMarket
+
+    const batchTargets = [
+      tabs.overview,
+      tabs.fundflow,
+      tabs.sector,
+      tabs.stocks,
+      tabs.news,
+    ] as const
+    batchTargets.forEach((t) => { t.loading = true; t.error = '' })
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), BATCH_TIMEOUT_MS)
+
+    try {
+      const res = await get<{ data: HomeBatchData }>(
+        `/api/home/batch?market=${nextMarket}`,
+        controller.signal,
+      )
+      clearTimeout(timer)
+      if (currentSeq !== loadSeq.value || nextMarket !== market.value) return
+      const d = res.data
+      tabs.overview.data = d.overview
+      tabs.fundflow.data = d.fundflow
+      tabs.sector.data = d.sectors
+      tabs.stocks.data = d.stocks
+      tabs.news.data = d.news
+      const now = Date.now()
+      batchTargets.forEach((t) => { t.updatedAt = now; t.loading = false })
+    } catch (error) {
+      clearTimeout(timer)
+      if (currentSeq !== loadSeq.value || nextMarket !== market.value) return
+
+      const msg = error instanceof Error ? error.message : String(error)
+      console.warn('[HomeWorkbench] batch failed, fallback to individual:', msg)
+
+      batchTargets.forEach((t) => { t.loading = false; t.error = '' })
+      await fallbackToIndividual(nextMarket, currentSeq)
+    }
+
     if (currentSeq !== loadSeq.value) return
     await loadAiContext(nextMarket)
   }

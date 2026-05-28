@@ -1,6 +1,9 @@
 import json
 import re
+import time
+import threading
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta
 from urllib.parse import quote
@@ -105,43 +108,91 @@ def get_context_news(code: str, limit: int = 20, stock_name: str = "", preferred
         return get_stock_news(code, limit)
 
 
+_FINANCIAL_NEWS_TIMEOUT = 15.0
+_FINANCIAL_NEWS_EARLY_STOP = 100
+
+
 def get_financial_news(limit: int = 50, preferred_source: Optional[str] = None) -> list[dict]:
+    deadline = time.monotonic() + _FINANCIAL_NEWS_TIMEOUT
     try:
         sources_list = get_sources_for_tool("load_financial_news", preferred_source)
         source_ids = [s.get("id", "") for s in sources_list]
         proxy_map: dict[str, str | None] = {s.get("id", ""): s.get("proxyId") for s in sources_list}
         api_key_map: dict[str, str | None] = {s.get("id", ""): s.get("apiKey") for s in sources_list}
-        merged = []
-        for source_id in source_ids:
-            try:
-                pid = proxy_map.get(source_id)
-                ak = api_key_map.get(source_id)
-                if source_id in ("eastmoney",):
-                    merged.extend(_get_sina_roll_news(max(limit * 2, 120), proxy_id=pid))
-                    for keyword in TOPIC_NEWS_KEYWORDS:
-                        merged.extend(_search_topic_news(keyword, 8, proxy_id=pid))
-                if source_id in ("google-news-rss",):
-                    for keyword in RSS_TOPIC_NEWS_KEYWORDS:
-                        merged.extend(_search_google_news_rss(keyword, 6, proxy_id=pid))
-                remote_fn = FINANCIAL_NEWS_REMOTE_FETCHERS.get(source_id)
-                if remote_fn:
-                    merged.extend(remote_fn(limit=limit, api_key=ak, proxy_id=pid))
-            except Exception as e:
-                print(f"[news] {source_id} financial news failed: {e}")
-        if not source_ids:
-            merged.extend(_get_sina_roll_news(max(limit * 2, 120)))
-            for keyword in TOPIC_NEWS_KEYWORDS:
-                merged.extend(_search_topic_news(keyword, 8))
-            for keyword in RSS_TOPIC_NEWS_KEYWORDS:
-                merged.extend(_search_google_news_rss(keyword, 6))
+        merged: list[dict] = []
 
-        deduped = _dedupe_news_items(merged)
-        today_items = [item for item in deduped if _is_recent_news(item, 2)]
-        source = today_items if len(today_items) >= max(12, limit // 2) else deduped
-        return source[:limit]
+        use_eastmoney = not source_ids or "eastmoney" in source_ids
+        use_google = not source_ids or "google-news-rss" in source_ids
+        em_pid = proxy_map.get("eastmoney")
+        goog_pid = proxy_map.get("google-news-rss")
+
+        if use_eastmoney:
+            try:
+                merged.extend(_get_sina_roll_news(max(limit * 2, 120), proxy_id=em_pid))
+            except Exception as e:
+                print(f"[news] sina roll failed: {e}")
+
+        if time.monotonic() > deadline:
+            return _finalize_news(merged, limit)
+
+        em_keywords = TOPIC_NEWS_KEYWORDS if use_eastmoney else []
+        goog_keywords = RSS_TOPIC_NEWS_KEYWORDS if use_google else []
+
+        if em_keywords or goog_keywords:
+            all_keywords = [(kw, "em") for kw in em_keywords] + [(kw, "goog") for kw in goog_keywords]
+            collected_count = len(merged)
+            max_workers = min(8, len(all_keywords))
+
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = {}
+                for kw, src in all_keywords:
+                    if collected_count >= _FINANCIAL_NEWS_EARLY_STOP:
+                        break
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    if src == "em":
+                        futures[pool.submit(_search_topic_news, kw, 8, em_pid)] = kw
+                    else:
+                        futures[pool.submit(_search_google_news_rss, kw, 6, goog_pid)] = kw
+
+                for future in as_completed(futures, timeout=max(0.1, deadline - time.monotonic())):
+                    try:
+                        items = future.result(timeout=3.0)
+                        merged.extend(items)
+                        collected_count += len(items)
+                        if collected_count >= _FINANCIAL_NEWS_EARLY_STOP:
+                            break
+                    except Exception:
+                        pass
+
+        if time.monotonic() > deadline:
+            return _finalize_news(merged, limit)
+
+        for source_id in source_ids:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            pid = proxy_map.get(source_id)
+            ak = api_key_map.get(source_id)
+            remote_fn = FINANCIAL_NEWS_REMOTE_FETCHERS.get(source_id)
+            if remote_fn:
+                try:
+                    merged.extend(remote_fn(limit=limit, api_key=ak, proxy_id=pid))
+                except Exception as e:
+                    print(f"[news] {source_id} financial news failed: {e}")
+
+        return _finalize_news(merged, limit)
     except Exception as e:
         print(f"[news] error fetching financial news: {e}")
         return []
+
+
+def _finalize_news(merged: list[dict], limit: int) -> list[dict]:
+    deduped = _dedupe_news_items(merged)
+    today_items = [item for item in deduped if _is_recent_news(item, 2)]
+    source = today_items if len(today_items) >= max(12, limit // 2) else deduped
+    return source[:limit]
 
 
 def get_stock_news(code: str, limit: int = 20, stock_name: str = "", preferred_source: Optional[str] = None) -> list[dict]:

@@ -1,11 +1,12 @@
 import { computed, defineComponent, onActivated, onDeactivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { useAiInsights } from '@/composables/useAiInsights'
 import { useAiTaskLogger } from '@/composables/useAiTaskLogger'
 import { useRealtimeTask } from '@/composables/useRealtimeTask'
 import { useMarketStore } from '@/stores/market'
 import { useSettingsStore } from '@/stores/settings'
-import type { AiInsightDigest, HomeMetricCard, NewsItem } from '@/types'
+import type { AiInsightDigest, FundFlow, HomeMetricCard, NewsItem, StockListItem } from '@/types'
 import { formatAmount, formatPercent, formatPrice, formatTurnoverPulse } from '@/utils/format'
 import { getMarketSessionContext } from '@/utils/marketSession'
 import { useHomeWorkbench } from './useHomeWorkbench'
@@ -112,6 +113,44 @@ export default defineComponent({
       return latest.slice(0, 15)
     })
 
+    /**
+     * 热门板块排行（行业板块 TOP 15）
+     */
+    const sectorRankItems = computed(() => sectorData.value?.industry?.slice(0, 15) || [])
+
+    /**
+     * 个股资金流入 TOP 8
+     */
+    const fundflowInflowItems = computed(() => fundflowData.value?.stockFlows?.inflow?.slice(0, 8) || [])
+
+    /**
+     * 个股资金流出 TOP 8
+     */
+    const fundflowOutflowItems = computed(() => fundflowData.value?.stockFlows?.outflow?.slice(0, 8) || [])
+
+    /**
+     * 涨幅榜 TOP 8
+     */
+    const leaderItems = computed(() => stocksData.value?.boards?.leaders?.slice(0, 8) || [])
+
+    /**
+     * 跌幅榜 TOP 8
+     */
+    const loserItems = computed(() => stocksData.value?.boards?.losers?.slice(0, 8) || [])
+
+    /**
+     * 排行榜是否有可用数据
+     */
+    const hasRankingsData = computed(() =>
+      sectorRankItems.value.length > 0
+      || fundflowInflowItems.value.length > 0
+      || leaderItems.value.length > 0,
+    )
+
+    function isFundFlowItem(item: FundFlow | StockListItem): item is FundFlow {
+      return 'mainNetInflow' in item
+    }
+
     async function loadWatchlistQuotes() {
       const codes = marketStore.watchList.map((item) => item.code)
       if (!codes.length) return
@@ -134,6 +173,19 @@ export default defineComponent({
     function navigateToStock(code: string) {
       if (!code) return
       router.push({ name: 'stockDetail', params: { code } })
+    }
+
+    /**
+     * 新闻卡片点击处理：有 url 时打开浏览器，有关联股票时跳转详情
+     */
+    function handleNewsClick(item: NewsItem) {
+      if (item.url) {
+        void openUrl(item.url)
+        return
+      }
+      if (item.relatedStocks?.length) {
+        navigateToStock(item.relatedStocks[0])
+      }
     }
 
     function isTurnoverPulseCard(card: HomeMetricCard) {
@@ -192,7 +244,7 @@ export default defineComponent({
     }, {
       intervalMultiplier: 1,
       immediate: false,
-      minimumMs: 15000,
+      minimumMs: 30000,
       pauseWhenHidden: true,
       market: () => currentMarket.value,
       skipWhenMarketClosed: true,
@@ -219,6 +271,13 @@ export default defineComponent({
       pulseCards,
       visibleIndices,
       newsItems,
+      sectorRankItems,
+      fundflowInflowItems,
+      fundflowOutflowItems,
+      leaderItems,
+      loserItems,
+      hasRankingsData,
+      isFundFlowItem,
       aiDigest,
       aiDigestError,
       aiDigestLoading,
@@ -233,6 +292,7 @@ export default defineComponent({
       isTurnoverPulseCard,
       switchMarket,
       navigateToStock,
+      handleNewsClick,
       requestDigest,
       cancelHomeAiDigest,
     }

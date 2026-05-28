@@ -2,6 +2,7 @@ from fastapi import APIRouter, Query
 
 from app.services.home_service import (
     get_home_ai_context,
+    get_home_batch,
     get_home_fundflow,
     get_home_news,
     get_home_overview,
@@ -40,3 +41,8 @@ async def news(market: str = Query(default="a")):
 @router.get("/ai-context")
 async def ai_context(market: str = Query(default="a")):
     return {"data": get_home_ai_context(market)}
+
+
+@router.get("/batch")
+async def batch(market: str = Query(default="a")):
+    return {"data": get_home_batch(market)}

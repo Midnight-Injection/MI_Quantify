@@ -140,11 +140,128 @@ struct SidecarLaunch {
     current_dir: std::path::PathBuf,
 }
 
+const SIDECAR_PORT: u16 = 18911;
+
+#[tauri::command]
+pub async fn sidecar_kill_port(state: State<'_, SidecarState>) -> Result<Vec<u32>, String> {
+    let managed_pid = state
+        .process
+        .lock()
+        .map_err(|e| e.to_string())?
+        .unwrap_or(0);
+
+    #[cfg(unix)]
+    {
+        let output = StdCommand::new("lsof")
+            .args(["-ti", &format!(":{}", SIDECAR_PORT)])
+            .output()
+            .map_err(|e| format!("lsof failed: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut killed = Vec::new();
+
+        for line in stdout.lines() {
+            if let Ok(pid) = line.trim().parse::<u32>() {
+                if pid == managed_pid {
+                    continue;
+                }
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGTERM);
+                }
+                killed.push(pid);
+            }
+        }
+
+        if !killed.is_empty() {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+
+        Ok(killed)
+    }
+
+    #[cfg(windows)]
+    {
+        let output = StdCommand::new("netstat")
+            .args(["-ano", "-p", "TCP"])
+            .output()
+            .map_err(|e| format!("netstat failed: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let needle = format!(":{}", SIDECAR_PORT);
+        let mut killed = Vec::new();
+
+        for line in stdout.lines() {
+            if !line.contains(&needle) {
+                continue;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if let Some(pid_str) = parts.last() {
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    if pid == managed_pid || pid == 0 {
+                        continue;
+                    }
+                    let _ = StdCommand::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/F"])
+                        .output();
+                    killed.push(pid);
+                }
+            }
+        }
+
+        if !killed.is_empty() {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+
+        Ok(killed)
+    }
+}
+
 fn resolve_sidecar_launch(app: &tauri::AppHandle) -> Result<SidecarLaunch, String> {
     let binary_name = format!(
         "mi-quantify-sidecar{}",
         if cfg!(windows) { ".exe" } else { "" }
     );
+
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest_parent = manifest_dir
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| manifest_dir.clone());
+    let src_python_dir = manifest_parent.join("src-python");
+
+    // Dev mode: prefer Python over bundled binary
+    #[cfg(debug_assertions)]
+    {
+        if src_python_dir.join("run.py").exists() {
+            let python_candidates = if cfg!(windows) {
+                vec![
+                    src_python_dir
+                        .join(".venv")
+                        .join("Scripts")
+                        .join("python.exe"),
+                    std::path::PathBuf::from("python"),
+                ]
+            } else {
+                vec![
+                    src_python_dir.join(".venv").join("bin").join("python"),
+                    std::path::PathBuf::from("python3"),
+                    std::path::PathBuf::from("python"),
+                ]
+            };
+
+            for candidate in python_candidates {
+                if candidate.components().count() > 1 && !candidate.exists() {
+                    continue;
+                }
+                return Ok(SidecarLaunch {
+                    program: candidate,
+                    args: vec!["run.py".into()],
+                    current_dir: src_python_dir.clone(),
+                });
+            }
+        }
+    }
 
     // 1. bundled app: check multiple possible locations where Tauri places externalBin
     let bundled_candidates: Vec<std::path::PathBuf> = if let Ok(resource_dir) =
@@ -176,45 +293,40 @@ fn resolve_sidecar_launch(app: &tauri::AppHandle) -> Result<SidecarLaunch, Strin
         }
     }
 
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let manifest_parent = manifest_dir
-        .parent()
-        .map(std::path::Path::to_path_buf)
-        .unwrap_or_else(|| manifest_dir.clone());
-    let src_python_dir = manifest_parent.join("src-python");
+    // 2. dev mode fallback (non-debug build): prefer running the Python app from src-python
+    #[cfg(not(debug_assertions))]
+    {
+        if src_python_dir.join("run.py").exists() {
+            let python_candidates = if cfg!(windows) {
+                vec![
+                    src_python_dir
+                        .join(".venv")
+                        .join("Scripts")
+                        .join("python.exe"),
+                    std::path::PathBuf::from("python"),
+                ]
+            } else {
+                vec![
+                    src_python_dir.join(".venv").join("bin").join("python"),
+                    std::path::PathBuf::from("python3"),
+                    std::path::PathBuf::from("python"),
+                ]
+            };
 
-    // 2. dev mode: prefer running the Python app from src-python so imports work consistently.
-    if src_python_dir.join("run.py").exists() {
-        let python_candidates = if cfg!(windows) {
-            vec![
-                src_python_dir
-                    .join(".venv")
-                    .join("Scripts")
-                    .join("python.exe"),
-                std::path::PathBuf::from("python"),
-            ]
-        } else {
-            vec![
-                src_python_dir.join(".venv").join("bin").join("python"),
-                std::path::PathBuf::from("python3"),
-                std::path::PathBuf::from("python"),
-            ]
-        };
-
-        for candidate in python_candidates {
-            if candidate.components().count() > 1 && !candidate.exists() {
-                continue;
+            for candidate in python_candidates {
+                if candidate.components().count() > 1 && !candidate.exists() {
+                    continue;
+                }
+                return Ok(SidecarLaunch {
+                    program: candidate,
+                    args: vec!["run.py".into()],
+                    current_dir: src_python_dir.clone(),
+                });
             }
-            return Ok(SidecarLaunch {
-                program: candidate,
-                args: vec!["run.py".into()],
-                current_dir: src_python_dir.clone(),
-            });
         }
     }
 
-    // 3. dev mode fallback: src-tauri/binaries/mi-quantify-sidecar-<rust-target-triple>
+    // 3. fallback: src-tauri/binaries/mi-quantify-sidecar-<rust-target-triple>
     let target_triple = std::env::var("TAURI_ENV_TARGET").unwrap_or_else(|_| {
         let arch = std::env::consts::ARCH;
         let os = std::env::consts::OS;

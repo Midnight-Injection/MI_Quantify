@@ -39,23 +39,32 @@
       </template>
     </div>
 
-    <div v-if="pulseCards.length && currentMarket === 'a'" class="hero-kpi">
-      <div
-        v-for="(card, idx) in pulseCards"
-        :key="card.label"
-        class="kpi-chip"
-        :class="'kpi-chip--' + card.tone"
-        :style="{ '--i': idx }"
-      >
-        <span class="kpi-chip__label">{{ card.label }}</span>
-        <strong class="kpi-chip__value">
-          <template v-if="isTurnoverPulseCard(card)">
-            {{ formatTurnoverPulse(card.value).compact }}
-          </template>
-          <template v-else>{{ card.value }}</template>
-        </strong>
-        <span class="kpi-chip__detail">{{ card.detail }}</span>
-      </div>
+    <div v-if="currentMarket === 'a'" class="hero-kpi">
+      <template v-if="pulseCards.length">
+        <div
+          v-for="(card, idx) in pulseCards"
+          :key="card.label"
+          class="kpi-chip"
+          :class="'kpi-chip--' + card.tone"
+          :style="{ '--i': idx }"
+        >
+          <span class="kpi-chip__label">{{ card.label }}</span>
+          <strong class="kpi-chip__value">
+            <template v-if="isTurnoverPulseCard(card)">
+              {{ formatTurnoverPulse(card.value).compact }}
+            </template>
+            <template v-else>{{ card.value }}</template>
+          </strong>
+          <span class="kpi-chip__detail">{{ card.detail }}</span>
+        </div>
+      </template>
+      <template v-else>
+        <div v-for="i in 4" :key="i" class="kpi-chip kpi-chip--skel">
+          <span class="skel skel--xs skel--w60"></span>
+          <span class="skel skel--lg skel--w80"></span>
+          <span class="skel skel--xs skel--w100"></span>
+        </div>
+      </template>
     </div>
   </header>
 
@@ -72,6 +81,116 @@
       @cancel-digest="cancelHomeAiDigest"
     />
 
+    <div class="home-rankings">
+      <div class="home-rankings__bar">
+        <span class="home-rankings__tag">RANKINGS</span>
+        <span class="home-rankings__title">市场榜单</span>
+      </div>
+      <div v-if="hasRankingsData" class="home-rankings__body">
+        <div class="rank-col">
+          <div class="rank-col__header">
+            <span class="rank-col__title">热门板块</span>
+            <span class="rank-col__sub">行业排行</span>
+          </div>
+          <div class="rank-col__list">
+            <div
+              v-for="(item, idx) in sectorRankItems"
+              :key="item.code"
+              class="rank-row"
+              :class="item.changePercent >= 0 ? 'rank-row--up' : 'rank-row--down'"
+              @click="navigateToStock(item.leadingCode || '')"
+            >
+              <span class="rank-row__idx">{{ idx + 1 }}</span>
+              <span class="rank-row__name">{{ item.name }}</span>
+              <span class="rank-row__pct">{{ item.changePercent >= 0 ? '+' : '' }}{{ formatPercent(item.changePercent) }}%</span>
+            </div>
+          </div>
+        </div>
+        <div class="rank-col">
+          <div class="rank-col__header">
+            <span class="rank-col__title">资金流入流出</span>
+          </div>
+          <div class="rank-col__list">
+            <div class="rank-sub">
+              <div class="rank-sub__label rank-sub__label--in">主力净流入</div>
+              <div
+                v-for="(item, idx) in fundflowInflowItems"
+                :key="'in-' + item.code"
+                class="rank-row rank-row--up"
+                @click="navigateToStock(item.code)"
+              >
+                <span class="rank-row__idx">{{ idx + 1 }}</span>
+                <span class="rank-row__name">{{ item.name }}</span>
+                <span class="rank-row__amount" v-if="isFundFlowItem(item)">+{{ formatAmount(item.mainNetInflow) }}</span>
+              </div>
+            </div>
+            <div class="rank-divider"></div>
+            <div class="rank-sub">
+              <div class="rank-sub__label rank-sub__label--out">主力净流出</div>
+              <div
+                v-for="(item, idx) in fundflowOutflowItems"
+                :key="'out-' + item.code"
+                class="rank-row rank-row--down"
+                @click="navigateToStock(item.code)"
+              >
+                <span class="rank-row__idx">{{ idx + 1 }}</span>
+                <span class="rank-row__name">{{ item.name }}</span>
+                <span class="rank-row__amount" v-if="isFundFlowItem(item)">{{ formatAmount(item.mainNetInflow) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rank-col">
+          <div class="rank-col__header">
+            <span class="rank-col__title">涨跌排行</span>
+          </div>
+          <div class="rank-col__list">
+            <div class="rank-sub">
+              <div class="rank-sub__label rank-sub__label--in">涨幅榜</div>
+              <div
+                v-for="(item, idx) in leaderItems"
+                :key="'up-' + item.code"
+                class="rank-row rank-row--up"
+                @click="navigateToStock(item.code)"
+              >
+                <span class="rank-row__idx">{{ idx + 1 }}</span>
+                <span class="rank-row__name">{{ item.name }}</span>
+                <span class="rank-row__pct">+{{ formatPercent(item.changePercent) }}%</span>
+              </div>
+            </div>
+            <div class="rank-divider"></div>
+            <div class="rank-sub">
+              <div class="rank-sub__label rank-sub__label--out">跌幅榜</div>
+              <div
+                v-for="(item, idx) in loserItems"
+                :key="'dn-' + item.code"
+                class="rank-row rank-row--down"
+                @click="navigateToStock(item.code)"
+              >
+                <span class="rank-row__idx">{{ idx + 1 }}</span>
+                <span class="rank-row__name">{{ item.name }}</span>
+                <span class="rank-row__pct">{{ formatPercent(item.changePercent) }}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="home-rankings__body home-rankings__skel">
+        <div class="rank-col" v-for="col in 3" :key="col">
+          <div class="rank-col__header">
+            <span class="skel skel--sm skel--w60"></span>
+          </div>
+          <div class="rank-col__list">
+            <div class="rank-row" v-for="row in 8" :key="row">
+              <span class="skel skel--xs skel--w40"></span>
+              <span class="skel skel--sm skel--w120"></span>
+              <span class="skel skel--xs skel--w48"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="home-news">
       <div class="home-news__bar">
         <span class="home-news__tag">NEWS</span>
@@ -79,7 +198,7 @@
         <span v-if="newsItems.length" class="home-news__count">{{ newsItems.length }}条</span>
       </div>
       <div v-if="tabs.news.loading && !newsItems.length" class="home-news__skel">
-        <div v-for="i in 6" :key="i" class="skel-news">
+        <div v-for="i in 10" :key="i" class="skel-news">
           <span class="skel skel--sm skel--wfull"></span>
           <span class="skel skel--xs skel--w80"></span>
         </div>
@@ -89,8 +208,8 @@
           v-for="(item, idx) in newsItems"
           :key="item.id"
           class="news-card"
-          :class="{ 'news-card--hot': idx < 3 }"
-          @click="navigateToStock(item.stockCode || '')"
+          :class="{ 'news-card--hot': idx < 3, 'news-card--link': item.url || item.relatedStocks?.length }"
+          @click="handleNewsClick(item)"
         >
           <div class="news-card__rank" v-if="idx < 3">{{ idx + 1 }}</div>
           <div class="news-card__body">

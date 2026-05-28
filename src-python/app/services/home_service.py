@@ -1,3 +1,4 @@
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -16,8 +17,10 @@ from app.services.sector_service import (
 )
 from app.services.stock_service import get_stock_finance, get_stock_info
 
+_logger = logging.getLogger(__name__)
 
-HOME_CACHE_TTL_SECONDS = 20
+
+HOME_CACHE_TTL_SECONDS = 45
 HOME_HEATMAP_LIMIT = 14
 HOME_STOCK_SAMPLE_LIMIT = 36
 HOME_NEWS_LIMIT = 60
@@ -69,6 +72,65 @@ NEWS_TOPIC_RULES = [
 EVENT_KEYWORDS = ["财报", "业绩", "美联储", "CPI", "非农", "国务院", "证监会", "发布会", "路演", "公告"]
 
 _home_cache: dict[str, dict] = {}
+_snapshot_cache: dict[str, tuple[float, dict]] = {}
+_SNAPSHOT_CACHE_TTL = 45.0
+_board_flow_cache: dict[str, tuple[float, list[dict]]] = {}
+_BOARD_FLOW_CACHE_TTL = 45.0
+_shared_cache: dict[str, dict] = {}
+_SHARED_CACHE_TTL = 45.0
+
+
+_BATCH_PREFETCH_TIMEOUT = 10.0
+
+
+def _prefetch_shared(market: str) -> None:
+    now = time.time()
+    entry = _shared_cache.get(market)
+    if entry and (now - entry.get("_ts", 0.0) < _SHARED_CACHE_TTL):
+        return
+
+    stocks: list = []
+    breadth: dict = {}
+    sector_bundle: dict = {"leaders": [], "focus": {}, "groups": []}
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_stocks = pool.submit(get_stock_list, market, 1, HOME_STOCK_SAMPLE_LIMIT)
+        try:
+            result = f_stocks.result(timeout=_BATCH_PREFETCH_TIMEOUT)
+            stocks = result.get("data", [])
+        except Exception as exc:
+            _logger.warning("_prefetch_shared stocks failed: %s", exc)
+
+        if stocks:
+            f_breadth = pool.submit(_build_breadth, market, stocks)
+            f_sectors = pool.submit(_load_sector_universe, market, stocks)
+        else:
+            f_breadth = pool.submit(lambda: {})
+            f_sectors = pool.submit(lambda: {"leaders": [], "focus": {}, "groups": []})
+
+        try:
+            breadth = f_breadth.result(timeout=_BATCH_PREFETCH_TIMEOUT)
+        except Exception as exc:
+            _logger.warning("_prefetch_shared breadth failed: %s", exc)
+
+        try:
+            sector_bundle = f_sectors.result(timeout=_BATCH_PREFETCH_TIMEOUT)
+        except Exception as exc:
+            _logger.warning("_prefetch_shared sector_bundle failed: %s", exc)
+
+    _shared_cache[market] = {
+        "_ts": time.time(),
+        "stocks": stocks,
+        "breadth": breadth,
+        "sector_bundle": sector_bundle,
+    }
+
+
+def _get_shared(market: str, key: str):
+    entry = _shared_cache.get(market)
+    if entry and (time.time() - entry.get("_ts", 0.0) < _SHARED_CACHE_TTL):
+        return entry.get(key)
+    return None
 
 
 def _cache_get(key: str):
@@ -316,24 +378,39 @@ def _build_movers(stocks: list[dict]) -> dict:
 
 
 def _latest_flow_snapshot(code: str) -> dict:
+    now = time.time()
+    cached = _snapshot_cache.get(code)
+    if cached and (now - cached[0] < _SNAPSHOT_CACHE_TTL):
+        return cached[1]
+
     flows = get_stock_fund_flow(code, 5)
     if not flows:
-        return {
+        result = {
             "code": code,
             "mainNetInflow": 0,
             "mainNetInflowPercent": 0,
             "history": [],
         }
+        _snapshot_cache[code] = (now, result)
+        return result
     latest = flows[-1]
-    return {
+    result = {
         "code": code,
         "mainNetInflow": _safe_float(latest.get("mainNetInflow")),
         "mainNetInflowPercent": _safe_float(latest.get("mainNetInflowPercent")),
         "history": flows[-5:],
     }
+    _snapshot_cache[code] = (now, result)
+    return result
 
 
-def _build_board_flow_proxy(sectors: list[dict]) -> list[dict]:
+def _build_board_flow_proxy(sectors: list[dict], tag: str = "") -> list[dict]:
+    cache_key = f"{tag}:{':'.join(item.get('code', '') for item in sectors[:6])}"
+    now = time.time()
+    cached = _board_flow_cache.get(cache_key)
+    if cached and (now - cached[0] < _BOARD_FLOW_CACHE_TTL):
+        return cached[1]
+
     targets = [item for item in sectors[:6] if item.get("code")]
     if not targets:
         return []
@@ -371,6 +448,7 @@ def _build_board_flow_proxy(sectors: list[dict]) -> list[dict]:
         for future in as_completed(futures):
             results.append(future.result())
     results.sort(key=lambda item: item.get("netFlowProxy", 0), reverse=True)
+    _board_flow_cache[cache_key] = (now, results)
     return results
 
 
@@ -414,10 +492,12 @@ def get_home_overview(market: str = "a") -> dict:
     if cached is not None:
         return cached
 
-    indices = get_market_indices(market)
-    stocks = get_stock_list(market, 1, HOME_STOCK_SAMPLE_LIMIT).get("data", [])
-    breadth = _build_breadth(market, stocks)
-    sector_bundle = _load_sector_universe(market, stocks)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f_indices = executor.submit(get_market_indices, market)
+        stocks = _get_shared(market, "stocks") or get_stock_list(market, 1, HOME_STOCK_SAMPLE_LIMIT).get("data", [])
+        indices = f_indices.result()
+    breadth = _get_shared(market, "breadth") or _build_breadth(market, stocks)
+    sector_bundle = _get_shared(market, "sector_bundle") or _load_sector_universe(market, stocks)
     leaders = sector_bundle["leaders"]
     payload = {
         "updatedAt": int(time.time() * 1000),
@@ -437,8 +517,8 @@ def get_home_fundflow(market: str = "a") -> dict:
     if cached is not None:
         return cached
 
-    stocks = get_stock_list(market, 1, HOME_STOCK_SAMPLE_LIMIT).get("data", [])
-    breadth = _build_breadth(market, stocks)
+    stocks = _get_shared(market, "stocks") or get_stock_list(market, 1, HOME_STOCK_SAMPLE_LIMIT).get("data", [])
+    breadth = _get_shared(market, "breadth") or _build_breadth(market, stocks)
     market_summary = [
         {
             "label": "样本成交额",
@@ -455,10 +535,14 @@ def get_home_fundflow(market: str = "a") -> dict:
     ]
 
     if market == "a":
-        flows = get_fund_flow(24)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            f_flows = executor.submit(get_fund_flow, 24)
+            f_industry = executor.submit(get_sector_rank)
+            f_concept = executor.submit(get_concept_rank)
+            flows = f_flows.result()
+            industry = f_industry.result()[:6]
+            concept = f_concept.result()[:6]
         has_live_flow = bool(flows) and any(abs(_safe_float(item.get("mainNetInflow"))) > 0 for item in flows[:10])
-        industry = get_sector_rank()[:6]
-        concept = get_concept_rank()[:6]
         fallback_active = sorted(stocks, key=lambda item: _safe_float(item.get("amount")), reverse=True)
         negative_flows = [item for item in flows if _safe_float(item.get("mainNetInflow")) < 0]
         inflow_rows = flows[:10] if has_live_flow else fallback_active[:10]
@@ -468,6 +552,15 @@ def get_home_fundflow(market: str = "a") -> dict:
             else sorted(stocks, key=lambda item: _safe_float(item.get("changePercent")))[:6]
         )
         focus_code = str(inflow_rows[0].get("code", "")) if inflow_rows else ""
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            f_board_ind = executor.submit(_build_board_flow_proxy, industry, "industry")
+            f_board_con = executor.submit(_build_board_flow_proxy, concept, "concept")
+            f_focus_flow = executor.submit(
+                get_stock_fund_flow, focus_code, 5
+            ) if (has_live_flow and focus_code) else None
+            board_industry = f_board_ind.result()
+            board_concept = f_board_con.result()
+            focus_history = f_focus_flow.result() if f_focus_flow else []
         payload = {
             "updatedAt": int(time.time() * 1000),
             "summaryCards": [
@@ -497,54 +590,102 @@ def get_home_fundflow(market: str = "a") -> dict:
                 "outflow": outflow_rows,
             },
             "boardFlows": {
-                "industry": _build_board_flow_proxy(industry),
-                "concept": _build_board_flow_proxy(concept),
+                "industry": board_industry,
+                "concept": board_concept,
             },
             "focusStock": {
                 "code": focus_code,
-                "history": has_live_flow and focus_code and get_stock_fund_flow(focus_code, 5) or [],
+                "history": focus_history,
             },
         }
-        return _cache_set(cache_key, payload)
-
-    sorted_by_amount = sorted(stocks, key=lambda item: _safe_float(item.get("amount")), reverse=True)
-    grouped = _build_theme_groups(market, stocks)
-    payload = {
-        "updatedAt": int(time.time() * 1000),
-        "summaryCards": [
-            *market_summary,
-            {
-                "label": "量能集中",
-                "value": round(
-                    sum(_safe_float(item.get("amount")) for item in sorted_by_amount[:3])
-                    / max(1, sum(_safe_float(item.get("amount")) for item in stocks))
-                    * 100,
-                    2,
-                ),
-                "detail": "TOP3 样本成交占比%",
-                "tone": "flat",
+    else:
+        sorted_by_amount = sorted(stocks, key=lambda item: _safe_float(item.get("amount")), reverse=True)
+        grouped = _build_theme_groups(market, stocks)
+        payload = {
+            "updatedAt": int(time.time() * 1000),
+            "summaryCards": [
+                *market_summary,
+                {
+                    "label": "量能集中",
+                    "value": round(
+                        sum(_safe_float(item.get("amount")) for item in sorted_by_amount[:3])
+                        / max(1, sum(_safe_float(item.get("amount")) for item in stocks))
+                        * 100,
+                        2,
+                    ),
+                    "detail": "TOP3 样本成交占比%",
+                    "tone": "flat",
+                },
+                {
+                    "label": "代理资金方向",
+                    "value": grouped[0].get("name", "--") if grouped else "--",
+                    "detail": "主题成交额代理",
+                    "tone": "up",
+                },
+            ],
+            "stockFlows": {
+                "inflow": sorted_by_amount[:10],
+                "outflow": sorted(stocks, key=lambda item: _safe_float(item.get("changePercent")))[:6],
             },
-            {
-                "label": "代理资金方向",
-                "value": grouped[0].get("name", "--") if grouped else "--",
-                "detail": "主题成交额代理",
-                "tone": "up",
+            "boardFlows": {
+                "industry": grouped[:6],
+                "concept": [],
             },
-        ],
-        "stockFlows": {
-            "inflow": sorted_by_amount[:10],
-            "outflow": sorted(stocks, key=lambda item: _safe_float(item.get("changePercent")))[:6],
-        },
-        "boardFlows": {
-            "industry": grouped[:6],
-            "concept": [],
-        },
-        "focusStock": {
-            "code": sorted_by_amount[0].get("code", "") if sorted_by_amount else "",
-            "history": [],
-        },
-    }
+            "focusStock": {
+                "code": sorted_by_amount[0].get("code", "") if sorted_by_amount else "",
+                "history": [],
+            },
+        }
     return _cache_set(cache_key, payload)
+
+
+def _safe_home_call(fn, market: str, key: str) -> dict:
+    try:
+        return fn(market)
+    except Exception as exc:
+        _logger.warning("get_home_batch[%s] failed: %s", key, exc)
+        return {}
+
+
+def get_home_batch(market: str = "a") -> dict:
+    """
+    单次调用返回首页全部数据面板。
+
+    先预取共享数据，再依次调用各 get_home_*（通常命中缓存），
+    避免前端 5 个并发 GET 重复触发底层计算。
+    单步失败时返回空 dict 降级，不影响其他面板。
+
+    Args:
+        market: 市场类型 "a" / "hk" / "us"
+
+    Returns:
+        包含 overview / fundflow / sectors / stocks / news 的字典
+    """
+    try:
+        _prefetch_shared(market)
+    except Exception as exc:
+        _logger.warning("get_home_batch prefetch failed: %s", exc)
+
+    panels = [
+        ("overview", get_home_overview),
+        ("fundflow", get_home_fundflow),
+        ("sectors", get_home_sectors),
+        ("stocks", get_home_stocks),
+        ("news", get_home_news),
+    ]
+    result: dict[str, dict] = {key: {} for key, _ in panels}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(_safe_home_call, fn, market, key): key
+            for key, fn in panels
+        }
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                result[key] = future.result()
+            except Exception as exc:
+                _logger.warning("get_home_batch[%s] future error: %s", key, exc)
+    return result
 
 
 def get_home_sectors(market: str = "a") -> dict:
@@ -553,8 +694,8 @@ def get_home_sectors(market: str = "a") -> dict:
     if cached is not None:
         return cached
 
-    stocks = get_stock_list(market, 1, HOME_STOCK_SAMPLE_LIMIT).get("data", [])
-    sector_bundle = _load_sector_universe(market, stocks)
+    stocks = _get_shared(market, "stocks") or get_stock_list(market, 1, HOME_STOCK_SAMPLE_LIMIT).get("data", [])
+    sector_bundle = _get_shared(market, "sector_bundle") or _load_sector_universe(market, stocks)
     leaders = sector_bundle["leaders"]
     focus = sector_bundle["focus"]
     members = []
@@ -623,19 +764,24 @@ def get_home_stocks(market: str = "a") -> dict:
     if cached is not None:
         return cached
 
-    stocks = get_stock_list(market, 1, HOME_STOCK_SAMPLE_LIMIT).get("data", [])
+    stocks = _get_shared(market, "stocks") or get_stock_list(market, 1, HOME_STOCK_SAMPLE_LIMIT).get("data", [])
     groups = _build_stock_groups(market, stocks)
     focus = groups["active"][0] if groups["active"] else (stocks[0] if stocks else {})
     focus_code = str(focus.get("code", ""))
     focus_profile = {}
     if focus_code:
-        info = get_stock_info(focus_code)
-        finance = get_stock_finance(focus_code)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            f_info = executor.submit(get_stock_info, focus_code)
+            f_finance = executor.submit(get_stock_finance, focus_code)
+            f_fundflow = executor.submit(get_stock_fund_flow, focus_code, 5) if market == "a" else None
+            info = f_info.result()
+            finance = f_finance.result()
+            fundflow = f_fundflow.result() if f_fundflow else []
         focus_profile = {
             "code": focus_code,
             "info": info,
             "finance": finance,
-            "fundflow": get_stock_fund_flow(focus_code, 5) if market == "a" else [],
+            "fundflow": fundflow,
         }
     payload = {
         "updatedAt": int(time.time() * 1000),
@@ -665,11 +811,14 @@ def get_home_stocks(market: str = "a") -> dict:
     return _cache_set(cache_key, payload)
 
 
+_HOME_NEWS_CACHE_TTL = 120
+
+
 def get_home_news(market: str = "a") -> dict:
     cache_key = f"news:{market}"
-    cached = _cache_get(cache_key)
-    if cached is not None:
-        return cached
+    cached = _home_cache.get(cache_key)
+    if cached and time.time() - cached.get("updated", 0.0) < _HOME_NEWS_CACHE_TTL:
+        return cached.get("data")
 
     news_items = get_financial_news(HOME_NEWS_LIMIT)
     groups, timeline, hot_topics = _build_news_groups(news_items)
@@ -700,7 +849,8 @@ def get_home_news(market: str = "a") -> dict:
         "timeline": timeline,
         "hotTopics": hot_topics,
     }
-    return _cache_set(cache_key, payload)
+    _home_cache[cache_key] = {"data": payload, "updated": time.time()}
+    return payload
 
 
 def get_home_ai_context(market: str = "a") -> dict:

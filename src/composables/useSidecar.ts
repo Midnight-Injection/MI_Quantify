@@ -7,6 +7,7 @@ const requestTimeoutMs = 25000
 const inflightGetRequests = new Map<string, Promise<any>>()
 let _registeredProxySignature = ''
 let _registeredDataSourceSignature = ''
+const EXPECTED_SIDECAR_VERSION = '0.2.1'
 
 function buildProxySignature(proxies: {
   id: string
@@ -77,10 +78,14 @@ async function syncDataSourcesToSidecar(sources: { id: string; name: string; ena
 }
 
 async function start() {
-  if (await checkHealth()) {
+  const healthVersion = await checkHealth()
+  if (healthVersion) {
     running.value = true
     return 'sidecar already healthy'
   }
+  try { await invoke<string>('sidecar_stop') } catch {}
+  try { await invoke<string>('sidecar_kill_port') } catch {}
+  await new Promise(r => setTimeout(r, 500))
   try {
     const result = await invoke<string>('sidecar_start')
     running.value = true
@@ -147,12 +152,16 @@ async function waitForHealth(signal?: AbortSignal, maxRetries = 10, interval = 1
   throw new Error('sidecar health check failed: 请检查本地 Python sidecar 是否已启动、src-python 依赖是否安装完成，以及系统代理 / 网络是否能访问新浪和东方财富接口')
 }
 
-async function checkHealth() {
+async function checkHealth(): Promise<string | null> {
   try {
     const res = await request(`${baseUrl}/health`)
-    return res.ok
+    if (!res.ok) return null
+    const data = await res.json()
+    if (data.version === EXPECTED_SIDECAR_VERSION) return data.version
+    console.warn(`[sidecar] version mismatch: got ${data.version}, expected ${EXPECTED_SIDECAR_VERSION}`)
+    return null
   } catch {
-    return false
+    return false as unknown as string | null
   }
 }
 
