@@ -247,7 +247,7 @@ export default defineComponent({
       minimumMs: 30000,
       pauseWhenHidden: true,
       market: () => currentMarket.value,
-      skipWhenMarketClosed: true,
+      closedIntervalMultiplier: 10,
     })
 
     onMounted(async () => {
