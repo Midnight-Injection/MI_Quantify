@@ -19,9 +19,9 @@
   overflow-x: hidden;
   padding: 24px 28px;
   background:
-    radial-gradient(circle at top left, rgba(9, 93, 149, 0.06), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(183, 149, 95, 0.08), transparent 22%),
-    $bg-primary;
+    radial-gradient(circle at top left, rgba(116, 173, 248, 0.08), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(255, 94, 149, 0.06), transparent 22%),
+    linear-gradient(180deg, #eef1f8, #e8ebf4);
   @include no-scrollbar;
 }
 
@@ -45,11 +45,11 @@
 
 .page-title {
   font-size: clamp(28px, 2.8vw, 36px);
-  font-weight: 700;
+  font-weight: 800;
   font-family: $font-display;
   color: $text-primary;
   margin-bottom: 14px;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.03em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -59,11 +59,11 @@
 .card {
   @include card-glass;
   padding: 20px;
-  transition: all $transition-normal;
+  transition: transform $transition-fast, box-shadow $transition-fast;
 
   &:hover {
-    box-shadow: $shadow-md;
-    border-color: rgba($color-accent, 0.15);
+    box-shadow: $shadow-card-hover;
+    transform: translateY(-3px);
   }
 }
 
@@ -76,12 +76,13 @@
 
 .card-title {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
   font-family: $font-display;
   color: $text-primary;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.02em;
 }
 
 .grid-2 {
@@ -133,7 +134,7 @@
   display: inline-flex;
   align-items: center;
   padding: 3px 10px;
-  border-radius: $radius-xs;
+  border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -177,7 +178,7 @@
 
 .btn-primary {
   @include button-primary;
-  box-shadow: 0 16px 30px rgba(9, 93, 149, 0.18);
+  box-shadow: 0 16px 30px rgba(255, 94, 149, 0.18);
 }
 
 .btn-ghost {
@@ -194,13 +195,15 @@
 }
 
 .section-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: $font-display;
   color: $text-primary;
   margin-bottom: 14px;
   display: flex;
   align-items: center;
   gap: 8px;
+  letter-spacing: -0.01em;
 }
 
 .empty-state {

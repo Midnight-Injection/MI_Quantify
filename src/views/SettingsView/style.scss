@@ -257,7 +257,7 @@
   justify-content: space-between;
   margin-bottom: 18px;
   padding-bottom: 14px;
-  border-bottom: 1px solid $border-light;
+  border-bottom: 1px solid $border-color;
 }
 
 .card-heading {
@@ -373,17 +373,15 @@
 }
 
 .ai-provider-card {
-  border: 1px solid $border-glass;
+  border: 1px solid $border-color;
   border-radius: $radius-md;
   overflow: hidden;
   transition: all $transition-fast;
-  background: $bg-glass;
-  backdrop-filter: $blur-sm;
-  -webkit-backdrop-filter: $blur-sm;
+  background: $bg-card;
 
   &.active {
     border-color: rgba($color-accent, 0.3);
-    box-shadow: 0 0 0 1px rgba($color-accent, 0.1), $shadow-glow;
+    box-shadow: 0 0 0 1px rgba($color-accent, 0.1), $shadow-card;
   }
 }
 
@@ -435,7 +433,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  border-top: 1px solid $border-light;
+  border-top: 1px solid $border-color;
 }
 
 .provider-hint {
@@ -448,7 +446,7 @@
   justify-content: flex-end;
   gap: 10px;
   padding-top: 10px;
-  border-top: 1px solid $border-light;
+  border-top: 1px solid $border-color;
 }
 
 .field-grid {
@@ -487,7 +485,7 @@
   align-items: center;
   margin-bottom: 16px;
   padding-bottom: 14px;
-  border-bottom: 1px solid $border-light;
+  border-bottom: 1px solid $border-color;
 }
 
 .proxy-title-row {
@@ -508,7 +506,7 @@
   justify-content: flex-end;
   padding-top: 14px;
   margin-top: 4px;
-  border-top: 1px solid $border-light;
+  border-top: 1px solid $border-color;
 }
 
 .danger {
@@ -525,8 +523,8 @@
 .channel-card {
   padding: 18px;
   border-radius: $radius-md;
-  border: 1px solid $border-light;
-  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid $border-color;
+  background: $bg-input;
 }
 
 .channel-card-head {
@@ -535,7 +533,7 @@
   justify-content: space-between;
   margin-bottom: 16px;
   padding-bottom: 14px;
-  border-bottom: 1px solid $border-light;
+  border-bottom: 1px solid $border-color;
 }
 
 .channel-title-row {
@@ -561,7 +559,7 @@
   justify-content: flex-end;
   padding-top: 14px;
   margin-top: 14px;
-  border-top: 1px solid $border-light;
+  border-top: 1px solid $border-color;
 }
 
 .channel-error {
@@ -577,7 +575,7 @@
   gap: 16px;
   padding: 14px;
   border-radius: $radius-lg;
-  background: rgba(15, 33, 57, 0.04);
+  background: $bg-input;
 
   img {
     width: 148px;
@@ -604,8 +602,8 @@
 .update-version-card {
   padding: 16px;
   border-radius: $radius-md;
-  border: 1px solid $border-light;
-  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid $border-color;
+  background: $bg-input;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -640,7 +638,7 @@
   gap: 8px;
   padding: 14px 16px;
   border-radius: $radius-md;
-  background: rgba(15, 33, 57, 0.04);
+  background: $bg-input;
   margin-top: 14px;
 }
 
@@ -654,22 +652,22 @@
   width: 100%;
   height: 10px;
   border-radius: 999px;
-  background: rgba(15, 33, 57, 0.08);
+  background: $border-color;
   overflow: hidden;
 }
 
 .update-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #0ea5a4, #19c4be);
+  background: $gradient-accent;
   transition: width $transition-fast;
 }
 
 .update-notes {
   padding: 16px;
   border-radius: $radius-md;
-  border: 1px solid $border-light;
-  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid $border-color;
+  background: $bg-input;
   margin-top: 14px;
 
   .update-notes-title {
@@ -697,7 +695,7 @@
   gap: 8px;
   padding: 14px 16px;
   border-radius: $radius-md;
-  background: rgba(15, 33, 57, 0.04);
+  background: $bg-input;
   color: $text-secondary;
   font-size: $text-sm;
 

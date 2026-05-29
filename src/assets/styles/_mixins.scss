@@ -71,7 +71,7 @@
 @mixin card-glass {
   background: $bg-card;
   border: 1px solid $border-color;
-  border-radius: $radius-lg;
+  border-radius: $radius-xl;
   box-shadow: $shadow-card;
 }
 
@@ -103,7 +103,7 @@
 
   &:focus {
     border-color: $color-accent;
-    box-shadow: 0 0 0 3px rgba($color-accent, 0.08);
+    box-shadow: 0 0 0 3px rgba($color-accent, 0.1);
   }
 
   &::placeholder {
@@ -133,9 +133,9 @@
   gap: 6px;
   padding: 8px 18px;
   border: none;
-  border-radius: $radius-sm;
+  border-radius: 999px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all $transition-fast;
   outline: none;
@@ -177,7 +177,49 @@
 }
 
 @mixin animate-in($delay: 0s) {
-  animation: slideInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) $delay both;
+  animation: fadePanel 0.36s ease $delay both;
+}
+
+@mixin animate-card-in($delay: 0s) {
+  animation: cardIn 0.4s ease $delay both;
+}
+
+@mixin section-panel {
+  background: $bg-card;
+  border-radius: $radius-xl;
+  box-shadow: $shadow-card;
+  overflow: hidden;
+}
+
+@mixin hover-lift {
+  transition: transform $transition-fast, box-shadow $transition-fast;
+
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: $shadow-card-hover;
+  }
+}
+
+@keyframes fadePanel {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes slideInUp {
@@ -218,4 +260,8 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes loadBar {
+  from { width: 0; }
 }

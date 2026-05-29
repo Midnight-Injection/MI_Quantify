@@ -1,11 +1,10 @@
 .ai-provider-card {
-  border: 1px solid $border-glass;
-  border-radius: $radius-md;
+  border: 1px solid $border-color;
+  border-radius: $radius-xl;
   overflow: hidden;
   transition: all $transition-fast;
-  background: $bg-glass;
-  backdrop-filter: $blur-sm;
-  -webkit-backdrop-filter: $blur-sm;
+  background: $bg-card;
+  box-shadow: $shadow-card;
 
   &.active {
     border-color: rgba($color-accent, 0.3);
@@ -63,7 +62,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  border-top: 1px solid $border-light;
+  border-top: 1px solid $border-color;
 }
 
 .form-group {
@@ -100,7 +99,7 @@
   width: 36px;
   border: 1px solid $border-color;
   border-radius: $radius-sm;
-  background: $bg-glass;
+  background: $bg-input;
   cursor: pointer;
   font-size: 14px;
   color: $text-secondary;
@@ -126,7 +125,7 @@
   align-items: center;
   gap: 8px;
   padding-top: 12px;
-  border-top: 1px solid $border-light;
+  border-top: 1px solid $border-color;
   margin-top: 4px;
 }
 

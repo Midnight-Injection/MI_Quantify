@@ -6,8 +6,8 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 1px solid rgba(15, 33, 57, 0.14);
-  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(84, 94, 132, 0.14);
+  background: rgba(255, 255, 255, 0.92);
   color: $text-muted;
   font-size: 11px;
   font-weight: 700;
@@ -20,7 +20,7 @@
   &:hover,
   &:focus-visible {
     color: $color-accent;
-    border-color: rgba(9, 93, 149, 0.24);
+    border-color: rgba(255, 94, 149, 0.3);
     transform: translateY(-1px);
     outline: none;
   }
@@ -33,9 +33,9 @@
   width: min(320px, calc(100vw - 24px));
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(15, 28, 45, 0.96);
+  background: rgba(46, 50, 69, 0.96);
   color: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 20px 40px rgba(15, 28, 45, 0.28);
+  box-shadow: 0 20px 40px rgba(84, 94, 132, 0.28);
   transform: translateX(-50%) translateY(8px);
   opacity: 0;
   pointer-events: none;
@@ -67,7 +67,7 @@
     bottom: -6px;
     width: 12px;
     height: 12px;
-    background: rgba(15, 28, 45, 0.96);
+    background: rgba(46, 50, 69, 0.96);
     transform: translateX(-50%) rotate(45deg);
   }
 }

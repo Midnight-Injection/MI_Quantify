@@ -14,12 +14,13 @@
 .diagnosis-panel,
 .context-panel,
 .chart-card {
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: $radius-xl;
+  border: 1px solid $border-color;
   background:
-    radial-gradient(circle at top right, rgba(183, 149, 95, 0.1), transparent 28%),
-    rgba(255, 255, 255, 0.84);
-  box-shadow: 0 18px 40px rgba(18, 30, 49, 0.05);
+    radial-gradient(circle at top right, rgba(116, 173, 248, 0.08), transparent 28%),
+    $bg-card;
+  box-shadow: $shadow-card;
+  animation: fadePanel 0.36s ease both;
 }
 
 .analysis-hero {
@@ -65,12 +66,12 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  background: rgba(9, 93, 149, 0.08);
+  background: rgba(255, 94, 149, 0.1);
   color: $color-accent;
 }
 
 .meta-chip.accent {
-  background: linear-gradient(135deg, rgba(9, 93, 149, 0.95), rgba(30, 115, 171, 0.88));
+  background: $gradient-accent;
   color: #fff;
 }
 
@@ -201,14 +202,14 @@
 }
 
 .ai-trigger-btn-ghost {
-  border: 1px solid rgba(9, 93, 149, 0.14);
-  background: linear-gradient(180deg, rgba(9, 93, 149, 0.08), rgba(255, 255, 255, 0.92));
+  border: 1px solid rgba($color-accent, 0.14);
+  background: linear-gradient(180deg, rgba($color-accent, 0.08), rgba(255, 255, 255, 0.92));
   color: $color-accent;
-  box-shadow: 0 10px 24px rgba(9, 93, 149, 0.08);
+  box-shadow: 0 10px 24px rgba(84, 94, 132, 0.08);
 
   &:hover:not(:disabled) {
-    border-color: rgba(9, 93, 149, 0.24);
-    background: linear-gradient(180deg, rgba(9, 93, 149, 0.12), rgba(255, 255, 255, 0.96));
+    border-color: rgba($color-accent, 0.24);
+    background: linear-gradient(180deg, rgba($color-accent, 0.12), rgba(255, 255, 255, 0.96));
     transform: translateY(-1px);
   }
 }
@@ -228,7 +229,7 @@
 .analysis-error {
   margin-top: 12px;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: $radius-lg;
   border: 1px solid rgba($color-down, 0.16);
   background: rgba($color-down, 0.06);
   color: $color-down;
@@ -266,9 +267,9 @@
 .diagnosis-card,
 .news-item,
 .scenario-item {
-  border-radius: 16px;
-  border: 1px solid rgba(15, 33, 57, 0.08);
-  background: rgba(15, 33, 57, 0.04);
+  border-radius: $radius-lg;
+  border: 1px solid $border-color;
+  background: $bg-input;
 }
 
 .diagnosis-score {
@@ -408,7 +409,7 @@
   padding: 6px 10px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(29, 38, 55, 0.04);
+  border: 1px solid $border-color;
 }
 
 .judgment-label {
@@ -431,7 +432,7 @@
   padding: 8px 10px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(29, 38, 55, 0.04);
+  border: 1px solid $border-color;
 
   .judgment-label {
     display: block;
@@ -483,7 +484,7 @@
   width: 18px;
   height: 18px;
   margin-right: 8px;
-  border: 2px solid rgba(15, 33, 57, 0.12);
+  border: 2px solid rgba(84, 94, 132, 0.12);
   border-top-color: $color-accent;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;

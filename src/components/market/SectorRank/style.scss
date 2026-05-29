@@ -6,7 +6,7 @@
   display: flex;
   gap: 4px;
   margin-bottom: 14px;
-  background: $bg-glass;
+  background: $bg-input;
   border-radius: $radius-sm;
   padding: 3px;
 }
@@ -23,7 +23,7 @@
   font-weight: 500;
 
   &.active {
-    background: $color-accent-soft;
+    background: rgba($color-accent, 0.1);
     color: $color-accent;
   }
 
@@ -44,7 +44,7 @@ thead th {
   color: $text-muted;
   font-weight: 500;
   font-size: 11px;
-  border-bottom: 1px solid $border-light;
+  border-bottom: 1px solid $border-color;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -56,7 +56,7 @@ tbody tr {
 
 tbody td {
   padding: 8px 12px;
-  border-bottom: 1px solid rgba($border-light, 0.4);
+  border-bottom: 1px solid rgba($border-color, 0.5);
 }
 
 .col-rank {

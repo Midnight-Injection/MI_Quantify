@@ -15,7 +15,8 @@
   transition: all $transition-fast;
 
   &:hover {
-    box-shadow: $shadow-sm;
+    box-shadow: $shadow-card-hover;
+    transform: translateY(-3px);
   }
 
   &.disabled { opacity: 0.5; }

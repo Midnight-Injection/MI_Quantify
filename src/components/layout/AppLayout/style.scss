@@ -4,9 +4,9 @@
   height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(9, 93, 149, 0.08), transparent 20%),
-    radial-gradient(circle at bottom right, rgba(183, 149, 95, 0.1), transparent 18%),
-    $bg-primary;
+    radial-gradient(circle at top left, rgba(116, 173, 248, 0.06), transparent 20%),
+    radial-gradient(circle at bottom right, rgba(255, 94, 149, 0.05), transparent 18%),
+    linear-gradient(180deg, #eef1f8, #e8ebf4);
   position: relative;
 }
 

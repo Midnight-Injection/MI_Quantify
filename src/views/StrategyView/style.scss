@@ -29,8 +29,8 @@
   span {
     padding: 8px 12px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.82);
-    border: 1px solid rgba(29, 38, 55, 0.08);
+    background: $bg-input;
+    border: 1px solid $border-color;
     color: $text-secondary;
     font-size: 12px;
     white-space: nowrap;
@@ -65,7 +65,7 @@
 .strategy-prompt-editor,
 .strategy-builder {
   padding: 20px;
-  box-shadow: $shadow-sm;
+  box-shadow: $shadow-card;
 }
 
 .playbook-grid {
@@ -75,8 +75,15 @@
 .playbook-card {
   padding: 18px;
   border-radius: $radius-xl;
-  border: 1px solid rgba(29, 38, 55, 0.08);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 243, 239, 0.84));
+  border: 1px solid $border-color;
+  background: $bg-card;
+  box-shadow: $shadow-card;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: $shadow-card-hover;
+  }
 }
 
 .playbook-grid {

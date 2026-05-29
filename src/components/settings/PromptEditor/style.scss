@@ -6,7 +6,7 @@
   display: flex;
   gap: 4px;
   margin-bottom: 16px;
-  border-bottom: 1px solid $border-light;
+  border-bottom: 1px solid $border-color;
   padding-bottom: 4px;
 }
 
@@ -49,12 +49,10 @@
 }
 
 .prompt-item {
-  border: 1px solid $border-glass;
-  border-radius: $radius-md;
+  border: 1px solid $border-color;
+  border-radius: $radius-lg;
   overflow: hidden;
-  background: $bg-glass;
-  backdrop-filter: $blur-sm;
-  -webkit-backdrop-filter: $blur-sm;
+  background: $bg-card;
 }
 
 .prompt-item-header {
@@ -74,8 +72,8 @@
   padding: 12px 14px;
   background: rgba($bg-input, 0.5);
   border: none;
-  border-top: 1px solid $border-light;
-  border-bottom: 1px solid $border-light;
+  border-top: 1px solid $border-color;
+  border-bottom: 1px solid $border-color;
   color: $text-primary;
   font-family: $font-mono;
   font-size: 12px;

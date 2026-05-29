@@ -253,8 +253,8 @@
   height: 34px;
   flex-shrink: 0;
   border-radius: 12px;
-  border: 1px solid rgba(29, 38, 55, 0.08);
-  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid $border-color;
+  background: $bg-card;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -266,7 +266,7 @@
     transform: translateY(-1px);
     color: $color-accent;
     border-color: rgba($color-accent, 0.18);
-    box-shadow: 0 10px 22px rgba(18, 30, 49, 0.08);
+    box-shadow: $shadow-card-hover;
   }
 }
 
@@ -364,8 +364,8 @@
 }
 
 .avatar-assistant {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.08));
-  color: #7c3aed;
+  background: linear-gradient(135deg, rgba($color-sky, 0.12), rgba($color-accent, 0.08));
+  color: $color-sky;
 }
 
 .assistant-content {
@@ -394,7 +394,7 @@
 
 .bubble {
   max-width: 82%;
-  border-radius: 14px;
+  border-radius: $radius-md;
   font-size: 13px;
   line-height: 1.6;
 }
@@ -413,7 +413,7 @@
   padding: 10px 14px;
   background: rgba($color-accent, 0.09);
   border: 1px solid rgba($color-accent, 0.14);
-  border-radius: 14px 4px 14px 14px;
+  border-radius: $radius-lg 4px $radius-lg $radius-lg;
   color: $text-primary;
   order: 1;
 }
@@ -424,9 +424,9 @@
   max-width: none;
   min-width: 0;
   padding: 0;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(34, 197, 94, 0.04));
-  border: 1px solid rgba(14, 165, 233, 0.14);
-  border-radius: 12px;
+  background: linear-gradient(135deg, rgba($color-sky, 0.08), rgba($color-mint, 0.04));
+  border: 1px solid rgba($color-sky, 0.14);
+  border-radius: $radius-md;
   overflow: hidden;
   width: 100%;
 }
@@ -441,7 +441,7 @@
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(14, 165, 233, 0.06);
+    background: rgba($color-sky, 0.06);
   }
 }
 
@@ -467,7 +467,7 @@
 }
 
 .thinking-body {
-  border-top: 1px solid rgba(14, 165, 233, 0.1);
+  border-top: 1px solid rgba($color-sky, 0.1);
   padding: 8px 12px;
   max-height: 180px;
   width: 0;
@@ -491,7 +491,7 @@
   padding: 4px 0;
 
   &:not(:last-child) {
-    border-bottom: 1px solid rgba(14, 165, 233, 0.06);
+    border-bottom: 1px solid rgba($color-sky, 0.06);
   }
 }
 
@@ -549,9 +549,9 @@
   max-width: none;
   min-width: 0;
   padding: 0;
-  background: linear-gradient(180deg, rgba(255, 251, 235, 0.85), rgba(255, 255, 255, 0.9));
-  border: 1px solid rgba(245, 158, 11, 0.14);
-  border-radius: 12px;
+  background: linear-gradient(180deg, rgba($color-gold, 0.08), $bg-card);
+  border: 1px solid rgba($color-gold, 0.14);
+  border-radius: $radius-md;
   overflow: hidden;
   width: 100%;
 }
@@ -566,7 +566,7 @@
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(245, 158, 11, 0.06);
+    background: rgba($color-gold, 0.06);
   }
 }
 
@@ -584,8 +584,8 @@
   font-size: 10px;
   padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(245, 158, 11, 0.1);
-  color: #b45309;
+  background: rgba($color-gold, 0.1);
+  color: darken($color-gold, 20%);
   font-family: $font-mono;
 }
 
@@ -601,7 +601,7 @@
 }
 
 .tools-body {
-  border-top: 1px solid rgba(245, 158, 11, 0.1);
+  border-top: 1px solid rgba($color-gold, 0.1);
   padding: 6px 10px;
   max-height: 300px;
   width: 0;
@@ -623,16 +623,16 @@
 .tool-item {
   width: 100%;
   padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(161, 98, 7, 0.1);
-  background: rgba(255, 255, 255, 0.6);
+  border-radius: $radius-sm;
+  border: 1px solid rgba($color-gold, 0.1);
+  background: $bg-card;
 
   &.done {
-    border-color: rgba(34, 197, 94, 0.12);
+    border-color: rgba($color-mint, 0.12);
   }
   &.running {
-    border-color: rgba(245, 158, 11, 0.2);
-    background: rgba(255, 251, 235, 0.6);
+    border-color: rgba($color-gold, 0.2);
+    background: rgba($color-gold, 0.04);
   }
   &.error {
     border-color: rgba(239, 68, 68, 0.18);
@@ -663,8 +663,8 @@
   border-radius: 999px;
   flex-shrink: 0;
 
-  &.done { background: rgba(34, 197, 94, 0.1); color: #16a34a; }
-  &.running { background: rgba(245, 158, 11, 0.1); color: #b45309; }
+  &.done { background: rgba($color-mint, 0.1); color: darken($color-mint, 10%); }
+  &.running { background: rgba($color-gold, 0.1); color: darken($color-gold, 15%); }
   &.error { background: rgba(239, 68, 68, 0.1); color: #dc2626; }
   &.skipped { background: rgba(100, 116, 139, 0.08); color: $text-muted; }
 }
@@ -707,9 +707,9 @@
 
 .tool-io-card {
   padding: 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: $radius-sm;
+  background: $bg-input;
+  border: 1px solid $border-color;
   min-width: 0;
 }
 
@@ -763,9 +763,9 @@
   max-width: none;
   min-width: 0;
   padding: 0;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.06), rgba(255, 255, 255, 0.92));
-  border: 1px solid rgba(139, 92, 246, 0.14);
-  border-radius: 12px;
+  background: linear-gradient(135deg, rgba($color-accent, 0.06), $bg-card);
+  border: 1px solid rgba($color-accent, 0.14);
+  border-radius: $radius-md;
   overflow: hidden;
   width: 100%;
 }
@@ -775,7 +775,7 @@
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(139, 92, 246, 0.08);
+  border-bottom: 1px solid rgba($color-accent, 0.08);
 }
 
 .synthesis-icon {
@@ -799,8 +799,8 @@
   margin-left: 6px;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(139, 92, 246, 0.15);
-  border-top-color: #8b5cf6;
+  border: 2px solid rgba(84, 94, 132, 0.15);
+  border-top-color: $color-accent;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -830,9 +830,9 @@
 .bubble-stream {
   max-width: 78%;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.88);
+  background: $bg-card;
   border: 1px solid rgba($color-accent, 0.12);
-  border-radius: 4px 14px 14px 14px;
+  border-radius: 4px $radius-lg $radius-lg $radius-lg;
 }
 
 .stream-text {
@@ -862,11 +862,11 @@
 .bubble-result {
   max-width: 680px;
   padding: 0;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(29, 38, 55, 0.06);
-  border-radius: 4px 14px 14px 14px;
+  background: $bg-card;
+  border: 1px solid $border-color;
+  border-radius: 4px $radius-lg $radius-lg $radius-lg;
   overflow: hidden;
-  box-shadow: 0 6px 20px rgba(15, 33, 57, 0.04);
+  box-shadow: $shadow-card;
 }
 
 .result-meta {
@@ -874,8 +874,8 @@
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  border-bottom: 1px solid rgba(29, 38, 55, 0.06);
-  background: rgba(248, 250, 255, 0.6);
+  border-bottom: 1px solid $border-color;
+  background: $bg-input;
 }
 
 .result-stock {
@@ -901,12 +901,12 @@
 
 .insight-card {
   padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(29, 38, 55, 0.05);
+  border-radius: $radius-md;
+  background: $bg-input;
+  border: 1px solid $border-color;
 
   &.primary {
-    background: linear-gradient(135deg, rgba($color-accent, 0.08), rgba(255, 255, 255, 0.9));
+    background: linear-gradient(135deg, rgba($color-accent, 0.08), $bg-card);
     border-color: rgba($color-accent, 0.12);
   }
 }
@@ -935,7 +935,7 @@
 
 .result-text {
   padding: 12px 14px;
-  border-top: 1px solid rgba(29, 38, 55, 0.06);
+  border-top: 1px solid $border-color;
   font-size: 13px;
   color: $text-primary;
   line-height: 1.7;
@@ -943,7 +943,7 @@
 
 .followup-hint {
   padding: 8px 14px;
-  border-top: 1px solid rgba(29, 38, 55, 0.06);
+  border-top: 1px solid $border-color;
 
   span {
     color: $text-muted;
@@ -955,9 +955,9 @@
 
 .bubble-loading {
   padding: 14px 18px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(29, 38, 55, 0.06);
-  border-radius: 4px 14px 14px 14px;
+  background: $bg-card;
+  border: 1px solid $border-color;
+  border-radius: 4px $radius-lg $radius-lg $radius-lg;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -984,9 +984,9 @@
 .bubble-plain {
   max-width: 680px;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(29, 38, 55, 0.06);
-  border-radius: 4px 14px 14px 14px;
+  background: $bg-card;
+  border: 1px solid $border-color;
+  border-radius: 4px $radius-lg $radius-lg $radius-lg;
   color: $text-primary;
   font-size: 13px;
   line-height: 1.7;
@@ -998,7 +998,7 @@
   flex-shrink: 0;
   gap: 10px;
   padding-top: 12px;
-  border-top: 1px solid rgba(29, 38, 55, 0.08);
+  border-top: 1px solid $border-color;
   display: flex;
   flex-direction: column;
   background: inherit;
@@ -1042,9 +1042,9 @@
 .strategy-trigger {
   min-height: 42px;
   padding: 7px 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(29, 38, 55, 0.08);
-  background: rgba(255, 255, 255, 0.92);
+  border-radius: $radius-md;
+  border: 1px solid $border-color;
+  background: $bg-card;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1056,7 +1056,7 @@
   &:hover {
     transform: translateY(-1px);
     border-color: rgba($color-accent, 0.18);
-    box-shadow: 0 10px 22px rgba(18, 30, 49, 0.08);
+    box-shadow: $shadow-card-hover;
   }
 }
 
@@ -1074,8 +1074,8 @@
 
   &.active {
     border-color: rgba($color-accent, 0.28);
-    background: linear-gradient(135deg, rgba($color-accent, 0.12), rgba(255, 255, 255, 0.98));
-    box-shadow: 0 12px 24px rgba(9, 93, 149, 0.12);
+    background: linear-gradient(135deg, rgba($color-accent, 0.12), $bg-card);
+    box-shadow: 0 12px 24px rgba(84, 94, 132, 0.12);
 
     span {
       color: $color-accent;
@@ -1090,7 +1090,7 @@
 
     &:hover {
       transform: none;
-      border-color: rgba(29, 38, 55, 0.08);
+      border-color: $border-color;
       box-shadow: none;
     }
   }
@@ -1128,10 +1128,10 @@
   max-height: 220px;
   overflow-y: auto;
   padding: 8px;
-  border-radius: 18px;
-  border: 1px solid rgba(29, 38, 55, 0.08);
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 20px 36px rgba(18, 30, 49, 0.1);
+  border-radius: $radius-lg;
+  border: 1px solid $border-color;
+  background: $bg-card;
+  box-shadow: $shadow-card;
   @include custom-scrollbar;
 }
 
@@ -1146,7 +1146,7 @@
   transition: background $transition-fast, transform $transition-fast;
 
   &:hover {
-    background: rgba(9, 93, 149, 0.05);
+    background: rgba($color-accent, 0.05);
   }
 
   &.active {
@@ -1177,8 +1177,8 @@
 
 .starter-chip,
 .quick-reply-chip {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $border-color;
+  background: $bg-input;
   color: $text-primary;
   border-radius: 999px;
   padding: 10px 14px;
@@ -1204,10 +1204,10 @@
   max-width: 720px;
   padding: 16px;
   background:
-    radial-gradient(circle at top right, rgba(255, 198, 92, 0.16), transparent 36%),
-    linear-gradient(180deg, rgba(12, 18, 33, 0.96), rgba(10, 14, 27, 0.94));
-  border: 1px solid rgba(255, 196, 87, 0.16);
-  border-radius: 20px;
+    radial-gradient(circle at top right, rgba($color-accent, 0.16), transparent 36%),
+    linear-gradient(180deg, rgba(30, 35, 64, 0.96), rgba(22, 26, 48, 0.94));
+  border: 1px solid rgba($color-accent, 0.18);
+  border-radius: $radius-xl;
 }
 
 .recommendation-topline {
@@ -1247,7 +1247,7 @@
 
 .candidate-card {
   padding: 14px;
-  border-radius: 18px;
+  border-radius: $radius-lg;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -1262,7 +1262,7 @@
 .candidate-rank {
   display: inline-flex;
   margin-bottom: 8px;
-  color: #ffcf70;
+  color: $color-gold;
   font-size: 10px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1285,8 +1285,8 @@
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: rgba(255, 196, 87, 0.12);
-  color: #ffd27a;
+  background: rgba($color-accent, 0.12);
+  color: $color-accent;
   font-family: $font-mono;
   font-size: 14px;
   font-weight: 700;
@@ -1308,7 +1308,7 @@
 
 .candidate-metric {
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: $radius-md;
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -1342,8 +1342,8 @@
   gap: 6px;
 
   &.warning .candidate-pill {
-    background: rgba(244, 114, 182, 0.08);
-    border-color: rgba(244, 114, 182, 0.16);
+    background: rgba($color-accent, 0.08);
+    border-color: rgba($color-accent, 0.16);
   }
 }
 

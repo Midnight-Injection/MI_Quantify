@@ -4,20 +4,20 @@
   @include flex-between;
   height: $header-height;
   padding: 0 24px;
-  background: $bg-header;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(241, 243, 251, 0.88);
+  border-bottom: 1px solid $border-light;
   flex-shrink: 0;
   backdrop-filter: $blur-lg;
   -webkit-backdrop-filter: $blur-lg;
   position: relative;
   z-index: 9;
-  box-shadow: 0 12px 30px rgba(29, 38, 55, 0.04);
+  box-shadow: 0 12px 30px rgba(84, 94, 132, 0.06);
 }
 
 .header-left {
   .page-title-text {
     font-size: 24px;
-    font-weight: 600;
+    font-weight: 800;
     font-family: $font-display;
     color: $text-primary;
     letter-spacing: -0.03em;
@@ -34,15 +34,16 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  background: $bg-input;
+  background: $bg-card;
   border: 1px solid $border-color;
   border-radius: 999px;
   padding: 6px 10px 6px 14px;
   transition: all $transition-fast;
+  box-shadow: $shadow-sm;
 
   &:focus-within {
     border-color: $color-accent;
-    box-shadow: 0 0 0 3px rgba($color-accent, 0.08);
+    box-shadow: 0 0 0 3px rgba($color-accent, 0.1), $shadow-sm;
     background: $bg-card;
   }
 
@@ -84,16 +85,19 @@
   @include flex-center;
   width: 36px;
   height: 36px;
-  border-radius: 999px;
+  border-radius: 50%;
   cursor: pointer;
   transition: all $transition-fast;
   text-decoration: none;
   color: $text-secondary;
   position: relative;
+  box-shadow: 0 2px 8px rgba(84, 94, 132, 0.06);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.82);
+    background: $bg-card;
     color: $text-primary;
+    transform: translateY(-1px);
+    box-shadow: $shadow-sm;
   }
 
   &.has-badge .badge {
@@ -102,7 +106,7 @@
     right: 4px;
     min-width: 14px;
     height: 14px;
-    background: $gradient-up;
+    background: $gradient-accent;
     color: #fff;
     font-size: 9px;
     font-weight: 700;
@@ -122,10 +126,10 @@
   right: 24px;
   width: 420px;
   max-height: 520px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 24px;
-  box-shadow: 0 28px 60px rgba(29, 38, 55, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid $border-color;
+  border-radius: 22px;
+  box-shadow: 0 28px 60px rgba(84, 94, 132, 0.12);
   z-index: 1000;
   display: flex;
   flex-direction: column;
@@ -175,7 +179,7 @@
       background: $bg-card;
       color: $text-primary;
       font-weight: 600;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      box-shadow: 0 1px 3px rgba(84, 94, 132, 0.08);
     }
 
     .tab-badge {

@@ -18,7 +18,8 @@
   transition: all $transition-fast;
 
   &:hover {
-    box-shadow: $shadow-sm;
+    box-shadow: $shadow-card-hover;
+    transform: translateY(-2px);
   }
 
   &.buy { border-left-color: $color-up; }
@@ -96,9 +97,9 @@
 .signal-strategy {
   font-size: 11px;
   color: $color-accent;
-  background: $color-accent-soft;
+  background: rgba($color-accent, 0.1);
   padding: 2px 8px;
-  border-radius: $radius-xs;
+  border-radius: 999px;
   white-space: nowrap;
 }
 

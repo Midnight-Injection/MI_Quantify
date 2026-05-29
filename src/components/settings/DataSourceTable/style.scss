@@ -11,7 +11,7 @@ th, td {
   padding: 10px 12px;
   text-align: left;
   font-size: 13px;
-  border-bottom: 1px solid $border-light;
+  border-bottom: 1px solid $border-color;
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -83,8 +83,8 @@ td .config-toggle-btn {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: $bg-glass;
-  border: 1px solid $border-glass;
+  background: $bg-input;
+  border: 1px solid $border-color;
   font-size: 12px;
   font-weight: 600;
   color: $text-secondary;
@@ -106,7 +106,7 @@ td .config-toggle-btn {
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
-  border: 1px solid $border-light;
+  border: 1px solid $border-color;
   white-space: nowrap;
 }
 
@@ -129,7 +129,7 @@ td .config-toggle-btn {
   max-width: 90px;
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(15, 33, 57, 0.08);
+  border: 1px solid rgba(84, 94, 132, 0.08);
   background: rgba(255, 255, 255, 0.92);
   color: $text-secondary;
   font-size: 12px;
@@ -151,7 +151,7 @@ td .config-toggle-btn {
 
 .config-row td {
   padding-top: 0;
-  background: rgba(15, 33, 57, 0.015);
+  background: rgba(84, 94, 132, 0.03);
   white-space: normal;
   overflow: visible;
   text-align: left;

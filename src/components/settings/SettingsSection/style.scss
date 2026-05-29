@@ -1,7 +1,8 @@
 .settings-section {
-  @include card-base;
+  @include card-glass;
   margin-bottom: 16px;
   overflow: hidden;
+  box-shadow: $shadow-card;
 }
 
 .section-header {
