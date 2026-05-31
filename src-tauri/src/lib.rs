@@ -1,5 +1,10 @@
 mod commands;
+mod logger;
 mod storage;
+
+use logger::AppLogger;
+use std::sync::Mutex;
+use tauri::Manager;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -18,6 +23,29 @@ pub fn run() {
         .manage(commands::scheduler::init_scheduler_state())
         .manage(commands::notifications::init_alert_state())
         .manage(commands::wechat::init_wechat_runtime_state())
+        .setup(|app| {
+            // 初始化运行时目录（data/ 和 log/）
+            storage::init_runtime_dirs(&app.handle())?;
+
+            // 初始化日志系统
+            let log_dir = storage::runtime_log_dir()?.clone();
+            let app_logger = AppLogger::new(log_dir);
+            app_logger.log("INFO", "app", "MI Quantify 启动");
+            app_logger.cleanup_old_logs(30);
+            app.handle().manage(Mutex::new(app_logger));
+
+            // 监听主窗口关闭事件，在关闭前清理 sidecar 进程
+            let window = app.get_webview_window("main").expect("main window not found");
+            let app_handle = app.handle().clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api: _, .. } = event {
+                    log_to_app(&app_handle, "INFO", "app", "应用正在关闭，清理 sidecar 进程...");
+                    let _ = commands::sidecar::sidecar_shutdown(&app_handle);
+                }
+            });
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             commands::app_store::app_store_get,
@@ -72,7 +100,25 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // 应用退出后，兜底清理残留的 sidecar 进程
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            let _ = commands::sidecar::sidecar_shutdown(app_handle);
+        }
+    });
+}
+
+/// 写入日志的辅助函数，可在模块内使用
+fn log_to_app(app: &tauri::AppHandle, level: &str, tag: &str, message: &str) {
+    let Some(state) = app.try_state::<Mutex<AppLogger>>() else {
+        return;
+    };
+    let Ok(guard) = state.lock() else {
+        return;
+    };
+    guard.log(level, tag, message);
 }

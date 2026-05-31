@@ -7,17 +7,6 @@ import { DATA_SOURCE_PRESETS, SEARCH_PROVIDER_PRESETS } from '@/utils/constants'
 import { useSidecar } from '@/composables/useSidecar'
 
 const STORE_KEY = 'app_settings'
-const LOCAL_PROXY_PRESET_ID = 'local_proxy_127001_7890'
-const LOCAL_PROXY_PRESET: ProxyConfig = {
-  id: LOCAL_PROXY_PRESET_ID,
-  name: '本地代理 127.0.0.1:7890',
-  host: '127.0.0.1',
-  port: 7890,
-  protocol: 'http',
-  username: '',
-  password: '',
-  enabled: true,
-}
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AppSettings>(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)))
@@ -65,7 +54,7 @@ export const useSettingsStore = defineStore('settings', () => {
       },
       proxy: {
         ...DEFAULT_SETTINGS.proxy,
-        proxies: [{ ...LOCAL_PROXY_PRESET }],
+        proxies: [],
       },
     }
   }
@@ -81,13 +70,7 @@ export const useSettingsStore = defineStore('settings', () => {
   function mergeSettings(saved: Partial<AppSettings>): AppSettings {
     const defaults = buildDefaultSettings()
     const savedProxies = saved.proxy?.proxies || []
-    const hasLocalProxy = savedProxies.some((proxy) => {
-      const host = String(proxy.host || '').trim()
-      return (host === '127.0.0.1' || host === 'localhost') && Number(proxy.port || 0) === 7890
-    })
-    const mergedProxies = hasLocalProxy
-      ? savedProxies
-      : [{ ...LOCAL_PROXY_PRESET }, ...savedProxies]
+    const mergedProxies = savedProxies
     const merged = {
       ...defaults,
       ...saved,

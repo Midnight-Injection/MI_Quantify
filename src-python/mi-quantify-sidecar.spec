@@ -90,6 +90,6 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=True,
     upx=True,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
 )

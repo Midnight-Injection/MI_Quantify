@@ -7,6 +7,8 @@ const requestTimeoutMs = 25000
 const inflightGetRequests = new Map<string, Promise<any>>()
 let _registeredProxySignature = ''
 let _registeredDataSourceSignature = ''
+let _startLock: Promise<string> | null = null
+let _ensureLock: Promise<void> | null = null
 const EXPECTED_SIDECAR_VERSION = '0.2.1'
 
 function buildProxySignature(proxies: {
@@ -83,17 +85,20 @@ async function start() {
     running.value = true
     return 'sidecar already healthy'
   }
-  try { await invoke<string>('sidecar_stop') } catch {}
-  try { await invoke<string>('sidecar_kill_port') } catch {}
-  await new Promise(r => setTimeout(r, 500))
-  try {
-    const result = await invoke<string>('sidecar_start')
-    running.value = true
-    return result
-  } catch (e) {
-    console.error('[sidecar] start failed:', e)
-    throw e
-  }
+  if (_startLock) return _startLock
+  _startLock = (async () => {
+    try {
+      const result = await invoke<string>('sidecar_start')
+      running.value = true
+      return result
+    } catch (e) {
+      console.error('[sidecar] start failed:', e)
+      throw e
+    } finally {
+      _startLock = null
+    }
+  })()
+  return _startLock
 }
 
 async function stop() {
@@ -124,11 +129,20 @@ async function status() {
 
 async function ensureRunning(signal?: AbortSignal) {
   if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError')
-  const isRunning = await status()
-  if (!isRunning) {
-    await start()
-    await waitForHealth(signal)
+  if (running.value && await checkHealth()) return
+
+  if (!_ensureLock) {
+    _ensureLock = (async () => {
+      try {
+        if (running.value && await checkHealth()) return
+        await start()
+        await waitForHealth(signal)
+      } finally {
+        _ensureLock = null
+      }
+    })()
   }
+  await _ensureLock
 }
 
 async function waitForHealth(signal?: AbortSignal, maxRetries = 10, interval = 1000) {

@@ -13,17 +13,6 @@ _PROXY_KEYS = (
 )
 _ORIGINAL_PROXY_ENV = {key: os.environ.get(key, "") for key in _PROXY_KEYS}
 _PROXY_MODE_ENV = "MIQ_PROXY_MODE"
-_DEFAULT_PROXY_ID = "__local_default_proxy_127001_7890__"
-_DEFAULT_PROXY = {
-    "id": _DEFAULT_PROXY_ID,
-    "name": "Local Proxy 127.0.0.1:7890",
-    "host": "127.0.0.1",
-    "port": 7890,
-    "protocol": "http",
-    "username": "",
-    "password": "",
-    "enabled": True,
-}
 _DIRECT_HOST_SUFFIXES = (
     "localhost",
     "127.0.0.1",
@@ -62,6 +51,8 @@ def register_proxies(proxies: list[dict]) -> None:
     for p in proxies:
         if p.get("id"):
             _PROXY_REGISTRY[p["id"]] = p
+    for key in _PROXY_KEYS:
+        os.environ.pop(key, None)
 
 
 def build_proxy_url(proxy: dict) -> str | None:
@@ -81,8 +72,6 @@ def resolve_proxy_for_id(proxy_id: str | None) -> dict | None:
     if not proxy_id:
         return None
     proxy = _PROXY_REGISTRY.get(proxy_id)
-    if proxy is None and proxy_id == _DEFAULT_PROXY_ID:
-        proxy = _DEFAULT_PROXY
     if not proxy or not proxy.get("enabled", True):
         return None
     url = build_proxy_url(proxy)
@@ -95,8 +84,6 @@ def _get_default_proxy_id() -> str | None:
     for proxy in _PROXY_REGISTRY.values():
         if proxy.get("enabled", True) and str(proxy.get("host", "")).strip():
             return str(proxy.get("id"))
-    if _DEFAULT_PROXY.get("enabled") and _DEFAULT_PROXY.get("host"):
-        return _DEFAULT_PROXY_ID
     return None
 
 

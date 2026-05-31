@@ -2,20 +2,10 @@ import os
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import market, kline, sector, fundflow, news, openclaw, finance, investment, home, etf
-from app.services.network_env import register_proxies
+from app.services.network_env import clear_proxy_env, register_proxies
 from app.services.datasource_registry import register_sources
 
-for k in [
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "http_proxy",
-    "https_proxy",
-    "ALL_PROXY",
-    "all_proxy",
-]:
-    os.environ.pop(k, None)
-os.environ["no_proxy"] = "*"
-os.environ["NO_PROXY"] = "*"
+clear_proxy_env()
 
 app = FastAPI(title="MI Quantify Sidecar", version="0.2.1")
 
