@@ -13,10 +13,8 @@ def _pkg_data_glob(pkg_name: str, subdir: str) -> list[tuple[str, str]]:
 
 akshare_datas = _pkg_data_glob('akshare', 'file_fold')
 
-# 排除有问题的 scipy OpenBLAS 共享库（ELF 对齐问题）
-# 同时排除 numpy 的测试和 distutils 子包以减小体积
+# 排除不需要的子包以减小体积
 EXCLUDE_LIST = [
-    'scipy.openblas',
     'numpy.distutils',
     'numpy.f2py',
     'numpy.tests',
@@ -94,22 +92,6 @@ a = Analysis(
     excludes=EXCLUDE_LIST,
     noarchive=False,
 )
-
-
-def _filter_openblas_binaries(binaries):
-    """过滤掉有问题的 scipy OpenBLAS 共享库（ELF 对齐问题）"""
-    filtered = []
-    for name, path, typecode in binaries:
-        basename = os.path.basename(name).lower()
-        if 'libscipy_openblas' in basename or 'openblas' in basename:
-            print(f"[EXCLUDE] Skipping problematic OpenBLAS binary: {name}")
-            continue
-        filtered.append((name, path, typecode))
-    return filtered
-
-
-# 过滤有问题的二进制文件
-a.binaries = _filter_openblas_binaries(a.binaries)
 
 pyz = PYZ(a.pure)
 exe = EXE(
