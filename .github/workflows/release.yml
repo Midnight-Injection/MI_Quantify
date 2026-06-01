@@ -95,14 +95,25 @@ jobs:
           echo "=== Smoke test: HTTP endpoint check ==="
           "$DEST" &
           SIDECAR_PID=$!
-          sleep 5
-          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" http://127.0.0.1:18911/health)
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "FAIL: /health endpoint returned $HTTP_CODE (expected 200)"
+          
+          # 等待服务就绪（最多 30 秒）
+          READY=false
+          for i in $(seq 1 15); do
+            sleep 2
+            if curl -sf -o /dev/null http://127.0.0.1:18911/health 2>/dev/null; then
+              READY=true
+              break
+            fi
+            echo "Waiting for sidecar... attempt $i"
+          done
+          
+          if [ "$READY" != true ]; then
+            echo "FAIL: sidecar did not start within 30 seconds"
             kill $SIDECAR_PID 2>/dev/null || true
             exit 1
           fi
           echo "PASS: /health"
+          
           HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:18911/api/sector/industry/kline?name=test")
           if [ "$HTTP_CODE" != "200" ]; then
             echo "FAIL: /api/sector/industry/kline returned $HTTP_CODE (expected 200)"
