@@ -20,8 +20,14 @@ def _http_get(url: str, referer: str = "https://finance.sina.com.cn", proxy_id: 
 
 
 def _safe_float(v):
+    import math
     try:
-        return float(v) if v and v not in ("-", "") else 0
+        if v and v not in ("-", ""):
+            r = float(v)
+            if math.isnan(r) or math.isinf(r):
+                return 0
+            return r
+        return 0
     except (ValueError, TypeError):
         return 0
 

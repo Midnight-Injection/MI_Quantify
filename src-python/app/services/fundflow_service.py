@@ -40,8 +40,12 @@ def _make_session(url: str, proxy_id: str | None = None):
 
 
 def _safe_float(value) -> float:
+    import math
     try:
-        return float(value or 0)
+        v = float(value or 0)
+        if math.isnan(v) or math.isinf(v):
+            return 0.0
+        return v
     except Exception:
         return 0.0
 

@@ -27,10 +27,14 @@ def _parse_sector_payload(text: str) -> dict:
 
 
 def _safe_float(value) -> float:
+    import math
     try:
         if value in (None, "", "-"):
             return 0.0
-        return float(value)
+        v = float(value)
+        if math.isnan(v) or math.isinf(v):
+            return 0.0
+        return v
     except (TypeError, ValueError):
         return 0.0
 

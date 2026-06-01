@@ -38,9 +38,12 @@ logger = logging.getLogger(__name__)
 
 
 def _to_num(val) -> float:
+    import math
     try:
         v = float(val)
-        return v if v == v else 0
+        if math.isnan(v) or math.isinf(v):
+            return 0
+        return v
     except Exception:
         return 0
 

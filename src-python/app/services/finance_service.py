@@ -201,6 +201,11 @@ def get_financial_summary(code: str) -> dict:
 def _to_num(val):
     try:
         v = float(val)
-        return v if v == v else 0
+        if v != v:  # NaN check
+            return 0
+        import math
+        if math.isinf(v):
+            return 0
+        return v
     except Exception:
         return 0

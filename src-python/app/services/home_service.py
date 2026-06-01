@@ -147,7 +147,11 @@ def _cache_set(key: str, data):
 
 def _safe_float(value) -> float:
     try:
-        return float(value or 0)
+        import math
+        v = float(value or 0)
+        if math.isnan(v) or math.isinf(v):
+            return 0.0
+        return v
     except Exception:
         return 0.0
 

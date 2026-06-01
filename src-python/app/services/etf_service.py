@@ -1,3 +1,4 @@
+import math
 import time
 from typing import Optional
 
@@ -9,7 +10,10 @@ def _safe_float(value) -> float:
     try:
         if value in ("", "-", None):
             return 0.0
-        return float(value)
+        v = float(value)
+        if math.isnan(v) or math.isinf(v):
+            return 0.0
+        return v
     except Exception:
         return 0.0
 

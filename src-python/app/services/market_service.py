@@ -921,10 +921,14 @@ def search_stocks(keyword: str, limit: int = 8, with_quotes: bool = True) -> lis
 
 
 def _safe_float(val) -> float:
+    import math
     try:
         if val is None or val == "" or val == "-":
             return 0
-        return float(val)
+        v = float(val)
+        if math.isnan(v) or math.isinf(v):
+            return 0
+        return v
     except (ValueError, TypeError):
         return 0
 

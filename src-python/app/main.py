@@ -1,13 +1,56 @@
+import json
+import math
 import os
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.routers import market, kline, sector, fundflow, news, openclaw, finance, investment, home, etf
 from app.services.network_env import clear_proxy_env, register_proxies
 from app.services.datasource_registry import register_sources
 
 clear_proxy_env()
 
-app = FastAPI(title="MI Quantify Sidecar", version="0.2.1")
+
+class _SafeEncoder(json.JSONEncoder):
+    """将 NaN / Infinity 等非标准 JSON 值转为 None，防止序列化报错"""
+
+    def default(self, o):
+        return super().default(o)
+
+    def encode(self, o):
+        return super().encode(self._sanitize(o))
+
+    def iterencode(self, o, _one_shot=False):
+        return super().iterencode(self._sanitize(o), _one_shot)
+
+    @staticmethod
+    def _sanitize(obj):
+        if isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj):
+                return None
+            return obj
+        if isinstance(obj, dict):
+            return {k: _SafeEncoder._sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_SafeEncoder._sanitize(v) for v in obj]
+        return obj
+
+
+class SafeJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            cls=_SafeEncoder,
+        ).encode("utf-8")
+
+
+app = FastAPI(
+    title="MI Quantify Sidecar",
+    version="0.2.1",
+    default_response_class=SafeJSONResponse,
+)
 
 app.add_middleware(
     CORSMiddleware,

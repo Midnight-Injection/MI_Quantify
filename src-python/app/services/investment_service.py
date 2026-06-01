@@ -62,10 +62,14 @@ def _extract_number(text: str | None) -> float | None:
 
 
 def _safe_float(value):
+    import math
     try:
         if value is None or value == "":
             return None
-        return float(value)
+        v = float(value)
+        if math.isnan(v) or math.isinf(v):
+            return None
+        return v
     except Exception:
         return None
 
