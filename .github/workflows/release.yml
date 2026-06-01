@@ -60,7 +60,8 @@ jobs:
           python -c "import platform; print(f'arch={platform.machine()} os={platform.system()}')"
           
           echo "=== Installing dependencies ==="
-          python -m pip install --upgrade pip pyinstaller
+          python -m pip install --upgrade pip
+          pip install 'pyinstaller>=6.12'
           pip install -e ./src-python
           
           echo "=== Building sidecar ==="

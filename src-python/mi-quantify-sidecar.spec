@@ -13,6 +13,16 @@ def _pkg_data_glob(pkg_name: str, subdir: str) -> list[tuple[str, str]]:
 
 akshare_datas = _pkg_data_glob('akshare', 'file_fold')
 
+# 排除有问题的 scipy OpenBLAS 共享库（ELF 对齐问题）
+# 同时排除 numpy 的测试和 distutils 子包以减小体积
+EXCLUDE_LIST = [
+    'scipy.openblas',
+    'numpy.distutils',
+    'numpy.f2py',
+    'numpy.tests',
+    'scipy.tests',
+]
+
 a = Analysis(
     ['run.py'],
     pathex=['.'],
@@ -33,6 +43,12 @@ a = Analysis(
         'yfinance',
         'pandas',
         'numpy',
+        'numpy._core',
+        'numpy._core._methods',
+        'numpy._core._dtype_ctypes',
+        'scipy',
+        'scipy._lib',
+        'scipy._lib.messagestream',
         'peewee',
         'multitasking',
         'websockets',
@@ -75,9 +91,26 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=EXCLUDE_LIST,
     noarchive=False,
 )
+
+
+def _filter_openblas_binaries(binaries):
+    """过滤掉有问题的 scipy OpenBLAS 共享库（ELF 对齐问题）"""
+    filtered = []
+    for name, path, typecode in binaries:
+        basename = os.path.basename(name).lower()
+        if 'libscipy_openblas' in basename or 'openblas' in basename:
+            print(f"[EXCLUDE] Skipping problematic OpenBLAS binary: {name}")
+            continue
+        filtered.append((name, path, typecode))
+    return filtered
+
+
+# 过滤有问题的二进制文件
+a.binaries = _filter_openblas_binaries(a.binaries)
+
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
@@ -88,8 +121,8 @@ exe = EXE(
     name='mi-quantify-sidecar',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,
-    upx=True,
+    strip=False,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
 )
